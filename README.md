@@ -26,16 +26,20 @@ El Python del sistema (`/usr/bin/python3`) no se toca nunca.
 ## Ficheros
 
 ```
-Brewfile              paquetes, apps y extensiones de VS Code
-zsh/.zshrc            PATH, historial, mise, fzf, alias
-starship.toml         prompt
-ghostty/config        terminal
-git/.gitconfig        config de git (sin identidad)
+Brewfile               paquetes, apps y extensiones de VS Code
+zsh/.zshrc             PATH, historial, fzf, alias
+zsh/.zsh_plugins.txt   plugins (antidote)
+starship.toml          prompt
+ghostty/config         terminal
+git/.gitconfig         config de git (sin identidad)
 git/.gitignore_global
-mise/config.toml      versiones globales de runtimes
-vscode/settings.json  ajustes del editor
-install.sh            symlinks + instalación completa
+mise/config.toml       versiones globales de runtimes
+vscode/settings.json   ajustes del editor
+install.sh             symlinks + instalación completa
 ```
+
+`~/.zsh_plugins.zsh` es **generado**, no se versiona: antidote lo regenera
+solo cuando `.zsh_plugins.txt` cambia.
 
 La identidad de git vive en `~/.gitconfig.local`, **fuera del repo**, para que
 esto pueda ser público y cada máquina use su propio nombre/email.

@@ -33,6 +33,7 @@ link() {
 }
 
 link "$DOTFILES/zsh/.zshrc"             "$HOME/.zshrc"
+link "$DOTFILES/zsh/.zsh_plugins.txt"   "$HOME/.zsh_plugins.txt"
 link "$DOTFILES/git/.gitconfig"         "$HOME/.gitconfig"
 link "$DOTFILES/git/.gitignore_global"  "$HOME/.gitignore_global"
 link "$DOTFILES/mise/config.toml"       "$HOME/.config/mise/config.toml"
