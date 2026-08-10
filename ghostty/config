@@ -1,46 +1,80 @@
 # Ghostty — https://ghostty.org/docs/config
 # Recargar sin reiniciar: Cmd+Shift+,
+# Ver temas: ghostty +list-themes     Ver fuentes: ghostty +list-fonts
 
-# ---------- Tipografia ----------
-# Nerd Font: trae los glifos que usan starship, eza y los iconos de git
+# ═══════════════ Tipografia ═══════════════
 font-family = "JetBrainsMono Nerd Font"
 font-size = 14
-# Ligaduras: => != >= se ven como un solo simbolo
+
+# Ligaduras: => != >= <= se dibujan como un solo simbolo
 font-feature = calt
 font-feature = liga
+font-feature = ss02
 
-# ---------- Apariencia ----------
-# Ver todos:  ghostty +list-themes
-# Oscuro siempre, independientemente del modo claro/oscuro de macOS.
-# (Para que siguiera al sistema seria: light:Catppuccin Latte,dark:Catppuccin Mocha)
+# En macOS las monoespaciadas se ven finas y lavadas por el antialiasing.
+# Esto las engrosa ligeramente: es el ajuste que mas mejora la lectura.
+font-thicken = true
+
+# Altura de linea +12%. Casi nadie lo toca y es lo que separa un terminal
+# apretado de uno que se lee comodo en sesiones largas.
+adjust-cell-height = 12%
+
+# ═══════════════ Color ═══════════════
 theme = Catppuccin Mocha
-background-opacity = 0.97
-background-blur-radius = 20
-window-padding-x = 12
-window-padding-y = 8
+
+# Los Mac modernos son P3: amplia la gama y los colores dejan de verse
+# apagados respecto a lo que el tema define.
+window-colorspace = display-p3
+
+# Mezcla de alfa correcta en espacio lineal. Sin esto el texto sobre fondo
+# translucido se ve mas delgado de lo que deberia.
+alpha-blending = linear-corrected
+
+# Garantiza contraste minimo texto/fondo aunque un programa elija
+# una combinacion ilegible. 1 = desactivado.
+minimum-contrast = 1.1
+
+# Transparencia sutil con desenfoque. Bajar de 0.90 empieza a costar lectura.
+background-opacity = 0.95
+background-blur-radius = 30
+
+# ═══════════════ Ventana ═══════════════
+# Aire alrededor del texto: respira y no se pega a los bordes
+window-padding-x = 18
+window-padding-y = 14
+# Reparte el espacio sobrante en vez de dejarlo todo a un lado
+window-padding-balance = true
+
 # Barra de titulo nativa de macOS con pestanas reales
 macos-titlebar-style = tabs
 window-save-state = always
 
-# Cursor visible sin ser molesto
+# El split inactivo se atenua: se ve de un vistazo donde estas
+unfocused-split-opacity = 0.6
+
+# ═══════════════ Cursor ═══════════════
 cursor-style = block
 cursor-style-blink = false
+# Deja ver el caracter que hay debajo del cursor
+cursor-opacity = 0.85
 
-# ---------- Scrollback ----------
-# 100k lineas: suficiente para revisar una sesion larga de Claude Code
+# ═══════════════ Scrollback ═══════════════
+# Para revisar una sesion larga de Claude Code entera
 scrollback-limit = 100000000
 
-# ---------- Claude Code ----------
+# ═══════════════ Claude Code ═══════════════
 # Shift+Enter mete un salto de linea en vez de enviar el mensaje.
-# Imprescindible para escribir prompts de varias lineas.
+# Imprescindible para prompts de varias lineas.
 keybind = shift+enter=text:\n
 
-# Option como Meta: hace que Option+flechas salte por palabras en el prompt
+# Option como Meta: Option+flechas salta por palabras en el prompt
 macos-option-as-alt = true
 
-# ---------- Calidad de vida ----------
+# ═══════════════ Calidad de vida ═══════════════
 copy-on-select = clipboard
 confirm-close-surface = false
-# Cmd+K limpia la pantalla, como en la Terminal nativa
-keybind = cmd+k=clear_screen
 mouse-hide-while-typing = true
+
+keybind = cmd+k=clear_screen
+# Terminal desplegable sobre cualquier app (funciona aunque Ghostty este al fondo)
+keybind = global:cmd+grave_accent=toggle_quick_terminal
