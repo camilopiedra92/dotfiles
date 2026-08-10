@@ -40,6 +40,22 @@ link "$DOTFILES/mise/config.toml"       "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json"   "$HOME/Library/Application Support/Code/User/settings.json"
 link "$DOTFILES/ghostty/config"         "$HOME/.config/ghostty/config"
 link "$DOTFILES/starship.toml"          "$HOME/.config/starship.toml"
+link "$DOTFILES/claude/statusline.sh"   "$HOME/.claude/statusline.sh"
+
+# --- 3b. Statusline de Claude Code ---
+# settings.json no se enlaza: Claude Code lo reescribe solo (tema, /config...)
+# y un symlink acabaria sobrescrito. Se hace merge del bloque que nos importa,
+# que ademas deja el paso idempotente.
+log "Registrando la statusline en Claude Code"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+[ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
+jq '.statusLine = {
+      type: "command",
+      command: "~/.claude/statusline.sh",
+      padding: 0,
+      refreshInterval: 60
+    }' "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" \
+  && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 
 # --- 4. Identidad de git (no se versiona) ---
 if [ ! -f "$HOME/.gitconfig.local" ]; then

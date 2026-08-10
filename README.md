@@ -35,6 +35,7 @@ git/.gitconfig         config de git (sin identidad)
 git/.gitignore_global
 mise/config.toml       versiones globales de runtimes
 vscode/settings.json   ajustes del editor
+claude/statusline.sh   statusline de Claude Code
 install.sh             symlinks + instalación completa
 ```
 
@@ -43,6 +44,10 @@ solo cuando `.zsh_plugins.txt` cambia.
 
 La identidad de git vive en `~/.gitconfig.local`, **fuera del repo**, para que
 esto pueda ser público y cada máquina use su propio nombre/email.
+
+`~/.claude/settings.json` tampoco se enlaza: Claude Code lo reescribe solo
+(tema, `/config`…) y un symlink acabaría sobrescrito. `install.sh` le hace
+merge del bloque `statusLine` con `jq`, que es idempotente.
 
 ## Uso diario
 
