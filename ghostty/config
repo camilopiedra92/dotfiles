@@ -11,8 +11,9 @@ font-feature = liga
 
 # ---------- Apariencia ----------
 # Ver todos:  ghostty +list-themes
-# light:dark hace que siga el modo claro/oscuro de macOS automaticamente
-theme = light:Catppuccin Latte,dark:Catppuccin Mocha
+# Oscuro siempre, independientemente del modo claro/oscuro de macOS.
+# (Para que siguiera al sistema seria: light:Catppuccin Latte,dark:Catppuccin Mocha)
+theme = Catppuccin Mocha
 background-opacity = 0.97
 background-blur-radius = 20
 window-padding-x = 12
