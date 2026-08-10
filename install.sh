@@ -40,13 +40,14 @@ link "$DOTFILES/mise/config.toml"       "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json"   "$HOME/Library/Application Support/Code/User/settings.json"
 link "$DOTFILES/ghostty/config"         "$HOME/.config/ghostty/config"
 link "$DOTFILES/starship.toml"          "$HOME/.config/starship.toml"
-link "$DOTFILES/claude/statusline.sh"   "$HOME/.claude/statusline.sh"
+link "$DOTFILES/claude/statusline.sh"          "$HOME/.claude/statusline.sh"
+link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
 
-# --- 3b. Statusline de Claude Code ---
+# --- 3b. Statuslines de Claude Code ---
 # settings.json no se enlaza: Claude Code lo reescribe solo (tema, /config...)
-# y un symlink acabaria sobrescrito. Se hace merge del bloque que nos importa,
-# que ademas deja el paso idempotente.
-log "Registrando la statusline en Claude Code"
+# y un symlink acabaria sobrescrito. Se hace merge de los bloques que nos
+# importan, que ademas deja el paso idempotente.
+log "Registrando las statuslines en Claude Code"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
 jq '.statusLine = {
@@ -54,6 +55,10 @@ jq '.statusLine = {
       command: "~/.claude/statusline.sh",
       padding: 0,
       refreshInterval: 60
+    }
+    | .subagentStatusLine = {
+      type: "command",
+      command: "~/.claude/subagent-statusline.sh"
     }' "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" \
   && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 

@@ -35,8 +35,9 @@ git/.gitconfig         config de git (sin identidad)
 git/.gitignore_global
 mise/config.toml       versiones globales de runtimes
 vscode/settings.json   ajustes del editor
-claude/statusline.sh   statusline de Claude Code
-claude/statusline-demo.sh  la renderiza con casos de ejemplo
+claude/statusline.sh            statusline de Claude Code
+claude/subagent-statusline.sh   telemetría por agente en el panel de agentes
+claude/statusline-demo.sh       las renderiza con casos de ejemplo
 install.sh             symlinks + instalación completa
 ```
 
@@ -48,14 +49,21 @@ esto pueda ser público y cada máquina use su propio nombre/email.
 
 `~/.claude/settings.json` tampoco se enlaza: Claude Code lo reescribe solo
 (tema, `/config`…) y un symlink acabaría sobrescrito. `install.sh` le hace
-merge del bloque `statusLine` con `jq`, que es idempotente.
+merge de `statusLine` y `subagentStatusLine` con `jq`, que es idempotente.
 
-Para ver la statusline sin reiniciar Claude, incluidos los casos que no puedes
-provocar a voluntad (límite al 95 %, contexto en rojo, PR con cambios pedidos):
+Para verlas sin reiniciar Claude, incluidos los casos que no puedes provocar a
+voluntad (límite al 95 %, contexto en rojo, PR con cambios pedidos, un agente
+atascado):
 
 ```bash
 ~/dotfiles/claude/statusline-demo.sh
 ```
+
+La statusline principal son dos líneas: identidad arriba (modelo, ruta, rama,
+PR) en estilo powerline, y medidores abajo (contexto, límites de 5 h y 7 días,
+coste) sobre fondo limpio, para que el color siga funcionando como alarma.
+`STYLE` y `LINES`, al principio del script, cambian a `minimal` y a una sola
+línea. Ambas requieren una Nerd Font: la config de Ghostty ya la fija.
 
 ## Uso diario
 

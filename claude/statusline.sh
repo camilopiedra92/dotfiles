@@ -3,29 +3,39 @@
 #
 # Claude ejecuta este script en CADA repintado de la interfaz y le pasa por
 # stdin un JSON con el estado de la sesion. Lo que imprimimos en stdout es la
-# linea que aparece bajo el cuadro de entrada.
+# linea (o lineas) que aparecen bajo el cuadro de entrada.
 #
 # Para verla sin arrancar Claude:  ./statusline-demo.sh
 #
-# Tres reglas mandan sobre todo lo demas:
+# ── Como esta pensada ────────────────────────────────────────────────────────
 #
 #   1. RAPIDO. Al correr en cada repintado, cualquier lentitud se nota como
 #      lag al escribir. macOS trae bash 3.2 y cada `$(comando)` cuesta ~5ms de
 #      fork, asi que aqui se usan expansiones del propio bash siempre que se
 #      puede. Solo hay tres procesos externos en total: jq, git y date.
 #
-#   2. EL COLOR ES UNA ALARMA, NO DECORACION. Si todo se pinta de colores,
-#      nada destaca. Lo normal va en gris y el color solo aparece cuando algo
-#      pide atencion (contexto llenandose, limite cerca del tope).
+#   2. CROMO ARRIBA, DATOS ABAJO. La primera linea es identidad: quien eres,
+#      donde estas, en que rama. Cambia poco y puede permitirse decoracion.
+#      La segunda son medidores: contexto, limites, coste. Ahi el color es una
+#      alarma, no un adorno, y por eso va sobre fondo limpio: si todo lleva
+#      fondo de color, el rojo del 90% de contexto deja de destacar.
 #
-#   3. ANCHO ACOTADO. El payload no dice cuanto mide la terminal, asi que
-#      todo lo que puede crecer sin limite (rama, ruta) se trunca. Una
-#      statusline que hace wrap se come una linea del chat en cada repintado.
+#   3. ANCHO ACOTADO. El payload no dice cuanto mide la terminal, asi que todo
+#      lo que puede crecer sin limite (rama, ruta) se trunca. Una statusline
+#      que hace wrap se come una linea del chat en cada repintado.
+#
+#   4. NUNCA \033[0m. Ver la nota extensa en la seccion de paleta.
 #
 # Los colores son ANSI de 16, no hex: asi la linea hereda la paleta del tema
 # de Ghostty (Catppuccin Mocha) y sigue cuadrando si algun dia lo cambias.
 
 set -uo pipefail
+
+# ── Ajustes ──────────────────────────────────────────────────────────────────
+# Se leen del entorno si vienen, para que statusline-demo.sh pueda renderizar
+# las variantes sin tocar el archivo.
+STYLE=${STYLE:-powerline}   # powerline | minimal  (aspecto de la linea de identidad)
+LINES=${LINES:-2}           # 2 | 1                (1 = todo junto, terminales bajas)
 
 # Incluir archivos sin trackear en el marcador de "sucio" obliga a git a
 # recorrer el arbol entero, que es justo lo caro en repos grandes. Ponlo en
@@ -73,21 +83,27 @@ IFS=$'\037' read -r MODEL EFFORT CWD PROJDIR CTX_PCT CTX_IN CTX_MAX \
 # --- Paleta ------------------------------------------------------------------
 # Ojo con el reset: aqui NUNCA se emite \033[0m. Claude renderiza la statusline
 # dentro de su propio estilo (la documenta como "printed using dimmed colors"),
-# y un reset total cancelaria ese estilo a mitad de linea, dejando la primera
-# mitad atenuada y la segunda no. \033[39m devuelve solo el color de texto al
-# por defecto y no toca negrita ni atenuado, asi que compone con lo que sea que
-# Claude ponga por fuera. Por lo mismo no se usa negrita: el enfasis se da con
-# color, que es reversible sin efectos colaterales.
-FG=$'\033[39m'
+# y un reset total lo cancelaria a mitad de linea, dejando la primera mitad
+# atenuada y la segunda no. Se usan resets selectivos: \033[39m devuelve el
+# color de texto y \033[49m el de fondo, ninguno toca negrita ni atenuado, asi
+# que componen con lo que sea que Claude ponga por fuera. Por lo mismo no hay
+# negrita: el enfasis se da con color, que es reversible sin danos colaterales.
+FG=$'\033[39m'; BG=$'\033[49m'
 DIM=$'\033[90m'
 GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'
-MAGENTA=$'\033[35m'; CYAN=$'\033[36m'
+
+# Separadores powerline. Requieren una Nerd Font (aqui, JetBrainsMono Nerd
+# Font) y van como caracter literal porque bash 3.2 no expande \u en $'...'.
+#
+# El grueso separa colores distintos. El fino hace falta cuando dos segmentos
+# comparten fondo: ahi el grueso se dibujaria del mismo color que el fondo
+# sobre el que cae, seria invisible, y los dos segmentos se leerian como uno.
+PL=''
+PL_THIN=''
 
 printf -v NOW '%(%s)T' -1 2>/dev/null || NOW=$(date +%s)
 
-OUT=""
-add() { [ -n "$OUT" ] && OUT+="${DIM} · ${FG}"; OUT+="$1"; }
-
+# --- Utilidades --------------------------------------------------------------
 # Las funciones de formato dejan el resultado en una global en vez de hacer
 # `echo`: llamarlas dentro de $(...) costaria un fork cada una.
 
@@ -156,12 +172,22 @@ k() { local n=${1%%.*} whole tenth
   elif [ "$n" -ge 1000 ]; then K="$(( n / 1000 ))k"
   else K="$n"; fi; }
 
-# --- Modelo y esfuerzo -------------------------------------------------------
-seg="${MAGENTA}󰚩 ${MODEL}${FG}"
-[ -n "$EFFORT" ] && seg+="${DIM}:${EFFORT}${FG}"
-add "$seg"
+# ── Linea 1: identidad ───────────────────────────────────────────────────────
+# Los segmentos se acumulan primero y se pintan despues, porque powerline
+# necesita conocer el color del segmento siguiente para dibujar el separador
+# (el triangulo lleva el fondo del anterior como texto y el del siguiente como
+# fondo; ese empalme es lo que hace que no se vea una costura).
+S_BG=(); S_ACC=(); S_INK=(); S_TXT=()
+seg() {   # seg <codigo de fondo> <mismo color como texto> <tinta encima> <contenido>
+  S_BG+=("$1"); S_ACC+=("$2"); S_INK+=("$3"); S_TXT+=("$4")
+}
 
-# --- Ubicacion ---------------------------------------------------------------
+# --- Modelo y esfuerzo ---
+body="󰚩 ${MODEL}"
+[ -n "$EFFORT" ] && body+=" ${EFFORT}"
+seg 45 35 30 "$body"
+
+# --- Ubicacion ---
 # Dentro de un proyecto muestra la ruta relativa a su raiz (`repo/src/api`).
 # El path absoluto completo no aporta: ya sabes donde vives.
 CWD=${CWD:-$PWD}
@@ -172,9 +198,9 @@ else
 fi
 # Se recorta por la izquierda: en una ruta larga lo que te ubica es el final.
 [ ${#LOC} -gt $MAX_PATH ] && LOC="…${LOC: -$(( MAX_PATH - 1 ))}"
-add "${CYAN} ${LOC}${FG}"
+seg 44 34 30 " ${LOC}"
 
-# --- Git ---------------------------------------------------------------------
+# --- Git ---
 # Una sola llamada da rama, estado y distancia con el remoto. La salida se
 # parsea con `case` de bash, sin sed ni grep: son dos forks que no hacen falta.
 # --no-optional-locks evita que este script escriba en .git y pelee con el git
@@ -196,59 +222,99 @@ done < <(git --no-optional-locks status --porcelain=v2 --branch \
 if [ -n "$BRANCH" ]; then
   # Las ramas con prefijo de ticket se van a 40 caracteres sin despeinarse.
   [ ${#BRANCH} -gt $MAX_BRANCH ] && BRANCH="${BRANCH:0:$(( MAX_BRANCH - 1 ))}…"
-  seg="${MAGENTA} ${BRANCH}${FG}"
-  [ "$DIRTY" = 1 ] && seg+="${YELLOW}*${FG}"
+  body=" ${BRANCH}"
+  [ "$DIRTY" = 1 ] && body+="*"
   # Commits de diferencia con el remoto: lo unico del estado de git que suele
   # sorprenderte a mitad de sesion.
   if [ -n "$AB" ]; then
     ahead=${AB%% *}; behind=${AB##* }
-    [ "$ahead" != "+0" ] && seg+="${DIM}⇡${ahead#+}${FG}"
-    [ "$behind" != "-0" ] && seg+="${DIM}⇣${behind#-}${FG}"
+    [ "$ahead" != "+0" ] && body+=" ⇡${ahead#+}"
+    [ "$behind" != "-0" ] && body+=" ⇣${behind#-}"
   fi
-  add "$seg"
+  seg 100 90 37 "$body"
 fi
-[ -n "$WORKTREE" ] && add "${DIM}⑂ ${WORKTREE}${FG}"
 
-# --- Pull request ------------------------------------------------------------
+[ -n "$WORKTREE" ] && seg 100 90 37 "⑂ ${WORKTREE}"
+
+# --- Pull request ---
 # Solo aparece si la rama tiene PR abierto. El color es el estado de revision:
 # que te hayan pedido cambios mientras trabajas es justo lo que quieres saber
 # sin cambiar de ventana.
 if [ "$PR_NUM" != "0" ]; then
   case $PR_STATE in
-    approved)          c=$GREEN ;;
-    changes_requested) c=$RED ;;
-    *)                 c=$DIM ;;
+    approved)          seg 42 32 30 " #${PR_NUM}" ;;
+    changes_requested) seg 41 31 30 " #${PR_NUM}" ;;
+    *)                 seg 100 90 37 " #${PR_NUM}" ;;
   esac
-  add "${c} #${PR_NUM}${FG}"
 fi
 
-# --- Contexto ----------------------------------------------------------------
-# Lo mas accionable de la linea: cuando esto llega al rojo toca /compact o
-# abrir sesion nueva antes de que Claude empiece a olvidar el principio.
+# --- Pintado de la linea 1 ---
+L1=""
+n=${#S_BG[@]}
+if [ "$STYLE" = powerline ]; then
+  for ((i = 0; i < n; i++)); do
+    L1+=$'\033['"${S_BG[$i]};${S_INK[$i]}m ${S_TXT[$i]} "
+    # El separador hereda el fondo del siguiente segmento; en el ultimo vuelve
+    # al fondo por defecto, que es lo que le da el borde limpio a la derecha.
+    if [ $(( i + 1 )) -lt "$n" ]; then
+      if [ "${S_BG[$i]}" = "${S_BG[$((i + 1))]}" ]; then
+        L1+=$'\033['"${S_INK[$i]}m${PL_THIN}"
+      else
+        L1+=$'\033['"${S_ACC[$i]};${S_BG[$((i + 1))]}m${PL}"
+      fi
+    else
+      L1+="${BG}"$'\033['"${S_ACC[$i]}m${PL}${FG}"
+    fi
+  done
+else
+  for ((i = 0; i < n; i++)); do
+    [ "$i" -gt 0 ] && L1+="${DIM} · ${FG}"
+    L1+=$'\033['"${S_ACC[$i]}m${S_TXT[$i]}${FG}"
+  done
+fi
+
+# ── Linea 2: medidores ───────────────────────────────────────────────────────
+L2=""
+add() { [ -n "$L2" ] && L2+="${DIM} · ${FG}"; L2+="$1"; }
+
+# --- Contexto ---
+# Lo mas accionable de todo: cuando esto llega al rojo toca /compact o abrir
+# sesion nueva antes de que Claude empiece a olvidar el principio.
 if [ "${CTX_PCT%%.*}" -ge 0 ] 2>/dev/null; then
   level "$CTX_PCT"; bar "$CTX_PCT"
   k "$CTX_IN"; used=$K
   k "$CTX_MAX"; total=$K
-  add "${C}${BAR} ${CTX_PCT%%.*}%${FG}${DIM} ${used}/${total}${FG}"
+  add "${DIM}ctx ${FG}${C}${BAR} ${CTX_PCT%%.*}%${FG}${DIM} ${used}/${total}${FG}"
 fi
 
-# --- Limites de uso ----------------------------------------------------------
+# --- Limites de uso ---
 # Solo aparecen si la API ya los ha reportado: llegan en las cabeceras de la
 # respuesta, asi que al arrancar la sesion todavia no estan.
 limit() {
   local label=$1 pct=$2 reset=$3 window=$4 s
   [ "${pct%%.*}" -ge 0 ] 2>/dev/null || return
   level "$pct"; until_reset "$reset"; burn "$pct" "$reset" "$window"
-  printf -v s '%s%s%s%s%.0f%%%s' "$DIM" "$label" "$FG" "$C" "$pct" "$FG"
+  printf -v s '%s%s %s%s%.0f%%%s' "$DIM" "$label" "$FG" "$C" "$pct" "$FG"
   [ -n "$BURN" ] && s+="${YELLOW}${BURN}${FG}"
   [ -n "$REL" ] && s+="${DIM}↻${REL}${FG}"
   add "$s"
 }
-limit "5h " "$H5_PCT" "$H5_RESET" 18000
-limit "7d " "$D7_PCT" "$D7_RESET" 604800
+limit "5h" "$H5_PCT" "$H5_RESET" 18000
+limit "7d" "$D7_PCT" "$D7_RESET" 604800
 
-# --- Coste de la sesion ------------------------------------------------------
 printf -v cost '%s$%.2f%s' "$DIM" "$COST" "$FG"
 add "$cost"
 
-printf '%s' "$OUT"
+# ── Salida ───────────────────────────────────────────────────────────────────
+# Claude parte stdout por \n, recorta cada linea y descarta las vacias, asi que
+# el espaciado no puede confiarse a espacios al inicio ni a lineas en blanco.
+if [ "$LINES" = 2 ] && [ -n "$L2" ]; then
+  printf '%s\n%s' "$L1" "$L2"
+elif [ -n "$L2" ]; then
+  # En una sola linea, powerline ya cierra con su triangulo y meterle un punto
+  # detras se ve como suciedad; en minimal el separador si hace falta.
+  if [ "$STYLE" = powerline ]; then printf '%s %s' "$L1" "$L2"
+  else printf '%s%s · %s%s' "$L1" "$DIM" "$FG" "$L2"; fi
+else
+  printf '%s' "$L1"
+fi
