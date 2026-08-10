@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Entornos y secretos (red de seguridad, no sustituye al .gitignore del proyecto)
+.env
+.env.local
+.venv/

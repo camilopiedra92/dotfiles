@@ -1,0 +1,46 @@
+# Identidad: vive en ~/.gitconfig.local (fuera del repo).
+# Asi este repo puede ser publico y cada maquina usa su propio nombre/email.
+[include]
+	path = ~/.gitconfig.local
+
+[init]
+	defaultBranch = main
+
+[push]
+	# Crea la rama remota sola en el primer push, sin --set-upstream
+	autoSetupRemote = true
+
+[pull]
+	# Rebase en vez de merge: historial lineal, sin commits de merge basura
+	rebase = true
+
+[fetch]
+	# Borra ramas locales que ya no existen en el remoto
+	prune = true
+	pruneTags = true
+
+[rebase]
+	autoSquash = true
+	autoStash = true
+
+[merge]
+	# Muestra tambien el estado original en los conflictos, no solo los dos lados
+	conflictStyle = zdiff3
+
+[diff]
+	algorithm = histogram
+	colorMoved = default
+
+[branch]
+	# git branch ordena por commit mas reciente, no alfabeticamente
+	sort = -committerdate
+
+[column]
+	ui = auto
+
+[core]
+	excludesfile = ~/.gitignore_global
+
+[help]
+	# Corrige typos ("git stauts") tras 1s en vez de solo sugerir
+	autocorrect = prompt
