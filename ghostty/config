@@ -1,0 +1,45 @@
+# Ghostty — https://ghostty.org/docs/config
+# Recargar sin reiniciar: Cmd+Shift+,
+
+# ---------- Tipografia ----------
+# Nerd Font: trae los glifos que usan starship, eza y los iconos de git
+font-family = "JetBrainsMono Nerd Font"
+font-size = 14
+# Ligaduras: => != >= se ven como un solo simbolo
+font-feature = calt
+font-feature = liga
+
+# ---------- Apariencia ----------
+# Ver todos:  ghostty +list-themes
+# light:dark hace que siga el modo claro/oscuro de macOS automaticamente
+theme = light:Catppuccin Latte,dark:Catppuccin Mocha
+background-opacity = 0.97
+background-blur-radius = 20
+window-padding-x = 12
+window-padding-y = 8
+# Barra de titulo nativa de macOS con pestanas reales
+macos-titlebar-style = tabs
+window-save-state = always
+
+# Cursor visible sin ser molesto
+cursor-style = block
+cursor-style-blink = false
+
+# ---------- Scrollback ----------
+# 100k lineas: suficiente para revisar una sesion larga de Claude Code
+scrollback-limit = 100000000
+
+# ---------- Claude Code ----------
+# Shift+Enter mete un salto de linea en vez de enviar el mensaje.
+# Imprescindible para escribir prompts de varias lineas.
+keybind = shift+enter=text:\n
+
+# Option como Meta: hace que Option+flechas salte por palabras en el prompt
+macos-option-as-alt = true
+
+# ---------- Calidad de vida ----------
+copy-on-select = clipboard
+confirm-close-surface = false
+# Cmd+K limpia la pantalla, como en la Terminal nativa
+keybind = cmd+k=clear_screen
+mouse-hide-while-typing = true

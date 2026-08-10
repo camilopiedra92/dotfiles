@@ -17,8 +17,8 @@
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.codeActionsOnSave": {
       "source.fixAll.ruff": "explicit",
-      "source.organizeImports.ruff": "explicit"
-    }
+      "source.organizeImports.ruff": "explicit",
+    },
   },
   // "standard" avisa de errores de tipos reales sin el ruido de "strict"
   "python.analysis.typeCheckingMode": "standard",
@@ -38,7 +38,7 @@
   "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
 
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": "explicit"
+    "source.fixAll.eslint": "explicit",
   },
   // Usa la version de TypeScript del proyecto, no la que trae VS Code:
   // evita que el editor y la CI reporten errores distintos
@@ -67,6 +67,7 @@
     "**/__pycache__": true,
     "**/.ruff_cache": true,
     "**/.mypy_cache": true,
-    "**/node_modules": true
-  }
+    "**/node_modules": true,
+  },
+  "chat.mcp.gallery.enabled": true,
 }

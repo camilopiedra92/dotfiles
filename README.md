@@ -26,13 +26,14 @@ El Python del sistema (`/usr/bin/python3`) no se toca nunca.
 ## Ficheros
 
 ```
-Brewfile              paquetes de Homebrew
-zsh/.zshrc            PATH + activación de mise
+Brewfile              paquetes, apps y extensiones de VS Code
+zsh/.zshrc            PATH, historial, mise, fzf, alias
+starship.toml         prompt
+ghostty/config        terminal
 git/.gitconfig        config de git (sin identidad)
 git/.gitignore_global
 mise/config.toml      versiones globales de runtimes
 vscode/settings.json  ajustes del editor
-vscode/extensions.txt lista de extensiones
 install.sh            symlinks + instalación completa
 ```
 
@@ -45,9 +46,8 @@ esto pueda ser público y cada máquina use su propio nombre/email.
 brew upgrade                  # actualiza todo lo del sistema
 mise upgrade                  # actualiza runtimes
 
-# Tras instalar algo nuevo, volcarlo al repo:
+# Tras instalar algo nuevo, volcarlo al repo (incluye extensiones de VS Code):
 brew bundle dump --file=~/dotfiles/Brewfile --force
-code --list-extensions > ~/dotfiles/vscode/extensions.txt
 ```
 
 Fijar versiones en un proyecto (crea `mise.toml`, versiónalo con el repo):
