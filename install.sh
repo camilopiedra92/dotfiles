@@ -42,24 +42,28 @@ link "$DOTFILES/ghostty/config"         "$HOME/.config/ghostty/config"
 link "$DOTFILES/starship.toml"          "$HOME/.config/starship.toml"
 link "$DOTFILES/claude/statusline.sh"          "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
+link "$DOTFILES/claude/CLAUDE.md"              "$HOME/.claude/CLAUDE.md"
 
-# --- 3b. Statuslines de Claude Code ---
-# settings.json no se enlaza: Claude Code lo reescribe solo (tema, /config...)
-# y un symlink acabaria sobrescrito. Se hace merge de los bloques que nos
-# importan, que ademas deja el paso idempotente.
-log "Registrando las statuslines en Claude Code"
+# --- 3b. Ajustes de Claude Code ---
+# settings.json no se enlaza: Claude Code lo reescribe solo (el tema, /config,
+# los permisos que apruebas sobre la marcha) y un symlink acabaria sobrescrito.
+# CLAUDE.md si se enlaza, arriba: ese solo lo editas tu.
+#
+# Los ajustes no viven aqui dentro sino en claude/settings.json, como datos.
+# Este bloque es solo el mecanismo del merge, asi que anadir un ajuste nuevo es
+# editar aquel JSON y este paso no vuelve a tocarse.
+#
+# `.[0] * .[1]` es el merge recursivo de jq, con el repo a la derecha para que
+# gane clave a clave. Dos consecuencias buscadas: se conserva cualquier clave
+# local que no gestionemos (las que escriba Claude Code por su cuenta), y los
+# arrays se reemplazan enteros en vez de concatenarse, de modo que `deny` acaba
+# siendo la lista del repo y no la union historica de todas las instalaciones.
+log "Aplicando los ajustes de Claude Code"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+mkdir -p "$HOME/.claude"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
-jq '.statusLine = {
-      type: "command",
-      command: "~/.claude/statusline.sh",
-      padding: 0,
-      refreshInterval: 60
-    }
-    | .subagentStatusLine = {
-      type: "command",
-      command: "~/.claude/subagent-statusline.sh"
-    }' "$CLAUDE_SETTINGS" > "$CLAUDE_SETTINGS.tmp" \
+jq -s '.[0] * .[1]' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
+    > "$CLAUDE_SETTINGS.tmp" \
   && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 
 # --- 4. Identidad de git (no se versiona) ---
