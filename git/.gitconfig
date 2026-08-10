@@ -44,3 +44,13 @@
 [help]
 	# Corrige typos ("git stauts") tras 1s en vez de solo sugerir
 	autocorrect = prompt
+
+# Escrito por `gh auth setup-git`. gh entrega el token a git, asi que no hay
+# credenciales guardadas aqui ni contrasenas que teclear en push/pull.
+# El "helper =" vacio limpia los helpers heredados antes de poner el suyo.
+[credential "https://github.com"]
+	helper =
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/opt/homebrew/bin/gh auth git-credential
