@@ -12,3 +12,5 @@ brew "ripgrep"
 brew "rustup"
 # Extremely fast Python package installer and resolver, written in Rust
 brew "uv"
+# Open-source code editor
+cask "visual-studio-code"
