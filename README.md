@@ -36,6 +36,7 @@ git/.gitignore_global
 mise/config.toml       versiones globales de runtimes
 vscode/settings.json   ajustes del editor
 claude/statusline.sh   statusline de Claude Code
+claude/statusline-demo.sh  la renderiza con casos de ejemplo
 install.sh             symlinks + instalación completa
 ```
 
@@ -48,6 +49,13 @@ esto pueda ser público y cada máquina use su propio nombre/email.
 `~/.claude/settings.json` tampoco se enlaza: Claude Code lo reescribe solo
 (tema, `/config`…) y un symlink acabaría sobrescrito. `install.sh` le hace
 merge del bloque `statusLine` con `jq`, que es idempotente.
+
+Para ver la statusline sin reiniciar Claude, incluidos los casos que no puedes
+provocar a voluntad (límite al 95 %, contexto en rojo, PR con cambios pedidos):
+
+```bash
+~/dotfiles/claude/statusline-demo.sh
+```
 
 ## Uso diario
 
