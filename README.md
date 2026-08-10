@@ -26,12 +26,14 @@ El Python del sistema (`/usr/bin/python3`) no se toca nunca.
 ## Ficheros
 
 ```
-Brewfile            paquetes de Homebrew
-zsh/.zshrc          PATH + activación de mise
-git/.gitconfig      config de git (sin identidad)
+Brewfile              paquetes de Homebrew
+zsh/.zshrc            PATH + activación de mise
+git/.gitconfig        config de git (sin identidad)
 git/.gitignore_global
-mise/config.toml    versiones globales de runtimes
-install.sh          symlinks + instalación completa
+mise/config.toml      versiones globales de runtimes
+vscode/settings.json  ajustes del editor
+vscode/extensions.txt lista de extensiones
+install.sh            symlinks + instalación completa
 ```
 
 La identidad de git vive en `~/.gitconfig.local`, **fuera del repo**, para que
@@ -42,7 +44,10 @@ esto pueda ser público y cada máquina use su propio nombre/email.
 ```bash
 brew upgrade                  # actualiza todo lo del sistema
 mise upgrade                  # actualiza runtimes
-brew bundle dump --file=~/dotfiles/Brewfile --force   # tras instalar algo nuevo
+
+# Tras instalar algo nuevo, volcarlo al repo:
+brew bundle dump --file=~/dotfiles/Brewfile --force
+code --list-extensions > ~/dotfiles/vscode/extensions.txt
 ```
 
 Fijar versiones en un proyecto (crea `mise.toml`, versiónalo con el repo):

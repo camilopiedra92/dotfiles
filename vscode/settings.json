@@ -1,0 +1,72 @@
+{
+  // ---------- Editor ----------
+  "editor.formatOnSave": true,
+  "editor.bracketPairColorization.enabled": true,
+  "editor.linkedEditing": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+
+  // No preguntar al guardar ficheros nuevos fuera del workspace
+  "explorer.confirmDragAndDrop": false,
+
+  // ---------- Python ----------
+  // Ruff (de Astral, los mismos de uv): linter + formatter en un solo binario.
+  // Sustituye a black + isort + flake8 y es ~100x mas rapido.
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+  // "standard" avisa de errores de tipos reales sin el ruido de "strict"
+  "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.autoImportCompletions": true,
+  // El interprete lo resuelve mise segun el mise.toml de cada proyecto
+  "python.terminal.activateEnvironment": true,
+
+  // ---------- JavaScript / TypeScript ----------
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[html]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[markdown]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  // Usa la version de TypeScript del proyecto, no la que trae VS Code:
+  // evita que el editor y la CI reporten errores distintos
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "javascript.updateImportsOnFileMove.enabled": "always",
+
+  // ---------- Terminal ----------
+  // Hereda el PATH del shell, asi mise activa la version correcta por proyecto
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.inheritEnv": true,
+
+  // ---------- Git ----------
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  // Ya tienes pull.rebase=true en ~/.gitconfig; esto alinea la UI
+  "git.enableSmartCommit": true,
+
+  // ---------- Ruido ----------
+  "errorLens.enabledDiagnosticLevels": ["error", "warning"],
+  "workbench.startupEditor": "none",
+  "telemetry.telemetryLevel": "off",
+  "update.showReleaseNotes": false,
+  "files.exclude": {
+    "**/.venv": true,
+    "**/__pycache__": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true,
+    "**/node_modules": true
+  }
+}

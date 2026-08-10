@@ -36,6 +36,7 @@ link "$DOTFILES/zsh/.zshrc"             "$HOME/.zshrc"
 link "$DOTFILES/git/.gitconfig"         "$HOME/.gitconfig"
 link "$DOTFILES/git/.gitignore_global"  "$HOME/.gitignore_global"
 link "$DOTFILES/mise/config.toml"       "$HOME/.config/mise/config.toml"
+link "$DOTFILES/vscode/settings.json"   "$HOME/Library/Application Support/Code/User/settings.json"
 
 # --- 4. Identidad de git (no se versiona) ---
 if [ ! -f "$HOME/.gitconfig.local" ]; then
@@ -57,6 +58,16 @@ mise install
 if ! rustc --version >/dev/null 2>&1; then
   log "Instalando toolchain de Rust"
   /opt/homebrew/opt/rustup/bin/rustup default stable
+fi
+
+# --- 7. Extensiones de VS Code ---
+if command -v code >/dev/null 2>&1; then
+  log "Instalando extensiones de VS Code"
+  while IFS= read -r ext; do
+    [ -z "$ext" ] && continue
+    code --install-extension "$ext" --force >/dev/null 2>&1 \
+      && echo "    ✓ $ext" || echo "    ✗ $ext"
+  done < "$DOTFILES/vscode/extensions.txt"
 fi
 
 log "Listo. Abre una terminal nueva."

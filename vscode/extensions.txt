@@ -1,0 +1,10 @@
+charliermarsh.ruff
+dbaeumer.vscode-eslint
+editorconfig.editorconfig
+esbenp.prettier-vscode
+hverlin.mise-vscode
+ms-python.debugpy
+ms-python.python
+ms-python.vscode-pylance
+ms-python.vscode-python-envs
+usernamehw.errorlens
