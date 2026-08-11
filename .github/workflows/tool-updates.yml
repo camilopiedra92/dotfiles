@@ -36,10 +36,14 @@ jobs:
       # subject to that, and beats a personal access token on every axis that
       # matters here: scoped to this repo, an hour long, not tied to a human
       # account, revocable without touching anything else.
+      #
+      # client-id, not app-id: v3 deprecated the latter and warns on every run.
+      # They are different values — the client id is the Iv23... string on the
+      # app's settings page, not the numeric app id.
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: token
         with:
-          app-id: ${{ vars.BUMP_APP_ID }}
+          client-id: ${{ vars.BUMP_APP_CLIENT_ID }}
           private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
 
       - name: Bump the pins
