@@ -88,6 +88,25 @@ than reimplementing anything — checks written twice drift, and the moment CI a
 local disagree you stop trusting both. To bypass the hook once:
 `git commit --no-verify`.
 
+A check reports one of four things, and the last two are not the same:
+
+| | |
+|---|---|
+| `ok` / `FAIL` | it ran |
+| `skip` | the tool is missing, so nothing ran |
+| `n/a` | the check does not apply on this platform |
+
+`skip` is a hole in coverage, so under CI it is a failure — `./check.sh
+--strict` reproduces that locally. Without it a missing tool turns into a green
+run that verified less than you think, which is not hypothetical: both runners
+passed for a while without ever validating the Ghostty config. `n/a` is not a
+hole and never fails; the Ghostty config is macOS-only, so the Linux runner has
+nothing to assert.
+
+This is why CI installs pinned, checksummed copies of shellcheck, shfmt and
+Ghostty instead of trusting the runner image: strict mode means anything it
+fails to install stops the build rather than quietly shrinking it.
+
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
 disagree about what the code should look like.

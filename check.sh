@@ -6,7 +6,16 @@
 # stop trusting either one. CI installs what is missing and then calls this
 # file, so a green tick means exactly what a clean run here means.
 #
-# Usage:  ./check.sh
+# Usage:  ./check.sh [--strict]
+#
+# A skipped check is a hole in coverage, not a neutral outcome: the tool was
+# missing, nothing ran, and the run still ends green. That is not theoretical —
+# it is how this repo reported success on both runners while never once
+# validating the Ghostty config. Strict mode turns a skip into a failure, so
+# coverage cannot shrink without the run going red. It is on automatically
+# under CI, which is what makes CI's promise ("green here means a clean run
+# there") true by construction rather than by a list somebody remembers to
+# update.
 #
 # Every check here is a function invoked indirectly, by name, through check().
 # The linter cannot see that, and would report all of them as unused code, or
@@ -16,6 +25,20 @@
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+
+# Every CI system sets CI, so the strict path needs no wiring in the workflow
+# and cannot be forgotten there. --strict reproduces it locally, which is the
+# only way to test this behaviour without pushing.
+STRICT=0
+[ -n "${CI:-}" ] && STRICT=1
+case "${1:-}" in
+  "") ;;
+  --strict) STRICT=1 ;;
+  *)
+    echo "usage: ./check.sh [--strict]" >&2
+    exit 2
+    ;;
+esac
 
 # Report every failure in one run rather than dying on the first. When you are
 # about to commit, knowing there are three problems beats finding them one
@@ -40,7 +63,23 @@ check() {
   fi
 }
 
-skip() { printf '  %sskip%s %s %s(%s)%s\n' "$YELLOW" "$OFF" "$1" "$DIM" "$2" "$OFF"; }
+# A tool that belongs on this machine is missing, so the check never ran. On
+# your laptop that is a nudge to install it; under strict it is a failure,
+# because a check that did not run must never read the same as one that passed.
+skip() {
+  if [ "$STRICT" -eq 1 ]; then
+    printf '  %sFAIL%s %s %s(not installed: %s)%s\n' "$RED" "$OFF" "$1" "$DIM" "$2" "$OFF"
+    FAILED=1
+  else
+    printf '  %sskip%s %s %s(%s)%s\n' "$YELLOW" "$OFF" "$1" "$DIM" "$2" "$OFF"
+  fi
+}
+
+# The check does not apply on this platform at all, so there is nothing to
+# install and nothing to run. Deliberately not a skip: this is not a hole in
+# coverage, and strict mode must stay silent about it or it would push us into
+# installing things nobody needs just to keep a runner quiet.
+na() { printf '  %sn/a%s  %s %s(%s)%s\n' "$DIM" "$OFF" "$1" "$DIM" "$2" "$OFF"; }
 
 # ── Lint ─────────────────────────────────────────────────────────────────────
 printf '\n%sLint%s\n' "$DIM" "$OFF"
@@ -98,12 +137,20 @@ json.loads(s)
 # Ghostty validates its own config, so this catches an option renamed between
 # releases and not only a syntax error. It is the one config here with no
 # startup error to read: a bad key is dropped silently and you are left
-# wondering why the setting does nothing. Skipped where Ghostty is absent,
-# which is every Linux CI runner.
-if command -v ghostty > /dev/null 2>&1; then
-  check "ghostty" ghostty +validate-config --config-file=ghostty/config
+# wondering why the setting does nothing. It also resolves `theme`, so a
+# mistyped theme name fails here instead of at the next launch.
+#
+# macOS-only by a property of the config rather than of the tool: it is largely
+# macos-* options, and the Brewfile installs Ghostty as a cask. On Linux there
+# is nothing meaningful to assert, hence n/a and not a skip.
+if [ "$(uname -s)" = "Darwin" ]; then
+  if command -v ghostty > /dev/null 2>&1; then
+    check "ghostty" ghostty +validate-config --config-file=ghostty/config
+  else
+    skip "ghostty" "brew install --cask ghostty"
+  fi
 else
-  skip "ghostty" "macOS only"
+  na "ghostty" "config is macOS-only"
 fi
 
 # The repo is English-only by policy (claude/CLAUDE.md). The pattern is written
