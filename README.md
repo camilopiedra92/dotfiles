@@ -79,8 +79,9 @@ Font: the Ghostty config already sets one.
 ./check.sh
 ```
 
-Linting (shellcheck), formatting (shfmt), syntax for every config format here,
-the statuslines' behaviour, and that `install.sh` is still idempotent.
+Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint),
+syntax for every config format here, the statuslines' behaviour, and that
+`install.sh` is still idempotent.
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file on both Linux and macOS rather
@@ -114,10 +115,12 @@ disagree about what the code should look like.
 `githooks/pre-push` refuses any push that would rewrite or delete `main`,
 detected as a push whose remote tip is not an ancestor of what is being sent.
 It is defence in depth, not the real defence: it only covers clones that have
-it installed and `--no-verify` walks past it. The real one is a server-side
-ruleset, which this repo cannot have while it is private on a free plan.
-A deliberate rewrite is still possible, it just has to be deliberate:
-`git push --no-verify --force-with-lease`.
+it installed and `--no-verify` walks past it. The real one is the server-side
+ruleset described under [Changing something](#changing-something), which
+applies no matter who pushes or from where. The hook earns its place by failing
+on your machine instead of after a round trip, and by still being there if the
+ruleset is ever relaxed. A deliberate rewrite is still possible, it just has to
+be deliberate: `git push --no-verify --force-with-lease`.
 
 ## Changing something
 
