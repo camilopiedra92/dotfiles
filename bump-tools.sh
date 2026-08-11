@@ -129,12 +129,24 @@ for tool in $TOOLS; do
   }
   hash=$(shasum -a 256 "$file" | cut -d' ' -f1)
 
-  sed "s|^\([[:space:]]*$(var_of "$tool"):[[:space:]]*\).*|\1$(spelled "$tool" "$want")|" \
-    "$WORKFLOW" > "$tmp/workflow" && mv "$tmp/workflow" "$WORKFLOW"
+  # A substitution that matches nothing is not a no-op here, it is a pin moved
+  # with no checksum to go with it. That does surface — verify() in ci.yml
+  # refuses a file it has no line for — but as a failure in the pull request
+  # rather than in the thing that caused it. Insist on the match instead.
+  old_name=$(name_of "$tool" "$have")
+  awk -v old="$old_name" -v line="$hash  $(name_of "$tool" "$want")" \
+    '$2 == old { print line; found = 1; next } { print } END { exit !found }' \
+    "$CHECKSUMS" > "$tmp/checksums" || {
+    echo "$tool: $CHECKSUMS has no line for $old_name, so the pin and the hashes disagree already" >&2
+    exit 1
+  }
 
-  awk -v old="$(name_of "$tool" "$have")" -v line="$hash  $(name_of "$tool" "$want")" \
-    '$2 == old { print line; next } { print }' \
-    "$CHECKSUMS" > "$tmp/checksums" && mv "$tmp/checksums" "$CHECKSUMS"
+  # Both rewrites are staged and only then moved into place, so failing partway
+  # cannot leave a bumped pin behind with a stale hash beside it.
+  sed "s|^\([[:space:]]*$(var_of "$tool"):[[:space:]]*\).*|\1$(spelled "$tool" "$want")|" \
+    "$WORKFLOW" > "$tmp/workflow"
+  mv "$tmp/checksums" "$CHECKSUMS"
+  mv "$tmp/workflow" "$WORKFLOW"
 
   printf '  %s%s%s %s -> %s%s%s\n' "$BOLD" "$tool" "$OFF" "$have" "$GREEN" "$want" "$OFF"
   changed=1
