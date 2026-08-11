@@ -121,7 +121,7 @@ for p in $(seq 0 5 100); do
   raw=$(printf '{"model":{"display_name":"x"},"cwd":"/tmp","context_window":
         {"total_input_tokens":0,"context_window_size":1,"used_percentage":%d}}' "$p" | "$SL")
   clean=$(printf '%s' "$raw" | sed $'s/\033\\[[0-9;]*m//g')
-  gauge=${clean%% ${p}%*}          # trim from " NN%" to the end
+  gauge=${clean%% "${p}"%*}        # trim from " NN%" to the end
   printf '  %3d%%  %s\n' "$p" "${gauge: -8}"
 done
 printf '\n'
