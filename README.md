@@ -44,6 +44,7 @@ claude/statusline-demo.sh       renders both with sample cases
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
 githooks/pre-commit    runs check.sh before each commit
+githooks/pre-push      refuses to rewrite or delete main
 .editorconfig          formatting, read by shfmt and by the editor
 ```
 
@@ -90,6 +91,14 @@ local disagree you stop trusting both. To bypass the hook once:
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
 disagree about what the code should look like.
+
+`githooks/pre-push` refuses any push that would rewrite or delete `main`,
+detected as a push whose remote tip is not an ancestor of what is being sent.
+It is defence in depth, not the real defence: it only covers clones that have
+it installed and `--no-verify` walks past it. The real one is a server-side
+ruleset, which this repo cannot have while it is private on a free plan.
+A deliberate rewrite is still possible, it just has to be deliberate:
+`git push --no-verify --force-with-lease`.
 
 ## Daily use
 

@@ -1,0 +1,15 @@
+# Pinning actions to a commit SHA is what stops a moved tag from silently
+# changing what runs in CI. The cost is that a pinned SHA never picks up
+# security fixes on its own, so pinning without something to renew it just
+# trades one risk for another. This is that something: Dependabot opens a PR
+# when a pinned action moves, and updates the trailing version comment with it.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      # Matches the style of the rest of the history: a plain imperative
+      # subject, no conventional-commits prefixes.
+      prefix: ""

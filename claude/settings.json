@@ -23,6 +23,10 @@
       "Read(**/.ssh/**)",
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git push -f:*)",
+      "Bash(git filter-branch:*)",
+      "Bash(git filter-repo:*)",
       "Bash(git reset --hard:*)"
     ]
   },

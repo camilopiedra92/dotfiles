@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Refuses to rewrite or delete the default branch.
+#
+# This is defence in depth, not the real defence. The real one is a server-side
+# ruleset, which rejects the push no matter who runs it or from what machine;
+# this hook only covers pushes made from a clone that has it installed, and
+# `--no-verify` walks straight past it. It is here because it is strictly
+# better than nothing, not because it replaces the server.
+#
+# A force push is not detected by looking for a flag — git does not tell the
+# hook which flags were used. It is detected by what a force push actually is:
+# a push whose remote tip is not an ancestor of what you are sending, meaning
+# commits that exist on the remote would stop existing.
+#
+# Deliberate rewrites are still possible, they just have to be deliberate:
+#   git push --no-verify --force-with-lease
+set -uo pipefail
+
+protected=$(git symbolic-ref --short refs/remotes/origin/HEAD 2> /dev/null | sed 's|^origin/||')
+protected=${protected:-main}
+zero=$(git hash-object --stdin < /dev/null | tr '[:xdigit:]' '0')
+
+status=0
+while read -r _local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/$protected" ] || continue
+
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: refusing to delete $protected." >&2
+    status=1
+    continue
+  fi
+
+  # Nothing on the remote yet: any push is trivially fast-forward.
+  [ "$remote_sha" = "$zero" ] && continue
+
+  if ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2> /dev/null; then
+    echo "pre-push: refusing to force-push $protected." >&2
+    echo "  $remote_sha is not an ancestor of $local_sha," >&2
+    echo "  so commits currently on the remote would be discarded." >&2
+    status=1
+  fi
+done
+
+if [ "$status" -ne 0 ]; then
+  echo "  Intentional? git push --no-verify --force-with-lease" >&2
+fi
+exit "$status"

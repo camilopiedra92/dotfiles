@@ -15,11 +15,23 @@ indent_size = 2
 
 # Two spaces and spaces-not-tabs is the Google Shell Style Guide, which is the
 # closest thing shell has to a universal convention.
+#
+# The shfmt-specific keys below are ignored by editors that do not know them:
+# indent switch cases, and put a space after a redirect operator.
 [*.sh]
 indent_style = space
 indent_size = 2
-# shfmt-specific keys, ignored by editors that do not know them:
-# indent switch cases, and put a space after a redirect operator.
+switch_case_indent = true
+space_redirects = true
+
+# git hooks are shell too, but cannot carry a .sh extension: git executes them
+# by their exact name. This has to be a section of its own rather than joining
+# the one above, because an EditorConfig pattern containing a slash is matched
+# relative to this file — folding them together would silently stop *.sh from
+# covering claude/*.sh.
+[githooks/*]
+indent_style = space
+indent_size = 2
 switch_case_indent = true
 space_redirects = true
 
