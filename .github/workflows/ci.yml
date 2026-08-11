@@ -36,26 +36,58 @@ jobs:
       # different code, a SHA cannot.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # check.sh skips gracefully when a tool is absent, which would quietly
-      # turn CI green without linting anything. Installing them here is what
-      # makes the run meaningful.
+      # Both tools are downloaded at a pinned version instead of taken from the
+      # runner's package manager. A linter is only useful if it says the same
+      # thing everywhere: the preinstalled shellcheck on Ubuntu and the one brew
+      # gives macOS are different releases, and they already disagreed here
+      # about which code an unused function gets. Pinning also keeps the run
+      # independent of the runner image's state — brew warns about untrusted
+      # taps it ships with, which is noise this job has no business inheriting.
+      #
+      # These versions match what the Brewfile installs locally, so CI and your
+      # machine run the same binaries. Bump both together.
       - name: Install tools
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+          SHFMT_VERSION: v3.13.1
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get install -y --no-install-recommends zsh
-            # shellcheck ships on the runner; shfmt does not.
-            curl -fsSL https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_linux_amd64 -o /usr/local/bin/shfmt
-            chmod +x /usr/local/bin/shfmt
-          else
-            brew install shellcheck shfmt
-          fi
+          case "$RUNNER_OS" in
+            Linux)
+              sc_os=linux; fmt_os=linux
+              # macOS ships zsh; Debian does not.
+              sudo apt-get install -y --no-install-recommends zsh
+              ;;
+            macOS) sc_os=darwin; fmt_os=darwin ;;
+            *) echo "::error::unsupported runner: $RUNNER_OS"; exit 1 ;;
+          esac
+          case "$RUNNER_ARCH" in
+            X64)   sc_arch=x86_64;  fmt_arch=amd64 ;;
+            ARM64) sc_arch=aarch64; fmt_arch=arm64 ;;
+            *) echo "::error::unsupported arch: $RUNNER_ARCH"; exit 1 ;;
+          esac
 
-      # Fail loudly if a tool is still missing, rather than letting check.sh
-      # skip it and report success.
-      - name: Tools are present
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.${sc_os}.${sc_arch}.tar.xz" \
+            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+
+          curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_${fmt_os}_${fmt_arch}" \
+            -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
+
+      # check.sh skips a tool it cannot find, which would turn this job green
+      # without having linted anything. Assert the tools are present, and that
+      # they are the versions asked for rather than something already on PATH.
+      - name: Tools are the pinned versions
         run: |
           for t in shellcheck shfmt zsh jq python3; do
             command -v "$t" > /dev/null || { echo "::error::$t missing"; exit 1; }
           done
+          shellcheck --version | grep -qx "version: 0.11.0" || {
+            echo "::error::unexpected shellcheck: $(shellcheck --version | tr '\n' ' ')"
+            exit 1
+          }
+          [ "$(shfmt --version)" = "v3.13.1" ] || {
+            echo "::error::unexpected shfmt: $(shfmt --version)"
+            exit 1
+          }
 
       - run: ./check.sh
