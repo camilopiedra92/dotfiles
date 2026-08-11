@@ -42,6 +42,9 @@ claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
 install.sh             symlinks + full installation
+check.sh               every check, run by you, the hook and CI
+githooks/pre-commit    runs check.sh before each commit
+.editorconfig          formatting, read by shfmt and by the editor
 ```
 
 `~/.zsh_plugins.zsh` is **generated**, not versioned: antidote regenerates it
@@ -68,6 +71,25 @@ powerline style, and gauges below (context, 5h and 7d limits, cost) on a clean
 background, so color keeps working as an alarm. `STYLE` and `LINES`, at the top
 of the script, switch to `minimal` and to a single line. Both require a Nerd
 Font: the Ghostty config already sets one.
+
+## Checks
+
+```bash
+./check.sh
+```
+
+Linting (shellcheck), formatting (shfmt), syntax for every config format here,
+the statuslines' behaviour, and that `install.sh` is still idempotent.
+
+One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
+before every commit, and CI runs that same file on both Linux and macOS rather
+than reimplementing anything — checks written twice drift, and the moment CI and
+local disagree you stop trusting both. To bypass the hook once:
+`git commit --no-verify`.
+
+Formatting is defined in `.editorconfig`, which shfmt parses natively and the
+EditorConfig extension applies in VS Code, so the editor and the hook cannot
+disagree about what the code should look like.
 
 ## Daily use
 

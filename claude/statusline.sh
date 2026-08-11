@@ -35,15 +35,15 @@ set -uo pipefail
 # ── Settings ─────────────────────────────────────────────────────────────────
 # Read from the environment when present, so statusline-demo.sh can render the
 # variants without touching this file.
-STYLE=${STYLE:-powerline}   # powerline | minimal  (look of the identity line)
-LINES=${LINES:-2}           # 2 | 1                (1 = all together, short terminals)
+STYLE=${STYLE:-powerline} # powerline | minimal  (look of the identity line)
+LINES=${LINES:-2}         # 2 | 1                (1 = all together, short terminals)
 
 # Counting untracked files toward the "dirty" marker forces git to walk the
 # whole tree, which is the expensive part in large repos. Set it to `normal` if
 # you would rather see them and your repos are small.
 GIT_UNTRACKED=no
 
-MAX_BRANCH=22   # characters before truncating
+MAX_BRANCH=22 # characters before truncating
 MAX_PATH=30
 
 # --- A single jq for everything coming from the JSON -------------------------
@@ -60,7 +60,7 @@ MAX_PATH=30
 # process substitution: that saves us a `cat` and a temporary file.
 IFS=$'\037' read -r MODEL EFFORT CWD PROJDIR CTX_PCT CTX_IN CTX_MAX \
   H5_PCT H5_RESET D7_PCT D7_RESET COST WORKTREE PR_NUM PR_STATE < <(
-  jq -r '[
+    jq -r '[
     .model.display_name // "?",
     .effort.level // "",
     .workspace.current_dir // .cwd // "",
@@ -76,10 +76,10 @@ IFS=$'\037' read -r MODEL EFFORT CWD PROJDIR CTX_PCT CTX_IN CTX_MAX \
     .worktree.name // "",
     .pr.number // 0,
     .pr.review_state // ""
-  ] | map(tostring) | join("\u001f")' 2>/dev/null
-)
+  ] | map(tostring) | join("\u001f")' 2> /dev/null
+  )
 
-[ -n "${MODEL:-}" ] || exit 0   # jq failed or empty JSON: better nothing than junk
+[ -n "${MODEL:-}" ] || exit 0 # jq failed or empty JSON: better nothing than junk
 
 # --- Palette -----------------------------------------------------------------
 # Mind the reset: this NEVER emits \033[0m. Claude renders the statusline
@@ -89,9 +89,12 @@ IFS=$'\037' read -r MODEL EFFORT CWD PROJDIR CTX_PCT CTX_IN CTX_MAX \
 # foreground and \033[49m the background, neither touches bold or dim, so they
 # compose with whatever Claude wraps around us. For the same reason there is no
 # bold: emphasis comes from color, which is reversible without side effects.
-FG=$'\033[39m'; BG=$'\033[49m'
+FG=$'\033[39m'
+BG=$'\033[49m'
 DIM=$'\033[90m'
-GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+RED=$'\033[31m'
 
 # Powerline separators. They need a Nerd Font (here, JetBrainsMono Nerd Font)
 # and are written as literal characters because bash 3.2 does not expand \u
@@ -104,7 +107,7 @@ GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'
 PL=''
 PL_THIN=''
 
-printf -v NOW '%(%s)T' -1 2>/dev/null || NOW=$(date +%s)
+printf -v NOW '%(%s)T' -1 2> /dev/null || NOW=$(date +%s)
 
 # --- Helpers -----------------------------------------------------------------
 # The formatting functions leave their result in a global instead of echoing
@@ -113,19 +116,25 @@ printf -v NOW '%(%s)T' -1 2>/dev/null || NOW=$(date +%s)
 # Green below 60, amber from there, red from 80: red must show up with enough
 # margin to react (compact, open a new session), not once you have already run
 # out of room.
-level() { local p=${1%%.*}
-  if   [ "$p" -ge 80 ]; then C=$RED
-  elif [ "$p" -ge 60 ]; then C=$YELLOW
-  else                       C=$GREEN; fi; }
+level() {
+  local p=${1%%.*}
+  if [ "$p" -ge 80 ]; then
+    C=$RED
+  elif [ "$p" -ge 60 ]; then
+    C=$YELLOW
+  else C=$GREEN; fi
+}
 
 # An 8-cell bar with eighth-of-a-cell resolution: the partial blocks
 # (▏▎▍▌▋▊▉) give 64 steps in the same width that whole cells would give 8, so
 # the bar actually moves instead of jumping 12 percent at a time.
 bar() {
   local p=${1%%.*} w=8 e full rem i
-  [ "$p" -lt 0 ] && p=0; [ "$p" -gt 100 ] && p=100
-  e=$(( p * w * 8 / 100 ))          # filled eighths
-  full=$(( e / 8 )); rem=$(( e % 8 ))
+  [ "$p" -lt 0 ] && p=0
+  [ "$p" -gt 100 ] && p=100
+  e=$((p * w * 8 / 100)) # filled eighths
+  full=$((e / 8))
+  rem=$((e % 8))
   BAR=""
   for ((i = 0; i < full; i++)); do BAR+="█"; done
   if [ "$full" -lt "$w" ]; then
@@ -140,12 +149,16 @@ bar() {
 # How long until the limit resets. Deliberately coarse units: knowing whether
 # it is "2h" or "3d" changes what you do; the exact minutes do not.
 until_reset() {
-  local t=${1%%.*} d; REL=""
-  [ "$t" -gt 0 ] 2>/dev/null || return
-  d=$(( t - NOW )); [ "$d" -lt 0 ] && d=0
-  if   [ "$d" -ge 86400 ]; then REL="$(( d / 86400 ))d"
-  elif [ "$d" -ge 3600  ]; then REL="$(( d / 3600  ))h"
-  else                          REL="$(( d / 60    ))m"; fi
+  local t=${1%%.*} d
+  REL=""
+  [ "$t" -gt 0 ] 2> /dev/null || return
+  d=$((t - NOW))
+  [ "$d" -lt 0 ] && d=0
+  if [ "$d" -ge 86400 ]; then
+    REL="$((d / 86400))d"
+  elif [ "$d" -ge 3600 ]; then
+    REL="$((d / 3600))h"
+  else REL="$((d / 60))m"; fi
 }
 
 # What really decides whether you stop or carry on is not the percentage
@@ -157,32 +170,42 @@ until_reset() {
 burn() {
   local pct=${1%%.*} reset=${2%%.*} window=$3 elapsed
   BURN=""
-  [ "$reset" -gt 0 ] 2>/dev/null || return
-  elapsed=$(( NOW - (reset - window) ))
+  [ "$reset" -gt 0 ] 2> /dev/null || return
+  elapsed=$((NOW - (reset - window)))
   # Early in the window any projection is noise: at 3% of the period elapsed,
   # a single message already extrapolates to "you will burn through it".
-  [ "$elapsed" -gt $(( window / 10 )) ] || return
-  [ $(( pct * window / elapsed )) -gt 100 ] && BURN="⚡"
+  [ "$elapsed" -gt $((window / 10)) ] || return
+  [ $((pct * window / elapsed)) -gt 100 ] && BURN="⚡"
 }
 
 # With the 1M window, "1000k" reads badly exactly when there are the most
 # digits on screen. From a million on we switch to M with one decimal, and
 # without the decimal when it is exact: 1M, 1.3M.
-k() { local n=${1%%.*} whole tenth
+k() {
+  local n=${1%%.*} whole tenth
   if [ "$n" -ge 1000000 ]; then
-    whole=$(( n / 1000000 )); tenth=$(( (n % 1000000) / 100000 ))
+    whole=$((n / 1000000))
+    tenth=$(((n % 1000000) / 100000))
     if [ "$tenth" -eq 0 ]; then K="${whole}M"; else K="${whole}.${tenth}M"; fi
-  elif [ "$n" -ge 1000 ]; then K="$(( n / 1000 ))k"
-  else K="$n"; fi; }
+  elif [ "$n" -ge 1000 ]; then
+    K="$((n / 1000))k"
+  else K="$n"; fi
+}
 
 # ── Line 1: identity ─────────────────────────────────────────────────────────
 # Segments are accumulated first and painted afterwards, because powerline
 # needs to know the next segment's color to draw the separator (the triangle
 # takes the previous background as foreground and the next one as background;
 # that splice is what keeps the seam invisible).
-S_BG=(); S_ACC=(); S_INK=(); S_TXT=()
-seg() {   # seg <background code> <same color as text> <ink on top> <content>
-  S_BG+=("$1"); S_ACC+=("$2"); S_INK+=("$3"); S_TXT+=("$4")
+S_BG=()
+S_ACC=()
+S_INK=()
+S_TXT=()
+seg() { # seg <background code> <same color as text> <ink on top> <content>
+  S_BG+=("$1")
+  S_ACC+=("$2")
+  S_INK+=("$3")
+  S_TXT+=("$4")
 }
 
 # --- Model and effort ---
@@ -200,7 +223,7 @@ else
   LOC="${CWD##*/}"
 fi
 # Trimmed from the left: in a long path what locates you is the tail.
-[ ${#LOC} -gt $MAX_PATH ] && LOC="…${LOC: -$(( MAX_PATH - 1 ))}"
+[ ${#LOC} -gt $MAX_PATH ] && LOC="…${LOC: -$((MAX_PATH - 1))}"
 seg 44 34 30 " ${LOC}"
 
 # --- Git ---
@@ -208,29 +231,33 @@ seg 44 34 30 " ${LOC}"
 # parsed with bash `case`, no sed or grep: two forks we do not need.
 # --no-optional-locks keeps this script from writing into .git and fighting the
 # git you run by hand.
-BRANCH=""; OID=""; AB=""; DIRTY=0
+BRANCH=""
+OID=""
+AB=""
+DIRTY=0
 while IFS= read -r line; do
   case $line in
     '# branch.head '*) BRANCH=${line#'# branch.head '} ;;
-    '# branch.oid '*)  OID=${line#'# branch.oid '} ;;
-    '# branch.ab '*)   AB=${line#'# branch.ab '} ;;
-    [12u?]*)           DIRTY=1 ;;
+    '# branch.oid '*) OID=${line#'# branch.oid '} ;;
+    '# branch.ab '*) AB=${line#'# branch.ab '} ;;
+    [12u?]*) DIRTY=1 ;;
   esac
 done < <(git --no-optional-locks status --porcelain=v2 --branch \
-           "--untracked-files=$GIT_UNTRACKED" 2>/dev/null)
+  "--untracked-files=$GIT_UNTRACKED" 2> /dev/null)
 
 # On detached HEAD git reports "(detached)" as the branch; the short hash says more.
 [ "$BRANCH" = "(detached)" ] && BRANCH=${OID:0:7}
 
 if [ -n "$BRANCH" ]; then
   # Branches with a ticket prefix run to 40 characters without breaking a sweat.
-  [ ${#BRANCH} -gt $MAX_BRANCH ] && BRANCH="${BRANCH:0:$(( MAX_BRANCH - 1 ))}…"
+  [ ${#BRANCH} -gt $MAX_BRANCH ] && BRANCH="${BRANCH:0:$((MAX_BRANCH - 1))}…"
   body=" ${BRANCH}"
   [ "$DIRTY" = 1 ] && body+="*"
   # Commits of difference with the remote: the one bit of git state that tends
   # to surprise you mid-session.
   if [ -n "$AB" ]; then
-    ahead=${AB%% *}; behind=${AB##* }
+    ahead=${AB%% *}
+    behind=${AB##* }
     [ "$ahead" != "+0" ] && body+=" ⇡${ahead#+}"
     [ "$behind" != "-0" ] && body+=" ⇣${behind#-}"
   fi
@@ -245,9 +272,9 @@ fi
 # without switching windows.
 if [ "$PR_NUM" != "0" ]; then
   case $PR_STATE in
-    approved)          seg 42 32 30 " #${PR_NUM}" ;;
+    approved) seg 42 32 30 " #${PR_NUM}" ;;
     changes_requested) seg 41 31 30 " #${PR_NUM}" ;;
-    *)                 seg 100 90 37 " #${PR_NUM}" ;;
+    *) seg 100 90 37 " #${PR_NUM}" ;;
   esac
 fi
 
@@ -259,7 +286,7 @@ if [ "$STYLE" = powerline ]; then
     L1+=$'\033['"${S_BG[$i]};${S_INK[$i]}m ${S_TXT[$i]} "
     # The separator inherits the next segment's background; on the last one it
     # returns to the default background, which is what gives it a clean right edge.
-    if [ $(( i + 1 )) -lt "$n" ]; then
+    if [ $((i + 1)) -lt "$n" ]; then
       if [ "${S_BG[$i]}" = "${S_BG[$((i + 1))]}" ]; then
         L1+=$'\033['"${S_INK[$i]}m${PL_THIN}"
       else
@@ -278,15 +305,21 @@ fi
 
 # ── Line 2: gauges ───────────────────────────────────────────────────────────
 L2=""
-add() { [ -n "$L2" ] && L2+="${DIM} · ${FG}"; L2+="$1"; }
+add() {
+  [ -n "$L2" ] && L2+="${DIM} · ${FG}"
+  L2+="$1"
+}
 
 # --- Context ---
 # The most actionable of all: when this hits red it is time for /compact or a
 # new session, before Claude starts forgetting the beginning.
-if [ "${CTX_PCT%%.*}" -ge 0 ] 2>/dev/null; then
-  level "$CTX_PCT"; bar "$CTX_PCT"
-  k "$CTX_IN"; used=$K
-  k "$CTX_MAX"; total=$K
+if [ "${CTX_PCT%%.*}" -ge 0 ] 2> /dev/null; then
+  level "$CTX_PCT"
+  bar "$CTX_PCT"
+  k "$CTX_IN"
+  used=$K
+  k "$CTX_MAX"
+  total=$K
   add "${DIM}ctx ${FG}${C}${BAR} ${CTX_PCT%%.*}%${FG}${DIM} ${used}/${total}${FG}"
 fi
 
@@ -295,8 +328,10 @@ fi
 # headers, so at the start of a session they are not there yet.
 limit() {
   local label=$1 pct=$2 reset=$3 window=$4 s
-  [ "${pct%%.*}" -ge 0 ] 2>/dev/null || return
-  level "$pct"; until_reset "$reset"; burn "$pct" "$reset" "$window"
+  [ "${pct%%.*}" -ge 0 ] 2> /dev/null || return
+  level "$pct"
+  until_reset "$reset"
+  burn "$pct" "$reset" "$window"
   printf -v s '%s%s %s%s%.0f%%%s' "$DIM" "$label" "$FG" "$C" "$pct" "$FG"
   [ -n "$BURN" ] && s+="${YELLOW}${BURN}${FG}"
   [ -n "$REL" ] && s+="${DIM}↻${REL}${FG}"
@@ -316,7 +351,8 @@ if [ "$LINES" = 2 ] && [ -n "$L2" ]; then
 elif [ -n "$L2" ]; then
   # On a single line powerline already closes with its triangle and adding a
   # dot behind it looks like dirt; in minimal the separator is needed.
-  if [ "$STYLE" = powerline ]; then printf '%s %s' "$L1" "$L2"
+  if [ "$STYLE" = powerline ]; then
+    printf '%s %s' "$L1" "$L2"
   else printf '%s%s · %s%s' "$L1" "$DIM" "$FG" "$L2"; fi
 else
   printf '%s' "$L1"

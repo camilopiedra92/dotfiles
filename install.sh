@@ -8,7 +8,7 @@ DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 log() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 
 # --- 1. Homebrew ---
-if ! command -v brew >/dev/null 2>&1; then
+if ! command -v brew > /dev/null 2>&1; then
   log "Installing Homebrew (it will ask for your password)"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
@@ -32,17 +32,17 @@ link() {
   echo "    $dest -> $src"
 }
 
-link "$DOTFILES/zsh/.zshrc"             "$HOME/.zshrc"
-link "$DOTFILES/zsh/.zsh_plugins.txt"   "$HOME/.zsh_plugins.txt"
-link "$DOTFILES/git/.gitconfig"         "$HOME/.gitconfig"
-link "$DOTFILES/git/.gitignore_global"  "$HOME/.gitignore_global"
-link "$DOTFILES/mise/config.toml"       "$HOME/.config/mise/config.toml"
-link "$DOTFILES/vscode/settings.json"   "$HOME/Library/Application Support/Code/User/settings.json"
-link "$DOTFILES/ghostty/config"         "$HOME/.config/ghostty/config"
-link "$DOTFILES/starship.toml"          "$HOME/.config/starship.toml"
-link "$DOTFILES/claude/statusline.sh"          "$HOME/.claude/statusline.sh"
+link "$DOTFILES/zsh/.zshrc" "$HOME/.zshrc"
+link "$DOTFILES/zsh/.zsh_plugins.txt" "$HOME/.zsh_plugins.txt"
+link "$DOTFILES/git/.gitconfig" "$HOME/.gitconfig"
+link "$DOTFILES/git/.gitignore_global" "$HOME/.gitignore_global"
+link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
+link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
+link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
+link "$DOTFILES/starship.toml" "$HOME/.config/starship.toml"
+link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
-link "$DOTFILES/claude/CLAUDE.md"              "$HOME/.claude/CLAUDE.md"
+link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
 # --- 3b. Claude Code settings ---
 # settings.json is not symlinked: Claude Code rewrites it on its own (the
@@ -63,15 +63,22 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
 jq -s '.[0] * .[1]' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
-    > "$CLAUDE_SETTINGS.tmp" \
-  && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
+  > "$CLAUDE_SETTINGS.tmp" &&
+  mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
+
+# --- 3c. Pre-commit hook ---
+# core.hooksPath points git at a directory inside the repo, so the hook is
+# versioned and arrives with a clone. Hooks dropped in .git/hooks are not: they
+# only ever protect the machine they were written on.
+log "Enabling the pre-commit hook"
+git -C "$DOTFILES" config core.hooksPath githooks
 
 # --- 4. Git identity (not versioned) ---
 if [ ! -f "$HOME/.gitconfig.local" ]; then
   log "Your git identity is missing. Creating ~/.gitconfig.local"
   read -rp "    Name for commits:  " GIT_NAME
   read -rp "    Email for commits: " GIT_EMAIL
-  cat > "$HOME/.gitconfig.local" <<EOF
+  cat > "$HOME/.gitconfig.local" << EOF
 [user]
 	name = $GIT_NAME
 	email = $GIT_EMAIL
@@ -83,7 +90,7 @@ log "Installing runtimes with mise"
 mise install
 
 # --- 6. Rust ---
-if ! rustc --version >/dev/null 2>&1; then
+if ! rustc --version > /dev/null 2>&1; then
   log "Installing the Rust toolchain"
   /opt/homebrew/opt/rustup/bin/rustup default stable
 fi

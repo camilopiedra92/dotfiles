@@ -1,0 +1,36 @@
+# One definition of formatting, read by everything that touches these files:
+# shfmt (which parses .editorconfig natively when no flags override it), VS Code
+# through the EditorConfig extension already in the Brewfile, and any editor
+# anyone else opens the repo with. Encoding it here rather than in tool flags is
+# what keeps the editor and the pre-commit hook from disagreeing.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Two spaces and spaces-not-tabs is the Google Shell Style Guide, which is the
+# closest thing shell has to a universal convention.
+[*.sh]
+indent_style = space
+indent_size = 2
+# shfmt-specific keys, ignored by editors that do not know them:
+# indent switch cases, and put a space after a redirect operator.
+switch_case_indent = true
+space_redirects = true
+
+# Tabs are syntax here, not style: git's config parser and Make both require
+# them, so an editor that "helpfully" converts them breaks the file.
+[{.gitconfig,*.gitconfig}]
+indent_style = tab
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+# Two trailing spaces are a hard line break in Markdown.
+trim_trailing_whitespace = false

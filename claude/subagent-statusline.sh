@@ -105,4 +105,4 @@ jq -c -r '
     ]
   | join(" ")
   | { id: $t.id, content: . }
-' 2>/dev/null || exit 0
+' 2> /dev/null || exit 0

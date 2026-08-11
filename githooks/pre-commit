@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Runs the repo's checks before every commit.
+#
+# Lives in githooks/ rather than .git/hooks/ because the latter is not
+# versioned: a hook nobody else receives is a hook that only protects the
+# machine it was written on. install.sh points core.hooksPath here.
+#
+# Escape hatch:  git commit --no-verify
+set -uo pipefail
+
+repo=$(git rev-parse --show-toplevel)
+
+if ! "$repo/check.sh"; then
+  echo "Commit aborted. Fix the above, or bypass with: git commit --no-verify" >&2
+  exit 1
+fi

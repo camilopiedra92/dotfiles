@@ -17,10 +17,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SL="$HERE/statusline.sh"
 SUB="$HERE/subagent-statusline.sh"
 NOW=$(date +%s)
-NOW_MS=$(( NOW * 1000 ))
+NOW_MS=$((NOW * 1000))
 
 title() { printf '\n\033[1;34m══ %s\033[0m\n\n' "$1"; }
-show()  { printf '\033[90m%s\033[39m\n' "$1"; "$SL" <<<"$2"; printf '\n\n'; }
+show() {
+  printf '\033[90m%s\033[39m\n' "$1"
+  "$SL" <<< "$2"
+  printf '\n\n'
+}
 
 # Payloads reused across both style variants.
 P_NORMAL="{
@@ -86,16 +90,22 @@ show "1M context window" "{
 
 title "the other variants (STYLE and LINES in the script)"
 
-printf '\033[90mSTYLE=minimal\033[39m\n'; STYLE=minimal "$SL" <<<"$P_NORMAL"; printf '\n\n'
-printf '\033[90mLINES=1 STYLE=powerline\033[39m\n'; LINES=1 "$SL" <<<"$P_NORMAL"; printf '\n\n'
-printf '\033[90mLINES=1 STYLE=minimal\033[39m\n'; LINES=1 STYLE=minimal "$SL" <<<"$P_NORMAL"; printf '\n\n'
+printf '\033[90mSTYLE=minimal\033[39m\n'
+STYLE=minimal "$SL" <<< "$P_NORMAL"
+printf '\n\n'
+printf '\033[90mLINES=1 STYLE=powerline\033[39m\n'
+LINES=1 "$SL" <<< "$P_NORMAL"
+printf '\n\n'
+printf '\033[90mLINES=1 STYLE=minimal\033[39m\n'
+LINES=1 STYLE=minimal "$SL" <<< "$P_NORMAL"
+printf '\n\n'
 
 title "per-subagent statusline (agent panel)"
 
 # This script spits out JSONL, which is what Claude consumes. To see it as it
 # will look on screen we extract the content field and let the terminal
 # interpret the escapes, which is exactly what the pipe below does.
-"$SUB" <<EOF | jq -r '"  \(.id)  \(.content)"'
+"$SUB" << EOF | jq -r '"  \(.id)  \(.content)"'
 {"columns":80,"tasks":[
  {"id":"explore  ","name":"brisk-otter","label":"Explore auth","status":"running","startTime":$((NOW_MS - 134000)),
   "model":"claude-opus-5","effort":"high","contextWindowSize":200000,"tokenCount":18400,
@@ -121,7 +131,7 @@ for p in $(seq 0 5 100); do
   raw=$(printf '{"model":{"display_name":"x"},"cwd":"/tmp","context_window":
         {"total_input_tokens":0,"context_window_size":1,"used_percentage":%d}}' "$p" | "$SL")
   clean=$(printf '%s' "$raw" | sed $'s/\033\\[[0-9;]*m//g')
-  gauge=${clean%% "${p}"%*}        # trim from " NN%" to the end
+  gauge=${clean%% "${p}"%*} # trim from " NN%" to the end
   printf '  %3d%%  %s\n' "$p" "${gauge: -8}"
 done
 printf '\n'

@@ -16,6 +16,10 @@ brew "jq"
 brew "mise"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
+# Shell script analysis tool
+brew "shellcheck"
+# Autoformat shell script source code
+brew "shfmt"
 # Rust toolchain installer
 brew "rustup"
 # Cross-shell prompt for astronauts
