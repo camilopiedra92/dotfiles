@@ -9,8 +9,10 @@
 # Usage:  ./check.sh
 #
 # Every check here is a function invoked indirectly, by name, through check().
-# The linter cannot see that, and would report all of them as unused code.
-# shellcheck disable=SC2329
+# The linter cannot see that, and would report all of them as unused code, or
+# their bodies as unreachable. Both codes are listed because which one you get
+# depends on the shellcheck version: 0.11 reports SC2329, older ones SC2317.
+# shellcheck disable=SC2329,SC2317
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
@@ -182,6 +184,9 @@ printf '\n%sInstall%s\n' "$DIM" "$OFF"
 install_is_idempotent() {
   local tmp steps
   tmp=$(mktemp -d) || return 1
+  # Clean up on every exit path. Previously this ran only at the end, so each
+  # failed check left a directory behind.
+  trap 'rm -rf "$tmp"' RETURN
   steps="$tmp/steps.sh"
 
   # Only the symlink and jq-merge steps are exercised: installing Homebrew
@@ -235,7 +240,6 @@ assert s['subagentStatusLine']['command'], s
     return 1
   fi
 
-  rm -rf "$tmp"
 }
 check "install.sh is idempotent" install_is_idempotent
 
