@@ -113,11 +113,11 @@ jobs:
             gt_file="ghostty-${GHOSTTY_VERSION}-macos-universal.zip"
             curl -fsSL "https://release.files.ghostty.org/${GHOSTTY_VERSION}/ghostty-macos-universal.zip" -o "$gt_file"
             verify "$gt_file" "$gt_file"
-            # unzip -d creates the leaf directory but not its parents, and the
-            # runner image has no /usr/local/lib.
-            mkdir -p /usr/local/lib/ghostty
-            unzip -q "$gt_file" -d /usr/local/lib/ghostty
-            ln -sf /usr/local/lib/ghostty/Ghostty.app/Contents/MacOS/ghostty /usr/local/bin/ghostty
+            # The bundle goes in the job's temp directory: /usr/local/bin is
+            # writable on this image but /usr/local itself is not, and none of
+            # this warrants sudo. Only the symlink needs to be on PATH.
+            unzip -q "$gt_file" -d "$RUNNER_TEMP/ghostty"
+            ln -sf "$RUNNER_TEMP/ghostty/Ghostty.app/Contents/MacOS/ghostty" /usr/local/bin/ghostty
           fi
 
       # Presence used to be asserted here, with a hand-written list of tool
