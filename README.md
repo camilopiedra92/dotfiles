@@ -86,8 +86,9 @@ Font: the Ghostty config already sets one.
 ```
 
 Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint),
-syntax for every config format here, the statuslines' behaviour, and that
-`install.sh` is still idempotent.
+syntax for every config format here, the statuslines' behaviour, that the tools
+you have installed are the versions `ci.yml` pins, and that `install.sh` is
+still idempotent.
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
@@ -103,6 +104,13 @@ hypothetical: CI passed for a while without ever validating the Ghostty config.
 This is why CI installs pinned, checksummed copies of shellcheck, shfmt,
 actionlint and Ghostty instead of trusting the runner image: strict mode means
 anything it fails to install stops the build rather than quietly shrinking it.
+
+Those pins only mean something while your machine agrees with them, and the
+Brewfile installs whatever is current — Ghostty updates itself outright. So the
+versions you have are checked against the ones `ci.yml` pins, and a drift fails
+here rather than turning into a CI failure nobody can explain later. When it
+does fail, either upgrade the pin and its hash in `.github/tool-checksums.txt`,
+or pin your local tool back.
 
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
