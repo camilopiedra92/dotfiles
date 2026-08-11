@@ -113,6 +113,9 @@ jobs:
             gt_file="ghostty-${GHOSTTY_VERSION}-macos-universal.zip"
             curl -fsSL "https://release.files.ghostty.org/${GHOSTTY_VERSION}/ghostty-macos-universal.zip" -o "$gt_file"
             verify "$gt_file" "$gt_file"
+            # unzip -d creates the leaf directory but not its parents, and the
+            # runner image has no /usr/local/lib.
+            mkdir -p /usr/local/lib/ghostty
             unzip -q "$gt_file" -d /usr/local/lib/ghostty
             ln -sf /usr/local/lib/ghostty/Ghostty.app/Contents/MacOS/ghostty /usr/local/bin/ghostty
           fi
