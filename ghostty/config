@@ -1,14 +1,22 @@
 # Ghostty — https://ghostty.org/docs/config
 # Reload without restarting: Cmd+Shift+,
 # List themes: ghostty +list-themes    List fonts: ghostty +list-fonts
+# Validate after editing: ghostty +validate-config
 
 # ═══════════════ Typography ═══════════════
 font-family = "JetBrainsMono Nerd Font"
 font-size = 14
 
-# Ligatures: => != >= <= are drawn as a single symbol
+# Ligatures (=> != >= <=) come from `calt`, which this font uses instead of
+# `liga`. Verified with the font's own GSUB table: it ships no `liga` feature.
 font-feature = calt
-font-feature = liga
+
+# Slashed zero. In a terminal 0/O collide constantly — paths, hashes, hex.
+# This is the single highest-value font feature here.
+font-feature = zero
+
+# JetBrains Mono calls this "Closed construction": narrower apertures on
+# a/c/e/s. Purely a letterform preference, unrelated to ligatures.
 font-feature = ss02
 
 # On macOS monospaced fonts look thin and washed out due to antialiasing.
@@ -34,9 +42,11 @@ alpha-blending = linear-corrected
 # unreadable combination. 1 = disabled.
 minimum-contrast = 1.1
 
-# Subtle transparency with blur. Below 0.90 readability starts to suffer.
-background-opacity = 0.95
-background-blur-radius = 30
+# Native macOS 26 Liquid Glass instead of an emulated blur. The material is
+# frosted enough that 0.90 stays readable — higher and the glass stops
+# showing through at all.
+background-opacity = 0.90
+background-blur = macos-glass-regular
 
 # ═══════════════ Window ═══════════════
 # Room around the text: it breathes instead of hugging the edges
@@ -44,6 +54,10 @@ window-padding-x = 18
 window-padding-y = 14
 # Spreads the leftover space instead of dumping it all on one side
 window-padding-balance = true
+# Padding takes the color of the adjacent cell, so full-width TUI bars run
+# to the edge instead of stopping at an abrupt margin. Ghostty skips this
+# on prompt rows and powerline glyphs, where it would look wrong.
+window-padding-color = extend
 
 # Native macOS title bar with real tabs
 macos-titlebar-style = tabs
@@ -51,6 +65,12 @@ window-save-state = always
 
 # The inactive split dims: you can tell at a glance where you are
 unfocused-split-opacity = 0.6
+# Catppuccin Mocha "surface1" — the divider belongs to the palette instead
+# of being an arbitrary gray
+split-divider-color = #45475a
+
+# Matches the glass background
+macos-icon = glass
 
 # ═══════════════ Cursor ═══════════════
 cursor-style = block
@@ -59,22 +79,46 @@ cursor-style-blink = false
 cursor-opacity = 0.85
 
 # ═══════════════ Scrollback ═══════════════
-# Enough to review an entire long Claude Code session
+# Bytes per surface, not lines, and not shared across tabs. Allocated lazily.
 scrollback-limit = 100000000
+
+# ═══════════════ Shell integration ═══════════════
+# Fixes the classic "xterm-ghostty: unknown terminal type" over SSH:
+# ssh-terminfo installs the entry on the remote host, ssh-env falls back to
+# xterm-256color when it can't. Everything else keeps its default.
+shell-integration-features = ssh-env,ssh-terminfo
 
 # ═══════════════ Claude Code ═══════════════
 # Shift+Enter inserts a line break instead of sending the message.
 # Essential for multi-line prompts.
 keybind = shift+enter=text:\n
 
-# Option as Meta: Option+arrows jumps word by word in the prompt
-macos-option-as-alt = true
+# macOS notification when a long command finishes while you are in another
+# app. Rides on shell integration's OSC 133 marks — no extra setup.
+notify-on-command-finish = unfocused
+notify-on-command-finish-after = 30s
+
+# A bell also draws a border around the surface that raised it, so with
+# splits you can see *which* one wants attention.
+bell-features = attention,title,border
+
+# Left Option = Meta, so alt+b / alt+f / Option+arrows work in the prompt.
+# Right Option keeps composing characters: on the Latin American layout
+# [ ] { } | \ ~ @ are all Option combos and `true` would kill them.
+macos-option-as-alt = left
+
+# Dump the whole scrollback to a file and open it — better than scrolling
+# back through a long session.
+keybind = cmd+shift+s=write_scrollback_file:open
 
 # ═══════════════ Quality of life ═══════════════
 copy-on-select = clipboard
 confirm-close-surface = false
 mouse-hide-while-typing = true
 
-keybind = cmd+k=clear_screen
 # Drop-down terminal over any app (works even when Ghostty is in the background)
 keybind = global:cmd+grave_accent=toggle_quick_terminal
+
+# Notify on new stable releases without installing anything unattended
+auto-update = check
+auto-update-channel = stable

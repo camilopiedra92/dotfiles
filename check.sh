@@ -95,6 +95,17 @@ s = re.sub(r',(\s*[}\]])', r'\1', s)
 json.loads(s)
 "
 
+# Ghostty validates its own config, so this catches an option renamed between
+# releases and not only a syntax error. It is the one config here with no
+# startup error to read: a bad key is dropped silently and you are left
+# wondering why the setting does nothing. Skipped where Ghostty is absent,
+# which is every Linux CI runner.
+if command -v ghostty > /dev/null 2>&1; then
+  check "ghostty" ghostty +validate-config --config-file=ghostty/config
+else
+  skip "ghostty" "macOS only"
+fi
+
 # The repo is English-only by policy (claude/CLAUDE.md). The pattern is written
 # as escapes rather than literal accented characters for a practical reason:
 # spelled out, this line would match itself and the check could never pass.
