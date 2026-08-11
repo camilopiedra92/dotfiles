@@ -100,6 +100,27 @@ ruleset, which this repo cannot have while it is private on a free plan.
 A deliberate rewrite is still possible, it just has to be deliberate:
 `git push --no-verify --force-with-lease`.
 
+## Changing something
+
+`main` does not take direct pushes. Everything goes through a pull request that
+the CI has to pass first, which is the whole point: pushing straight to `main`
+runs the checks *after* the commit is already in, so a failure means `main` is
+already broken. This way nothing lands that has not passed.
+
+```bash
+git switch -c what-youre-doing
+# ...edit, commit (the hook runs check.sh)...
+git push -u origin HEAD
+gh pr create --fill
+gh pr merge --auto --squash
+```
+
+`--auto` is what keeps this from being a chore: the PR merges by itself the
+moment CI goes green, and the branch is deleted. You do not wait around for it.
+
+The ruleset on `main` also blocks force pushes, deletion, and merge commits, and
+has no bypass actors — it applies to the repo owner too.
+
 ## Daily use
 
 ```bash
