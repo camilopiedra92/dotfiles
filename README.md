@@ -1,5 +1,7 @@
 # dotfiles
 
+[![CI](https://github.com/camilopiedra92/dotfiles/actions/workflows/ci.yml/badge.svg)](https://github.com/camilopiedra92/dotfiles/actions/workflows/ci.yml)
+
 This machine's development environment, declared as code.
 
 ## New machine
