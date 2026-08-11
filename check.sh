@@ -8,14 +8,16 @@
 #
 # Usage:  ./check.sh [--strict]
 #
+# This repo targets macOS only, so every check here applies everywhere it runs
+# and none of them are conditional on the platform.
+#
 # A skipped check is a hole in coverage, not a neutral outcome: the tool was
 # missing, nothing ran, and the run still ends green. That is not theoretical —
-# it is how this repo reported success on both runners while never once
-# validating the Ghostty config. Strict mode turns a skip into a failure, so
-# coverage cannot shrink without the run going red. It is on automatically
-# under CI, which is what makes CI's promise ("green here means a clean run
-# there") true by construction rather than by a list somebody remembers to
-# update.
+# it is how this repo reported success while never once validating the Ghostty
+# config. Strict mode turns a skip into a failure, so coverage cannot shrink
+# without the run going red. It is on automatically under CI, which is what
+# makes CI's promise ("green here means a clean run there") true by
+# construction rather than by a list somebody remembers to update.
 #
 # Every check here is a function invoked indirectly, by name, through check().
 # The linter cannot see that, and would report all of them as unused code, or
@@ -74,12 +76,6 @@ skip() {
     printf '  %sskip%s %s %s(%s)%s\n' "$YELLOW" "$OFF" "$1" "$DIM" "$2" "$OFF"
   fi
 }
-
-# The check does not apply on this platform at all, so there is nothing to
-# install and nothing to run. Deliberately not a skip: this is not a hole in
-# coverage, and strict mode must stay silent about it or it would push us into
-# installing things nobody needs just to keep a runner quiet.
-na() { printf '  %sn/a%s  %s %s(%s)%s\n' "$DIM" "$OFF" "$1" "$DIM" "$2" "$OFF"; }
 
 # ── Lint ─────────────────────────────────────────────────────────────────────
 printf '\n%sLint%s\n' "$DIM" "$OFF"
@@ -151,18 +147,10 @@ json.loads(s)
 # startup error to read: a bad key is dropped silently and you are left
 # wondering why the setting does nothing. It also resolves `theme`, so a
 # mistyped theme name fails here instead of at the next launch.
-#
-# macOS-only by a property of the config rather than of the tool: it is largely
-# macos-* options, and the Brewfile installs Ghostty as a cask. On Linux there
-# is nothing meaningful to assert, hence n/a and not a skip.
-if [ "$(uname -s)" = "Darwin" ]; then
-  if command -v ghostty > /dev/null 2>&1; then
-    check "ghostty" ghostty +validate-config --config-file=ghostty/config
-  else
-    skip "ghostty" "brew install --cask ghostty"
-  fi
+if command -v ghostty > /dev/null 2>&1; then
+  check "ghostty" ghostty +validate-config --config-file=ghostty/config
 else
-  na "ghostty" "config is macOS-only"
+  skip "ghostty" "brew install --cask ghostty"
 fi
 
 # The repo is English-only by policy (claude/CLAUDE.md). The pattern is written

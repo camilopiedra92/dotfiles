@@ -4,6 +4,12 @@
 
 This machine's development environment, declared as code.
 
+**macOS on Apple Silicon only.** Not a limitation waiting to be lifted, but the
+assumption everything here is built on: `install.sh` expects Homebrew at
+`/opt/homebrew`, the Brewfile installs casks, and VS Code is linked under
+`~/Library`. On Linux it fails at the first step. CI runs on macOS for the same
+reason — it is the only platform there is anything to verify against.
+
 ## New machine
 
 ```bash
@@ -84,29 +90,19 @@ syntax for every config format here, the statuslines' behaviour, and that
 `install.sh` is still idempotent.
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
-before every commit, and CI runs that same file on both Linux and macOS rather
-than reimplementing anything — checks written twice drift, and the moment CI and
-local disagree you stop trusting both. To bypass the hook once:
-`git commit --no-verify`.
+before every commit, and CI runs that same file rather than reimplementing
+anything — checks written twice drift, and the moment CI and local disagree you
+stop trusting both. To bypass the hook once: `git commit --no-verify`.
 
-A check reports one of four things, and the last two are not the same:
+A check either runs (`ok` / `FAIL`) or is skipped because its tool is missing.
+A skip is a hole in coverage, not a neutral third outcome, so under CI it is a
+failure; `./check.sh --strict` reproduces that locally. Without it a missing
+tool turns into a green run that verified less than you think, which is not
+hypothetical: CI passed for a while without ever validating the Ghostty config.
 
-| | |
-|---|---|
-| `ok` / `FAIL` | it ran |
-| `skip` | the tool is missing, so nothing ran |
-| `n/a` | the check does not apply on this platform |
-
-`skip` is a hole in coverage, so under CI it is a failure — `./check.sh
---strict` reproduces that locally. Without it a missing tool turns into a green
-run that verified less than you think, which is not hypothetical: both runners
-passed for a while without ever validating the Ghostty config. `n/a` is not a
-hole and never fails; the Ghostty config is macOS-only, so the Linux runner has
-nothing to assert.
-
-This is why CI installs pinned, checksummed copies of shellcheck, shfmt and
-Ghostty instead of trusting the runner image: strict mode means anything it
-fails to install stops the build rather than quietly shrinking it.
+This is why CI installs pinned, checksummed copies of shellcheck, shfmt,
+actionlint and Ghostty instead of trusting the runner image: strict mode means
+anything it fails to install stops the build rather than quietly shrinking it.
 
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
