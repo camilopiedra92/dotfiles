@@ -1,0 +1,175 @@
+# Every file in this repo is executed by something on a fresh machine. A broken
+# quote in install.sh would only surface while setting up a new laptop, which is
+# exactly when you least want to debug shell. This runs the checks that catch it.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only by default: nothing here needs to write to the repo, and a workflow
+# that cannot write cannot be turned into a supply-chain foothold.
+permissions:
+  contents: read
+
+# A second push makes the first run irrelevant; cancel it instead of paying for
+# both.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to a commit SHA rather than a tag: a tag can be moved to point at
+      # different code, a SHA cannot.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # shellcheck ships preinstalled on the runner; zsh does not.
+      - name: Install zsh
+        run: sudo apt-get install -y --no-install-recommends zsh
+
+      # -x follows sourced files, which is what catches breakage across file
+      # boundaries rather than inside a single script.
+      - name: shellcheck
+        run: shellcheck -x install.sh claude/*.sh
+
+      - name: Shell syntax
+        run: |
+          for f in install.sh claude/*.sh; do bash -n "$f"; done
+          zsh -n zsh/.zshrc
+
+      - name: Config syntax
+        run: |
+          python3 -c "
+          import tomllib
+          for f in ('starship.toml', 'mise/config.toml'):
+              tomllib.load(open(f, 'rb'))
+          "
+          git config --file git/.gitconfig --list > /dev/null
+          python3 -c "import json; json.load(open('claude/settings.json'))"
+          # VS Code settings are JSONC: strip comments and trailing commas
+          # before parsing, since json.loads rejects both.
+          python3 -c "
+          import json, re
+          s = open('vscode/settings.json').read()
+          s = re.sub(r'^\s*//.*$', '', s, flags=re.M)
+          s = re.sub(r',(\s*[}\]])', r'\1', s)
+          json.loads(s)
+          "
+
+      # This repo is English-only by policy (see claude/CLAUDE.md). The pattern
+      # is written as escapes rather than literal accented characters for a
+      # practical reason: spelled out, this line would match itself and the job
+      # could never pass. The range covers Latin-1 Supplement and Latin Extended
+      # A/B, so no English word trips it while Spanish prose always does.
+      - name: English only
+        run: |
+          if git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- .; then
+            echo "::error::Non-English text found. Only the chat is in Spanish."
+            exit 1
+          fi
+
+  # The whole promise of this repo is that install.sh rebuilds a machine.
+  # Running it twice against a throwaway HOME is the only way to know it still
+  # does, and that a second run is a no-op rather than a duplicator.
+  #
+  # It runs on Linux even though the target is macOS: the part under test is
+  # symlinks and a jq merge, which are portable, and the parts that are not
+  # (Homebrew, mise) are excluded below anyway.
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: install.sh is idempotent
+        run: |
+          export HOME="$RUNNER_TEMP/fakehome"
+          mkdir -p "$HOME"
+
+          # Only the symlink and jq-merge steps are exercised: installing
+          # Homebrew packages and runtimes would take tens of minutes and is
+          # Homebrew's job to get right, not this repo's.
+          {
+            echo 'log() { printf "==> %s\n" "$1"; }'
+            sed -n '/^# --- 3\. Symlinks/,/^# --- 4\./p' install.sh
+          } > steps.sh
+
+          # Guard against the extraction silently going empty if those markers
+          # are ever renamed, which would turn this job into a no-op that
+          # always passes. -F because BSD grep reads the $ in the middle of the
+          # pattern as an anchor and never matches, so without it this guard
+          # passes here and fails for anyone running it on macOS.
+          grep -qF 'link "$DOTFILES/zsh/.zshrc"' steps.sh
+
+          DOTFILES="$PWD" bash -euo pipefail steps.sh
+          DOTFILES="$PWD" bash -euo pipefail steps.sh   # second run must be a no-op
+
+          test -L "$HOME/.zshrc"
+          test "$(readlink "$HOME/.zshrc")" = "$PWD/zsh/.zshrc"
+          test -L "$HOME/.claude/statusline.sh"
+
+          # The merged settings must still be valid JSON, and must have kept the
+          # repo's values rather than an empty scaffold.
+          python3 -c "
+          import json
+          s = json.load(open('$HOME/.claude/settings.json'))
+          assert s['statusLine']['command'], s
+          assert s['subagentStatusLine']['command'], s
+          "
+
+          # A second run must not leave a backup copy behind: symlinks are
+          # replaced in place, only real files are ever backed up.
+          if ls "$HOME"/.zshrc.backup.* >/dev/null 2>&1; then
+            echo "::error::Second run backed up a symlink it should have replaced"
+            exit 1
+          fi
+
+  # The statuslines are pure functions from a JSON payload to a line of text,
+  # which makes them the one thing here that can be tested properly.
+  statusline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Renders without crashing
+        run: ./claude/statusline-demo.sh > /dev/null
+
+      - name: Main statusline degrades instead of failing
+        run: |
+          # A freshly opened session has no context and no limits yet. Printing
+          # a broken line there is worse than printing a short one.
+          out=$(echo '{"model":{"display_name":"Opus 5"},"cwd":"/tmp"}' | ./claude/statusline.sh)
+          case "$out" in
+            *"Opus 5"*) ;;
+            *) echo "::error::model missing from a minimal payload"; exit 1 ;;
+          esac
+
+          # Garbage in must mean nothing out, never a half-rendered line:
+          # Claude prints whatever we emit, junk included.
+          if echo 'not json' | ./claude/statusline.sh | grep -q .; then
+            echo "::error::emitted output for invalid JSON"
+            exit 1
+          fi
+
+      - name: Subagent statusline emits one valid JSONL row per task
+        run: |
+          payload='{"columns":80,"tasks":[
+            {"id":"a","name":"brisk-otter","type":"local_agent","status":"running",
+             "startTime":1,"model":"claude-opus-5","contextWindowSize":200000,
+             "tokenCount":48000,"tokenSamples":[1,2,3]},
+            {"id":"b","type":"local_bash","status":"running","startTime":1,"tokenCount":0}]}'
+          out=$(echo "$payload" | ./claude/subagent-statusline.sh)
+
+          test "$(echo "$out" | wc -l)" -eq 2
+          echo "$out" | jq -e . > /dev/null          # every line parses
+          echo "$out" | jq -e 'has("id") and has("content")' > /dev/null
+
+          # The name is the only part of the row you can address an agent by,
+          # so its absence is a regression worth failing on.
+          echo "$out" | head -1 | jq -e '.content | contains("brisk-otter")' > /dev/null
+
+          # A task without a name must still render, not vanish.
+          echo "$out" | tail -1 | jq -e '.content | length > 0' > /dev/null
