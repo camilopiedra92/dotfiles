@@ -102,10 +102,11 @@ notify-on-command-finish-after = 30s
 # splits you can see *which* one wants attention.
 bell-features = attention,title,border
 
-# Left Option = Meta, so alt+b / alt+f / Option+arrows work in the prompt.
-# Right Option keeps composing characters: on the Latin American layout
-# [ ] { } | \ ~ @ are all Option combos and `true` would kill them.
-macos-option-as-alt = left
+# Right Option = Meta, so alt+b / alt+f / Option+arrows work in the prompt.
+# Left Option must keep composing: it is the one that reaches the dead keys
+# and Option symbols in practice — Option+E for accents on the US layout,
+# Option+number for [ ] { } | \ @ on the Latin American one.
+macos-option-as-alt = right
 
 # Dump the whole scrollback to a file and open it — better than scrolling
 # back through a long session.
