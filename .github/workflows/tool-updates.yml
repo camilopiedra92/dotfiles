@@ -1,0 +1,79 @@
+# Renews the tool pins that nothing else renews.
+#
+# dependabot.yml covers the pinned action SHA and argues, correctly, that
+# pinning without something to renew it just trades one risk for another. The
+# four tool versions in ci.yml have no such thing: there is no ecosystem for a
+# version in a workflow env var plus a hash in a text file, and Renovate's
+# regex managers can move the version but not regenerate the hash, which needs
+# postUpgradeTasks and so a self-hosted instance. This is that something.
+#
+# The work is all in bump-tools.sh, deliberately: it runs the same by hand, so
+# this workflow is only a schedule and a pull request, not a second definition
+# that could drift from the first.
+name: Tool updates
+
+on:
+  schedule:
+    # 07:13 on the 1st. Off the hour because everything is scheduled on the
+    # hour and GitHub drops scheduled runs under load.
+    - cron: "13 7 1 * *"
+  workflow_dispatch:
+
+# The job holds no write access of its own. What writes is the App token
+# minted below, which is scoped to this repository and expires in an hour.
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A pull request opened with the default GITHUB_TOKEN does not start
+      # workflows, by design, so ci.yml would never run on it and the ruleset
+      # on main would leave it unmergeable forever. A GitHub App token is not
+      # subject to that, and beats a personal access token on every axis that
+      # matters here: scoped to this repo, an hour long, not tied to a human
+      # account, revocable without touching anything else.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: token
+        with:
+          app-id: ${{ vars.BUMP_APP_ID }}
+          private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
+
+      - name: Bump the pins
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: ./bump-tools.sh
+
+      # Nothing to say when everything is current, which is most months.
+      - name: Did anything move
+        id: diff
+        run: git diff --quiet || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Deliberately no auto-merge. The hashes in the diff are whatever upstream
+      # is publishing right now, and tool-checksums.txt exists because that is
+      # not something to accept unread. CI proves the new versions install and
+      # the repo still passes; a person decides they should be trusted.
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        if: steps.diff.outputs.changed == 'true'
+        with:
+          token: ${{ steps.token.outputs.token }}
+          branch: tool-updates
+          title: Move the tool pins to their latest releases
+          body: |
+            Opened by `tool-updates.yml`, which runs `./bump-tools.sh` monthly.
+
+            Each version below was resolved upstream, the artifact downloaded,
+            and its SHA256 recorded in `.github/tool-checksums.txt`. Read the
+            hashes before merging: they are whatever upstream is publishing
+            now, which is the thing that file exists not to take on trust.
+
+            Your machine will fail `./check.sh` until you upgrade to match.
+          commit-message: |
+            Move the tool pins to their latest releases
+
+            Opened by tool-updates.yml, which runs ./bump-tools.sh on a monthly
+            schedule. Versions resolved upstream, artifacts downloaded, and
+            their SHA256 recorded in .github/tool-checksums.txt.
