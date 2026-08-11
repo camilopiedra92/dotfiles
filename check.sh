@@ -82,7 +82,7 @@ printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x install.sh check.sh claude/*.sh githooks/*
+  check "shellcheck" shellcheck -x ./*.sh ./claude/*.sh ./githooks/*
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -91,7 +91,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d install.sh check.sh claude/*.sh githooks/*
+  check "shfmt" shfmt -d ./*.sh ./claude/*.sh ./githooks/*
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -108,7 +108,7 @@ else
   skip "actionlint" "brew install actionlint"
 fi
 
-syntax_bash() { for f in install.sh check.sh claude/*.sh githooks/*; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./claude/*.sh ./githooks/*; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then

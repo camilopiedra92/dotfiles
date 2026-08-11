@@ -49,6 +49,7 @@ claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
+bump-tools.sh          moves the CI tool pins to their latest releases
 githooks/pre-commit    runs check.sh before each commit
 githooks/pre-push      refuses to rewrite or delete main
 .editorconfig          formatting, read by shfmt and by the editor
@@ -111,6 +112,27 @@ versions you have are checked against the ones `ci.yml` pins, and a drift fails
 here rather than turning into a CI failure nobody can explain later. When it
 does fail, either upgrade the pin and its hash in `.github/tool-checksums.txt`,
 or pin your local tool back.
+
+## Updating the pins
+
+```bash
+./bump-tools.sh
+```
+
+Resolves each tool's latest release, downloads the artifact, records its SHA256
+and rewrites both `ci.yml` and `.github/tool-checksums.txt`. It refuses to walk
+a pin backwards, and refuses a version that is tagged but whose artifact is not
+downloadable yet, which Ghostty's tags do briefly.
+
+`.github/workflows/tool-updates.yml` runs it on the 1st of each month and opens
+a pull request if anything moved. It authenticates with a GitHub App rather
+than the default token, because a pull request opened with `GITHUB_TOKEN` does
+not start workflows and so could never satisfy the required check.
+
+That pull request does not auto-merge, deliberately. The hashes in it are
+whatever upstream is publishing at that moment, which is exactly what
+`tool-checksums.txt` exists not to take on trust. CI proves the new versions
+install and everything still passes; you decide they should be trusted.
 
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
