@@ -1,3 +1,5 @@
+# Static checker for GitHub Actions workflow files
+brew "actionlint"
 # Plugin manager for zsh, inspired by antigen and antibody
 brew "antidote"
 # Clone of cat(1) with syntax highlighting and Git integration

@@ -1,12 +1,16 @@
 # SHA256 of the tools CI downloads, pinned here on purpose.
 #
-# None of these publishes a checksum file or a SLSA attestation, so there is
-# nothing upstream to verify against — Ghostty does sign its source tarballs
-# with minisign, but not the macOS build CI actually runs. Recording the hashes
-# here is what is left, and it is the stronger option anyway: a checksum
-# fetched from the same release proves nothing, because whoever could replace
-# the binary could replace that file too. These live in the repo, so if a
+# Recording them here rather than fetching them is the point. A checksum
+# published beside the artifact proves nothing, because whoever could replace
+# the binary could replace that file with it. These live in the repo, so if a
 # published artifact ever changes, CI fails instead of running it.
+#
+# Mostly there is nothing upstream to compare against anyway: shellcheck and
+# shfmt publish no checksums, and Ghostty signs its source tarballs with
+# minisign but not the macOS build CI actually runs. actionlint is the
+# exception and does publish a checksums file; its two hashes below were
+# confirmed against it when pinned, which is worth doing once at that moment
+# even though it cannot be trusted as an ongoing check.
 #
 # The workflow refuses to install a file it has no line for here, which means a
 # new OS or architecture fails loudly rather than silently skipping the check.
@@ -18,6 +22,8 @@
 #
 # To update after bumping a version in ci.yml, download the artifacts and run
 # `shasum -a 256` (macOS) or `sha256sum` (Linux) over them.
+aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f  actionlint_1.7.12_darwin_arm64.tar.gz
+8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint_1.7.12_linux_amd64.tar.gz
 105f63ec2df9b53cd5dd1f685434d1924163fd4bcf23ecb1b07df343e79d2077  ghostty-1.3.1-macos-universal.zip
 56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck-v0.11.0.darwin.aarch64.tar.xz
 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck-v0.11.0.linux.x86_64.tar.xz

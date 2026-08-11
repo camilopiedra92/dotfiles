@@ -100,6 +100,18 @@ else
   skip "shfmt" "brew install shfmt"
 fi
 
+# The workflow was the one file here nothing checked, and a malformed one does
+# not fail loudly: GitHub just declines to run it, so the symptom is checks
+# that quietly stop happening. actionlint parses it, resolves runner labels and
+# action inputs against what actually exists, flags untrusted `${{ }}` values
+# interpolated into scripts, and runs shellcheck over every embedded `run`
+# block — shell that would otherwise be linted nowhere.
+if command -v actionlint > /dev/null 2>&1; then
+  check "actionlint" actionlint
+else
+  skip "actionlint" "brew install actionlint"
+fi
+
 syntax_bash() { for f in install.sh check.sh claude/*.sh githooks/*; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
