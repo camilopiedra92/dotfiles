@@ -66,12 +66,34 @@ jobs:
             *) echo "::error::unsupported arch: $RUNNER_ARCH"; exit 1 ;;
           esac
 
-          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.${sc_os}.${sc_arch}.tar.xz" \
-            | tar -xJf - --strip-components=1 -C /usr/local/bin "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+          # Downloading a binary and running it is only safe if you know what
+          # you got. Neither project publishes checksums or attestations, so
+          # the expected hashes live in this repo; see tool-checksums.txt.
+          sha256() {
+            if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi
+          }
+          verify() { # verify <downloaded file> <name recorded in the checksum file>
+            local expected actual
+            expected=$(awk -v n="$2" '$2 == n { print $1 }' .github/tool-checksums.txt)
+            # No recorded hash means an OS/arch nobody has vetted. Fail rather
+            # than install something unverified.
+            [ -n "$expected" ] || { echo "::error::no checksum recorded for $2"; exit 1; }
+            actual=$(sha256 "$1" | cut -d' ' -f1)
+            [ "$actual" = "$expected" ] || {
+              echo "::error::checksum mismatch for $2: got $actual, expected $expected"
+              exit 1
+            }
+          }
 
-          curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_${fmt_os}_${fmt_arch}" \
-            -o /usr/local/bin/shfmt
-          chmod +x /usr/local/bin/shfmt
+          sc_file="shellcheck-${SHELLCHECK_VERSION}.${sc_os}.${sc_arch}.tar.xz"
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/${sc_file}" -o "$sc_file"
+          verify "$sc_file" "$sc_file"
+          tar -xJf "$sc_file" --strip-components=1 -C /usr/local/bin "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
+
+          fmt_file="shfmt_${SHFMT_VERSION}_${fmt_os}_${fmt_arch}"
+          curl -fsSL "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/${fmt_file}" -o "$fmt_file"
+          verify "$fmt_file" "$fmt_file"
+          install -m 755 "$fmt_file" /usr/local/bin/shfmt
 
       # check.sh skips a tool it cannot find, which would turn this job green
       # without having linted anything. Assert the tools are present, and that

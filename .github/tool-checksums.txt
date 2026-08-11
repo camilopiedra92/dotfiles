@@ -1,0 +1,18 @@
+# SHA256 of the tools CI downloads, pinned here on purpose.
+#
+# Neither shellcheck nor shfmt publishes a checksum file or a SLSA attestation,
+# so there is nothing upstream to verify against. Recording the hashes here is
+# what is left, and it is the stronger option anyway: a checksum fetched from
+# the same release proves nothing, because whoever could replace the binary
+# could replace that file too. These live in the repo, so if a published
+# artifact ever changes, CI fails instead of running it.
+#
+# The workflow refuses to install a file it has no line for here, which means a
+# new OS or architecture fails loudly rather than silently skipping the check.
+#
+# To update after bumping a version in ci.yml, download the artifacts and run
+# `shasum -a 256` (macOS) or `sha256sum` (Linux) over them.
+56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck-v0.11.0.darwin.aarch64.tar.xz
+8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck-v0.11.0.linux.x86_64.tar.xz
+9680526be4a66ea1ffe988ed08af58e1400fe1e4f4aef5bd88b20bb9b3da33f8  shfmt_v3.13.1_darwin_arm64
+fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1  shfmt_v3.13.1_linux_amd64
