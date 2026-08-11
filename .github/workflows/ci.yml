@@ -50,6 +50,7 @@ jobs:
         env:
           SHELLCHECK_VERSION: v0.11.0
           SHFMT_VERSION: v3.13.1
+          GHOSTTY_VERSION: 1.3.1
         run: |
           case "$RUNNER_OS" in
             Linux)
@@ -95,14 +96,40 @@ jobs:
           verify "$fmt_file" "$fmt_file"
           install -m 755 "$fmt_file" /usr/local/bin/shfmt
 
-      # check.sh skips a tool it cannot find, which would turn this job green
-      # without having linted anything. Assert the tools are present, and that
-      # they are the versions asked for rather than something already on PATH.
+          # Ghostty is the only thing here that validates a config rather than
+          # code, and it is macOS-only, matching check.sh: the config is mostly
+          # macos-* options and the Brewfile installs it as a cask. On Linux
+          # check.sh reports n/a, so there is nothing to install.
+          #
+          # Two things this must not do, both found by trying them. The binary
+          # cannot be lifted out of Ghostty.app: that breaks the code signature
+          # and macOS kills it with SIGKILL, which surfaces as an unexplained
+          # exit 137. And the bundle has to stay reachable, because the binary
+          # locates its themes relative to its own real path — without it,
+          # `theme = Catppuccin Mocha` fails to resolve and the run goes red for
+          # a reason that has nothing to do with the config. A symlink to the
+          # binary inside the intact bundle satisfies both.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            gt_file="ghostty-${GHOSTTY_VERSION}-macos-universal.zip"
+            curl -fsSL "https://release.files.ghostty.org/${GHOSTTY_VERSION}/ghostty-macos-universal.zip" -o "$gt_file"
+            verify "$gt_file" "$gt_file"
+            unzip -q "$gt_file" -d /usr/local/lib/ghostty
+            ln -sf /usr/local/lib/ghostty/Ghostty.app/Contents/MacOS/ghostty /usr/local/bin/ghostty
+          fi
+
+      # Presence used to be asserted here, with a hand-written list of tool
+      # names, because check.sh silently skipped anything it could not find.
+      # The list is gone: check.sh fails on a skip whenever CI is set, so a
+      # missing tool goes red on its own. That list had already drifted — it
+      # never mentioned ghostty, which is why both runners reported success
+      # while validating no Ghostty config at all. A duplicated list of what
+      # must be installed is exactly the kind of thing that rots quietly.
+      #
+      # Versions are a different claim and still worth asserting: check.sh only
+      # knows whether a tool ran, not whether it was the one we pinned, and a
+      # linter that disagrees between machines is worse than no linter.
       - name: Tools are the pinned versions
         run: |
-          for t in shellcheck shfmt zsh jq python3; do
-            command -v "$t" > /dev/null || { echo "::error::$t missing"; exit 1; }
-          done
           shellcheck --version | grep -qx "version: 0.11.0" || {
             echo "::error::unexpected shellcheck: $(shellcheck --version | tr '\n' ' ')"
             exit 1
@@ -111,5 +138,12 @@ jobs:
             echo "::error::unexpected shfmt: $(shfmt --version)"
             exit 1
           }
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ghostty +version | grep -qx "Ghostty 1.3.1" || {
+              echo "::error::unexpected ghostty: $(ghostty +version | head -1)"
+              exit 1
+            }
+          fi
 
+      # CI is set by the runner, so this fails on any skipped check.
       - run: ./check.sh
