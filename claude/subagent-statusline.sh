@@ -1,37 +1,37 @@
 #!/usr/bin/env bash
-# Statusline por subagente — decora cada fila del panel de agentes.
+# Per-subagent statusline — decorates each row of the agent panel.
 #
-# Es un mecanismo distinto al de la statusline principal y esta mucho menos
-# documentado, asi que el contrato, verificado leyendo Claude Code 2.1.226:
+# This is a different mechanism from the main statusline and far less
+# documented, so here is the contract, verified by reading Claude Code 2.1.226:
 #
-#   ENTRADA (stdin, un solo JSON):
-#     { "columns": <ancho util ya descontado el marco>,
+#   INPUT (stdin, a single JSON object):
+#     { "columns": <usable width, frame already subtracted>,
 #       "tasks": [ { "id", "name", "type", "status", "description", "label",
-#                    "startTime",          // epoch, en milisegundos
+#                    "startTime",          // epoch, in milliseconds
 #                    "model", "effort",
-#                    "contextWindowSize",  // puede faltar
+#                    "contextWindowSize",  // may be missing
 #                    "tokenCount",
-#                    "tokenSamples": [ ... ]   // historico, hasta 16 muestras
+#                    "tokenSamples": [ ... ]   // history, up to 16 samples
 #                    "cwd" } ] }
 #
-#   SALIDA: JSONL — una linea {"id": "...", "content": "..."} por agente.
-#     Las lineas que no parseen se descartan con un error en el log, asi que
-#     conviene salir siempre con codigo 0 y no imprimir nada si algo falla.
+#   OUTPUT: JSONL — one {"id": "...", "content": "..."} line per agent.
+#     Lines that fail to parse are dropped with an error in the log, so always
+#     exit 0 and print nothing when something goes wrong.
 #
-#   CADENCIA: primer tick a los 300ms y luego cada 5s, con timeout de 5s.
+#   CADENCE: first tick after 300ms, then every 5s, with a 5s timeout.
 #
-# Lo interesante es `tokenSamples`: Claude guarda el historico de consumo de
-# cada agente, asi que se puede dibujar un sparkline y ver de un vistazo cual
-# esta trabajando de verdad y cual lleva rato atascado. Un numero suelto no
-# distingue "20k tokens y subiendo" de "20k tokens y parado hace un minuto".
+# The interesting field is `tokenSamples`: Claude keeps each agent's usage
+# history, so we can draw a sparkline and tell at a glance which one is really
+# working and which has been stuck for a while. A bare number cannot tell
+# "20k tokens and climbing" from "20k tokens, frozen a minute ago".
 #
-# Todo se resuelve en un unico jq: la entrada es un array y el trabajo es
-# aritmetica sobre listas, que en jq sale mas corto y mas rapido que iterar en
-# bash con un proceso por fila.
+# Everything happens in a single jq: the input is an array and the work is
+# arithmetic over lists, which jq expresses more briefly and runs faster than
+# looping in bash with one process per row.
 set -uo pipefail
 
 jq -c -r '
-  # ── Formato ────────────────────────────────────────────────────────────────
+  # ── Formatting ─────────────────────────────────────────────────────────────
   def num:
     if . >= 1000000 then "\((. / 100000 | floor) / 10)M"
     elif . >= 1000  then "\(. / 1000 | floor)k"
@@ -42,12 +42,12 @@ jq -c -r '
     elif . >= 60   then "\(. / 60 | floor)m\(. % 60 | floor)s"
     else "\(. | floor)s" end;
 
-  # Sparkline normalizado a su propio minimo y maximo. Interesa la FORMA de la
-  # curva, no la escala: al lado ya va la cifra absoluta.
+  # Sparkline normalized to its own min and max. What matters is the SHAPE of
+  # the curve, not the scale: the absolute figure sits right next to it.
   #
-  # La serie plana no se descarta, se dibuja plana. Un agente que lleva quince
-  # minutos sin mover un token es justo lo que este panel tiene que delatar, y
-  # dejar el hueco en blanco lo haria indistinguible de "no hay datos".
+  # A flat series is not discarded, it is drawn flat. An agent that has not
+  # moved a token in fifteen minutes is exactly what this panel must expose,
+  # and leaving the slot blank would make it indistinguishable from "no data".
   def spark:
     (map(select(type == "number"))) as $v
     | if ($v | length) < 2 then "" else
@@ -58,19 +58,20 @@ jq -c -r '
           end
       end;
 
-  # ── Paleta ─────────────────────────────────────────────────────────────────
-  # Mismo criterio que en la statusline principal: nunca \u001b[0m, solo
-  # \u001b[39m, para no cancelar el estilo que Claude aplica por fuera.
+  # ── Palette ────────────────────────────────────────────────────────────────
+  # Same rule as the main statusline: never \u001b[0m, only \u001b[39m, so we
+  # do not cancel the style Claude applies from the outside.
   "\u001b[90m" as $dim  | "\u001b[39m" as $fg
   | "\u001b[32m" as $green | "\u001b[33m" as $yellow | "\u001b[31m" as $red
+  | "\u001b[36m" as $cyan
 
   | (.columns // 80) as $cols
   | (now * 1000) as $now_ms
 
   | .tasks[]
   | . as $t
-  # startTime llega en milisegundos; se acepta tambien en segundos por si
-  # cambia, porque confundir las unidades da duraciones absurdas y silenciosas.
+  # startTime arrives in milliseconds; seconds are accepted too in case that
+  # changes, since mixing up the units yields absurd durations and no error.
   | (if ($t.startTime // 0) > 100000000000
        then ($now_ms - $t.startTime) / 1000
        else (($now_ms / 1000) - ($t.startTime // 0)) end
@@ -82,11 +83,19 @@ jq -c -r '
      elif $pct >= 60 then $yellow
      else $green end) as $c
   | (($t.tokenSamples // []) | spark) as $sp
+  # `name` is the name Claude assigns to an agent on creation (the same one
+  # ListAgents shows). It comes from a separate registry, so it is missing for
+  # anything that is not a named agent: bash tasks, workflows.
+  | (($t.name // "") | if length > 16 then .[0:15] + "…" else . end) as $name
 
-  # ── Composicion, de mas a menos importante ─────────────────────────────────
-  # El panel ya dice que hace cada agente; esto anade la telemetria que no se
-  # ve: cuanto lleva, cuanto ha gastado y si sigue avanzando.
-  | [ "\($dim)\($secs | dur)\($fg)",
+  # ── Composition, most to least important ───────────────────────────────────
+  # The panel says WHAT each agent is doing but not WHICH one it is, and with
+  # three or four running at once the description is not enough to know who you
+  # are addressing when you message one. Hence the name goes first and is never
+  # dropped on narrow terminals: it is the only part of this line you can
+  # address an agent by.
+  | [ (if $name != "" then "\($cyan)\($name)\($fg)" else empty end),
+      "\($dim)\($secs | dur)\($fg)",
       (if $pct >= 0
          then "\($c)\($tok | num)\($fg)\($dim)/\($win | num) \($pct)%\($fg)"
          else "\($dim)\($tok | num) tok\($fg)" end),

@@ -1,47 +1,47 @@
 # ═══════════════════════════════════════════════════════════
-#  .zshrc  —  gestionado en ~/dotfiles
-#  Plugins: antidote con carga estatica (ver .zsh_plugins.txt)
+#  .zshrc  —  managed in ~/dotfiles
+#  Plugins: antidote with static loading (see .zsh_plugins.txt)
 # ═══════════════════════════════════════════════════════════
 
 # ---------- PATH ----------
-# Homebrew normalmente lo pone .zprofile, que solo se lee en shells de login.
-# Esto cubre los que no lo son: terminal integrado de editores, tmux, `zsh`
-# lanzado dentro de otro shell. Con la guarda no duplica entradas.
+# Homebrew usually sets this in .zprofile, which is only read by login shells.
+# This covers the ones that are not: editor integrated terminals, tmux, `zsh`
+# launched inside another shell. The guard keeps entries from being duplicated.
 if [[ -x /opt/homebrew/bin/brew && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-export PATH="$HOME/.local/bin:$PATH"             # claude, binarios de usuario
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # rustup no se enlaza solo
+export PATH="$HOME/.local/bin:$PATH"             # claude, user binaries
+export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # rustup does not symlink itself
 
-# ---------- Historial ----------
-# Lo mas util y lo que casi nadie configura: por defecto zsh guarda pocas
-# lineas y las pierde al cerrar varias ventanas a la vez.
+# ---------- History ----------
+# The most useful thing and the one almost nobody configures: by default zsh
+# keeps few lines and loses them when several windows close at once.
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=100000
 SAVEHIST=100000
-setopt HIST_IGNORE_ALL_DUPS      # un comando repetido no ensucia el historial
-setopt HIST_IGNORE_SPACE         # comando con espacio delante = no se guarda
+setopt HIST_IGNORE_ALL_DUPS      # a repeated command does not clutter history
+setopt HIST_IGNORE_SPACE         # command with a leading space = not saved
 setopt HIST_REDUCE_BLANKS
-setopt HIST_VERIFY               # al expandir !!, muestra antes de ejecutar
-setopt SHARE_HISTORY             # historial compartido entre terminales
-setopt EXTENDED_HISTORY          # guarda timestamp de cada comando
+setopt HIST_VERIFY               # when expanding !!, show before running
+setopt SHARE_HISTORY             # history shared across terminals
+setopt EXTENDED_HISTORY          # store a timestamp for each command
 
-# ---------- Comportamiento ----------
+# ---------- Behavior ----------
 setopt AUTO_CD                   # "Development" == "cd Development"
-setopt AUTO_PUSHD                # cada cd apila el anterior
+setopt AUTO_PUSHD                # every cd pushes the previous one
 setopt PUSHD_IGNORE_DUPS
-setopt INTERACTIVE_COMMENTS      # permite # comentarios en el prompt
+setopt INTERACTIVE_COMMENTS      # allow # comments at the prompt
 setopt NO_BEEP
 
 # ---------- Plugins (antidote) ----------
-# Red de seguridad: varios plugins de ohmyzsh escriben aqui y fuera del
-# framework la variable no existe.
+# Safety net: several ohmyzsh plugins write here and outside the framework the
+# variable does not exist.
 export ZSH_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 [[ -d "$ZSH_CACHE_DIR/completions" ]] || mkdir -p "$ZSH_CACHE_DIR/completions"
 
-# Carga estatica: antidote solo se ejecuta si .zsh_plugins.txt ha cambiado.
-# En el arranque normal se hace un unico `source` de un fichero ya generado.
+# Static loading: antidote only runs if .zsh_plugins.txt has changed. On a
+# normal startup this is a single `source` of an already generated file.
 zsh_plugins_txt="$HOME/.zsh_plugins.txt"
 zsh_plugins_zsh="$HOME/.zsh_plugins.zsh"
 if [[ ! ${zsh_plugins_zsh} -nt ${zsh_plugins_txt} ]]; then
@@ -50,42 +50,42 @@ if [[ ! ${zsh_plugins_zsh} -nt ${zsh_plugins_txt} ]]; then
 fi
 source "${zsh_plugins_zsh}"
 
-# ---------- Completado ----------
-zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'   # ignora mayus/minus
+# ---------- Completion ----------
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'   # case insensitive
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
-# fzf-tab sustituye al menu nativo, asi que se desactiva para no duplicar
+# fzf-tab replaces the native menu, so it is disabled to avoid duplication
 zstyle ':completion:*' menu no
 zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
 zstyle ':fzf-tab:complete:z:*'  fzf-preview 'eza -1 --color=always $realpath'
 zstyle ':fzf-tab:*' switch-group '<' '>'
 
 # ---------- Runtimes ----------
-# mise gestiona node, python, go... segun el mise.toml de cada proyecto
+# mise manages node, python, go... per the mise.toml of each project
 eval "$(mise activate zsh)"
 
 # ---------- Prompt ----------
 eval "$(starship init zsh)"
 
-# ---------- Navegacion inteligente ----------
-# zoxide aprende de tus cd: "z dotfiles" salta ahi desde cualquier sitio
+# ---------- Smart navigation ----------
+# zoxide learns from your cd's: "z dotfiles" jumps there from anywhere
 eval "$(zoxide init zsh)"
 
-# ---------- Busqueda difusa ----------
-# Ctrl+R  historial   |   Ctrl+T  ficheros   |   Alt+C  cd a directorio
+# ---------- Fuzzy finding ----------
+# Ctrl+R  history   |   Ctrl+T  files   |   Alt+C  cd into a directory
 source <(fzf --zsh)
 export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
 export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
 
-# ---------- Teclas ----------
-# Flecha arriba/abajo buscan en el historial por lo ya escrito
+# ---------- Keys ----------
+# Up/down arrows search history by what you have already typed
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
-bindkey '^[[1;5C' forward-word      # Ctrl+derecha
-bindkey '^[[1;5D' backward-word     # Ctrl+izquierda
+bindkey '^[[1;5C' forward-word      # Ctrl+right
+bindkey '^[[1;5D' backward-word     # Ctrl+left
 
-# ---------- Alias ----------
+# ---------- Aliases ----------
 alias ls='eza --icons --group-directories-first'
 alias ll='eza -l --icons --group-directories-first --git'
 alias la='eza -la --icons --group-directories-first --git'
@@ -96,7 +96,7 @@ alias cd='z'
 alias dotfiles='cd ~/dotfiles'
 alias reload='exec zsh'
 
-# Actualizar todo el entorno de una vez (antidote incluido)
+# Update the whole environment at once (antidote included)
 alias update-all='brew upgrade && brew cleanup && mise upgrade && antidote update'
 
 # ---------- Editor ----------
@@ -105,8 +105,8 @@ export VISUAL="$EDITOR"
 
 # ---------- Claude Code ----------
 alias c='claude'
-alias cc='claude --continue'    # retomar la ultima sesion en esta carpeta
+alias cc='claude --continue'    # resume the last session in this folder
 
-# ---------- Local (no versionado) ----------
-# Para secretos, tokens y ajustes de esta maquina concreta
+# ---------- Local (not versioned) ----------
+# For secrets, tokens and settings specific to this machine
 [ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

@@ -1,47 +1,49 @@
-# Preferencias globales
+# Global preferences
 
-## Entorno
+## Environment
 
-`~/Development` es una carpeta contenedora, no un proyecto. Cada subcarpeta es un
-proyecto independiente con su propio git, su propio toolchain y sus propias
-convenciones. No asumas que algo visto en un proyecto aplica a otro, y no crees
-archivos sueltos en la raíz de `~/Development`.
+`~/Development` is a container folder, not a project. Each subfolder is an
+independent project with its own git, its own toolchain and its own
+conventions. Do not assume something seen in one project applies to another,
+and do not create loose files at the root of `~/Development`.
 
-La configuración de Claude Code y de la shell vive en `~/dotfiles` (versionado).
-Los cambios a `~/.claude/*.sh` van ahí, no en copias sueltas.
+Claude Code and shell configuration live in `~/dotfiles` (versioned). Changes
+to `~/.claude/*.sh` go there, not into stray copies.
 
-Stack habitual: Python, Node/TypeScript/JavaScript, React, shell e infra.
+Usual stack: Python, Node/TypeScript/JavaScript, React, shell and infra.
 
-## Idioma
+## Language
 
-Respóndeme en español. El código en inglés: nombres, comentarios, mensajes de
-commit, documentación en el repo, strings de log. Un repo puede acabar siendo
-público o compartido.
+Reply to me in Spanish. That is the only thing in Spanish: everything you
+write into a file goes in English — names, comments, commit messages, repo
+documentation, log strings, test fixtures, CLI output. A repo may end up
+public or shared.
 
-## Cómo trabajar
+## How to work
 
-Calibra por tamaño. Un cambio acotado o mecánico hazlo directo y cuéntamelo
-después. Si toca varios archivos, cambia una interfaz o implica una decisión de
-diseño con alternativas reales, propón el enfoque antes de escribir.
+Calibrate by size. Make a small or mechanical change directly and tell me
+afterwards. If it touches several files, changes an interface, or involves a
+design decision with real alternatives, propose the approach before writing.
 
-Antes de introducir una dependencia nueva, pregunta. Casi siempre prefiero
-resolverlo con lo que ya está en el proyecto o con la librería estándar.
+Ask before introducing a new dependency. I almost always prefer solving it
+with what is already in the project or with the standard library.
 
-Respeta el toolchain que ya usa cada proyecto: el gestor de paquetes que indique
-el lockfile, el formateador y el linter que estén configurados. No los cambies
-ni añadas config nueva por iniciativa propia.
+Respect the toolchain each project already uses: the package manager the
+lockfile points to, the formatter and the linter that are configured. Do not
+change them or add new config on your own initiative.
 
-No crees archivos que no hagan falta. Nada de READMEs, resúmenes ni documentos
-de "notas de implementación" salvo que te los pida.
+Do not create files that are not needed. No READMEs, summaries or
+"implementation notes" documents unless I ask for them.
 
-## Código
+## Code
 
-Comenta el porqué, no el qué. Si el comentario repite lo que ya dice la línea
-siguiente, sobra. Los que valen la pena explican una decisión, un caso borde o
-algo que sorprendería a quien lea.
+Comment the why, not the what. If the comment repeats what the next line
+already says, drop it. The ones worth keeping explain a decision, an edge case,
+or something that would surprise the reader.
 
-Escribe tests cuando haya lógica con casos borde reales. No para getters,
-wrappers ni funciones de una línea.
+Write tests when there is logic with real edge cases. Not for getters,
+wrappers or one-line functions.
 
-Al terminar, di lo que pasó de verdad: si un test falla, enséñame la salida; si
-dejaste algo a medias, dilo. Prefiero un reporte incómodo a uno optimista.
+When you finish, tell me what actually happened: if a test fails, show me the
+output; if you left something half done, say so. I prefer an uncomfortable
+report to an optimistic one.

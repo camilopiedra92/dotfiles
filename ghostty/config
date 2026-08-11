@@ -1,80 +1,80 @@
 # Ghostty — https://ghostty.org/docs/config
-# Recargar sin reiniciar: Cmd+Shift+,
-# Ver temas: ghostty +list-themes     Ver fuentes: ghostty +list-fonts
+# Reload without restarting: Cmd+Shift+,
+# List themes: ghostty +list-themes    List fonts: ghostty +list-fonts
 
-# ═══════════════ Tipografia ═══════════════
+# ═══════════════ Typography ═══════════════
 font-family = "JetBrainsMono Nerd Font"
 font-size = 14
 
-# Ligaduras: => != >= <= se dibujan como un solo simbolo
+# Ligatures: => != >= <= are drawn as a single symbol
 font-feature = calt
 font-feature = liga
 font-feature = ss02
 
-# En macOS las monoespaciadas se ven finas y lavadas por el antialiasing.
-# Esto las engrosa ligeramente: es el ajuste que mas mejora la lectura.
+# On macOS monospaced fonts look thin and washed out due to antialiasing.
+# This thickens them slightly: the single setting that most improves reading.
 font-thicken = true
 
-# Altura de linea +12%. Casi nadie lo toca y es lo que separa un terminal
-# apretado de uno que se lee comodo en sesiones largas.
+# Line height +12%. Almost nobody touches it and it is what separates a
+# cramped terminal from one that reads comfortably over long sessions.
 adjust-cell-height = 12%
 
 # ═══════════════ Color ═══════════════
 theme = Catppuccin Mocha
 
-# Los Mac modernos son P3: amplia la gama y los colores dejan de verse
-# apagados respecto a lo que el tema define.
+# Modern Macs are P3: this widens the gamut and colors stop looking dull
+# compared to what the theme actually defines.
 window-colorspace = display-p3
 
-# Mezcla de alfa correcta en espacio lineal. Sin esto el texto sobre fondo
-# translucido se ve mas delgado de lo que deberia.
+# Correct alpha blending in linear space. Without this, text over a
+# translucent background looks thinner than it should.
 alpha-blending = linear-corrected
 
-# Garantiza contraste minimo texto/fondo aunque un programa elija
-# una combinacion ilegible. 1 = desactivado.
+# Guarantees a minimum text/background contrast even if a program picks an
+# unreadable combination. 1 = disabled.
 minimum-contrast = 1.1
 
-# Transparencia sutil con desenfoque. Bajar de 0.90 empieza a costar lectura.
+# Subtle transparency with blur. Below 0.90 readability starts to suffer.
 background-opacity = 0.95
 background-blur-radius = 30
 
-# ═══════════════ Ventana ═══════════════
-# Aire alrededor del texto: respira y no se pega a los bordes
+# ═══════════════ Window ═══════════════
+# Room around the text: it breathes instead of hugging the edges
 window-padding-x = 18
 window-padding-y = 14
-# Reparte el espacio sobrante en vez de dejarlo todo a un lado
+# Spreads the leftover space instead of dumping it all on one side
 window-padding-balance = true
 
-# Barra de titulo nativa de macOS con pestanas reales
+# Native macOS title bar with real tabs
 macos-titlebar-style = tabs
 window-save-state = always
 
-# El split inactivo se atenua: se ve de un vistazo donde estas
+# The inactive split dims: you can tell at a glance where you are
 unfocused-split-opacity = 0.6
 
 # ═══════════════ Cursor ═══════════════
 cursor-style = block
 cursor-style-blink = false
-# Deja ver el caracter que hay debajo del cursor
+# Lets you see the character underneath the cursor
 cursor-opacity = 0.85
 
 # ═══════════════ Scrollback ═══════════════
-# Para revisar una sesion larga de Claude Code entera
+# Enough to review an entire long Claude Code session
 scrollback-limit = 100000000
 
 # ═══════════════ Claude Code ═══════════════
-# Shift+Enter mete un salto de linea en vez de enviar el mensaje.
-# Imprescindible para prompts de varias lineas.
+# Shift+Enter inserts a line break instead of sending the message.
+# Essential for multi-line prompts.
 keybind = shift+enter=text:\n
 
-# Option como Meta: Option+flechas salta por palabras en el prompt
+# Option as Meta: Option+arrows jumps word by word in the prompt
 macos-option-as-alt = true
 
-# ═══════════════ Calidad de vida ═══════════════
+# ═══════════════ Quality of life ═══════════════
 copy-on-select = clipboard
 confirm-close-surface = false
 mouse-hide-while-typing = true
 
 keybind = cmd+k=clear_screen
-# Terminal desplegable sobre cualquier app (funciona aunque Ghostty este al fondo)
+# Drop-down terminal over any app (works even when Ghostty is in the background)
 keybind = global:cmd+grave_accent=toggle_quick_terminal

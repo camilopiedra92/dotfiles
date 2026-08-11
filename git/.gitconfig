@@ -1,5 +1,5 @@
-# Identidad: vive en ~/.gitconfig.local (fuera del repo).
-# Asi este repo puede ser publico y cada maquina usa su propio nombre/email.
+# Identity: lives in ~/.gitconfig.local (outside the repo).
+# That way this repo can be public and each machine uses its own name/email.
 [include]
 	path = ~/.gitconfig.local
 
@@ -7,15 +7,15 @@
 	defaultBranch = main
 
 [push]
-	# Crea la rama remota sola en el primer push, sin --set-upstream
+	# Creates the remote branch on first push, no --set-upstream needed
 	autoSetupRemote = true
 
 [pull]
-	# Rebase en vez de merge: historial lineal, sin commits de merge basura
+	# Rebase instead of merge: linear history, no junk merge commits
 	rebase = true
 
 [fetch]
-	# Borra ramas locales que ya no existen en el remoto
+	# Prunes local branches that no longer exist on the remote
 	prune = true
 	pruneTags = true
 
@@ -24,7 +24,7 @@
 	autoStash = true
 
 [merge]
-	# Muestra tambien el estado original en los conflictos, no solo los dos lados
+	# Shows the original state in conflicts too, not just the two sides
 	conflictStyle = zdiff3
 
 [diff]
@@ -32,7 +32,7 @@
 	colorMoved = default
 
 [branch]
-	# git branch ordena por commit mas reciente, no alfabeticamente
+	# git branch sorts by most recent commit, not alphabetically
 	sort = -committerdate
 
 [column]
@@ -42,12 +42,12 @@
 	excludesfile = ~/.gitignore_global
 
 [help]
-	# Corrige typos ("git stauts") tras 1s en vez de solo sugerir
+	# Fixes typos ("git stauts") after 1s instead of just suggesting
 	autocorrect = prompt
 
-# Escrito por `gh auth setup-git`. gh entrega el token a git, asi que no hay
-# credenciales guardadas aqui ni contrasenas que teclear en push/pull.
-# El "helper =" vacio limpia los helpers heredados antes de poner el suyo.
+# Written by `gh auth setup-git`. gh hands the token to git, so there are no
+# credentials stored here and no passwords to type on push/pull.
+# The empty "helper =" clears inherited helpers before setting its own.
 [credential "https://github.com"]
 	helper =
 	helper = !/opt/homebrew/bin/gh auth git-credential

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Reconstruye el entorno de desarrollo en una maquina nueva.
-# Uso:  git clone <repo> ~/dotfiles && ~/dotfiles/install.sh
+# Rebuilds the development environment on a new machine.
+# Usage:  git clone <repo> ~/dotfiles && ~/dotfiles/install.sh
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,24 +9,24 @@ log() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 
 # --- 1. Homebrew ---
 if ! command -v brew >/dev/null 2>&1; then
-  log "Instalando Homebrew (pedira tu password)"
+  log "Installing Homebrew (it will ask for your password)"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 fi
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
-# --- 2. Paquetes del Brewfile ---
-log "Instalando paquetes de Homebrew"
+# --- 2. Brewfile packages ---
+log "Installing Homebrew packages"
 brew bundle install --file="$DOTFILES/Brewfile"
 
 # --- 3. Symlinks ---
-log "Enlazando dotfiles"
+log "Linking dotfiles"
 link() {
   local src="$1" dest="$2"
   mkdir -p "$(dirname "$dest")"
-  # Si ya existe un archivo real (no symlink), lo respalda antes de sustituirlo
+  # If a real file already exists (not a symlink), back it up before replacing it
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     mv "$dest" "$dest.backup.$(date +%Y%m%d%H%M%S)"
-    echo "    respaldado: $dest"
+    echo "    backed up: $dest"
   fi
   ln -sfn "$src" "$dest"
   echo "    $dest -> $src"
@@ -44,21 +44,21 @@ link "$DOTFILES/claude/statusline.sh"          "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
 link "$DOTFILES/claude/CLAUDE.md"              "$HOME/.claude/CLAUDE.md"
 
-# --- 3b. Ajustes de Claude Code ---
-# settings.json no se enlaza: Claude Code lo reescribe solo (el tema, /config,
-# los permisos que apruebas sobre la marcha) y un symlink acabaria sobrescrito.
-# CLAUDE.md si se enlaza, arriba: ese solo lo editas tu.
+# --- 3b. Claude Code settings ---
+# settings.json is not symlinked: Claude Code rewrites it on its own (the
+# theme, /config, the permissions you approve on the fly) and a symlink would
+# end up overwritten. CLAUDE.md IS symlinked above: only you edit that one.
 #
-# Los ajustes no viven aqui dentro sino en claude/settings.json, como datos.
-# Este bloque es solo el mecanismo del merge, asi que anadir un ajuste nuevo es
-# editar aquel JSON y este paso no vuelve a tocarse.
+# The settings do not live in here but in claude/settings.json, as data. This
+# block is only the merge mechanism, so adding a new setting means editing that
+# JSON and this step is never touched again.
 #
-# `.[0] * .[1]` es el merge recursivo de jq, con el repo a la derecha para que
-# gane clave a clave. Dos consecuencias buscadas: se conserva cualquier clave
-# local que no gestionemos (las que escriba Claude Code por su cuenta), y los
-# arrays se reemplazan enteros en vez de concatenarse, de modo que `deny` acaba
-# siendo la lista del repo y no la union historica de todas las instalaciones.
-log "Aplicando los ajustes de Claude Code"
+# `.[0] * .[1]` is jq's recursive merge, with the repo on the right so it wins
+# key by key. Two intended consequences: any local key we do not manage is
+# preserved (the ones Claude Code writes by itself), and arrays are replaced
+# whole instead of concatenated, so `deny` ends up being the repo's list and
+# not the historical union of every installation.
+log "Applying Claude Code settings"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
@@ -66,11 +66,11 @@ jq -s '.[0] * .[1]' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
     > "$CLAUDE_SETTINGS.tmp" \
   && mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 
-# --- 4. Identidad de git (no se versiona) ---
+# --- 4. Git identity (not versioned) ---
 if [ ! -f "$HOME/.gitconfig.local" ]; then
-  log "Falta tu identidad de git. Creando ~/.gitconfig.local"
-  read -rp "    Nombre para los commits: " GIT_NAME
-  read -rp "    Email para los commits:  " GIT_EMAIL
+  log "Your git identity is missing. Creating ~/.gitconfig.local"
+  read -rp "    Name for commits:  " GIT_NAME
+  read -rp "    Email for commits: " GIT_EMAIL
   cat > "$HOME/.gitconfig.local" <<EOF
 [user]
 	name = $GIT_NAME
@@ -79,17 +79,16 @@ EOF
 fi
 
 # --- 5. Runtimes ---
-log "Instalando runtimes con mise"
+log "Installing runtimes with mise"
 mise install
 
 # --- 6. Rust ---
 if ! rustc --version >/dev/null 2>&1; then
-  log "Instalando toolchain de Rust"
+  log "Installing the Rust toolchain"
   /opt/homebrew/opt/rustup/bin/rustup default stable
 fi
 
-# Las extensiones de VS Code no necesitan paso propio:
-# el Brewfile las declara con entradas `vscode "..."` y las instala
-# `brew bundle install` en el paso 2.
+# VS Code extensions need no step of their own: the Brewfile declares them with
+# `vscode "..."` entries and `brew bundle install` installs them in step 2.
 
-log "Listo. Abre Ghostty."
+log "Done. Open Ghostty."

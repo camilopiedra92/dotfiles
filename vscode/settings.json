@@ -7,12 +7,12 @@
   "files.insertFinalNewline": true,
   "files.trimFinalNewlines": true,
 
-  // No preguntar al guardar ficheros nuevos fuera del workspace
+  // Do not ask when saving new files outside the workspace
   "explorer.confirmDragAndDrop": false,
 
   // ---------- Python ----------
-  // Ruff (de Astral, los mismos de uv): linter + formatter en un solo binario.
-  // Sustituye a black + isort + flake8 y es ~100x mas rapido.
+  // Ruff (by Astral, the uv people): linter + formatter in a single binary.
+  // Replaces black + isort + flake8 and is ~100x faster.
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.codeActionsOnSave": {
@@ -20,10 +20,10 @@
       "source.organizeImports.ruff": "explicit",
     },
   },
-  // "standard" avisa de errores de tipos reales sin el ruido de "strict"
+  // "standard" reports real type errors without the noise of "strict"
   "python.analysis.typeCheckingMode": "standard",
   "python.analysis.autoImportCompletions": true,
-  // El interprete lo resuelve mise segun el mise.toml de cada proyecto
+  // mise resolves the interpreter from each project's mise.toml
   "python.terminal.activateEnvironment": true,
 
   // ---------- JavaScript / TypeScript ----------
@@ -40,24 +40,24 @@
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
   },
-  // Usa la version de TypeScript del proyecto, no la que trae VS Code:
-  // evita que el editor y la CI reporten errores distintos
+  // Use the project's TypeScript version, not the one VS Code ships:
+  // keeps the editor and CI from reporting different errors
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "typescript.updateImportsOnFileMove.enabled": "always",
   "javascript.updateImportsOnFileMove.enabled": "always",
 
   // ---------- Terminal ----------
-  // Hereda el PATH del shell, asi mise activa la version correcta por proyecto
+  // Inherits the shell PATH, so mise activates the right version per project
   "terminal.integrated.defaultProfile.osx": "zsh",
   "terminal.integrated.inheritEnv": true,
 
   // ---------- Git ----------
   "git.autofetch": true,
   "git.confirmSync": false,
-  // Ya tienes pull.rebase=true en ~/.gitconfig; esto alinea la UI
+  // You already have pull.rebase=true in ~/.gitconfig; this aligns the UI
   "git.enableSmartCommit": true,
 
-  // ---------- Ruido ----------
+  // ---------- Noise ----------
   "errorLens.enabledDiagnosticLevels": ["error", "warning"],
   "workbench.startupEditor": "none",
   "telemetry.telemetryLevel": "off",

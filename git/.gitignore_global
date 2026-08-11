@@ -5,14 +5,14 @@
 Icon?
 ._*
 
-# Editores
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Entornos y secretos (red de seguridad, no sustituye al .gitignore del proyecto)
+# Environments and secrets (safety net, not a replacement for the project's .gitignore)
 .env
 .env.local
 .venv/

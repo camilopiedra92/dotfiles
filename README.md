@@ -1,81 +1,83 @@
 # dotfiles
 
-Entorno de desarrollo de esta máquina, declarado como código.
+This machine's development environment, declared as code.
 
-## Máquina nueva
+## New machine
 
 ```bash
-git clone <este-repo> ~/dotfiles
+git clone <this-repo> ~/dotfiles
 ~/dotfiles/install.sh
 ```
 
-## Arquitectura
+## Architecture
 
-| Capa | Herramienta | Qué gestiona |
+| Layer | Tool | What it manages |
 |---|---|---|
-| Sistema | Homebrew | CLIs y apps nativas (`Brewfile`) |
-| Runtimes | mise | node, python, go… por proyecto (`mise/config.toml`) |
-| Python | uv | paquetes, venvs y proyectos |
+| System | Homebrew | CLIs and native apps (`Brewfile`) |
+| Runtimes | mise | node, python, go… per project (`mise/config.toml`) |
+| Python | uv | packages, venvs and projects |
 | Rust | rustup | toolchains |
 
-Regla: **Homebrew instala programas, mise instala runtimes.** Nunca un runtime
-por Homebrew — te ata a una sola versión global y rompe proyectos con otra.
+Rule: **Homebrew installs programs, mise installs runtimes.** Never a runtime
+through Homebrew — it ties you to a single global version and breaks projects
+that need a different one.
 
-El Python del sistema (`/usr/bin/python3`) no se toca nunca.
+The system Python (`/usr/bin/python3`) is never touched.
 
-## Ficheros
+## Files
 
 ```
-Brewfile               paquetes, apps y extensiones de VS Code
-zsh/.zshrc             PATH, historial, fzf, alias
+Brewfile               packages, apps and VS Code extensions
+zsh/.zshrc             PATH, history, fzf, aliases
 zsh/.zsh_plugins.txt   plugins (antidote)
 starship.toml          prompt
 ghostty/config         terminal
-git/.gitconfig         config de git (sin identidad)
+git/.gitconfig         git config (without identity)
 git/.gitignore_global
-mise/config.toml       versiones globales de runtimes
-vscode/settings.json   ajustes del editor
-claude/statusline.sh            statusline de Claude Code
-claude/subagent-statusline.sh   telemetría por agente en el panel de agentes
-claude/statusline-demo.sh       las renderiza con casos de ejemplo
-install.sh             symlinks + instalación completa
+mise/config.toml       global runtime versions
+vscode/settings.json   editor settings
+claude/statusline.sh            Claude Code statusline
+claude/subagent-statusline.sh   per-agent telemetry in the agent panel
+claude/statusline-demo.sh       renders both with sample cases
+install.sh             symlinks + full installation
 ```
 
-`~/.zsh_plugins.zsh` es **generado**, no se versiona: antidote lo regenera
-solo cuando `.zsh_plugins.txt` cambia.
+`~/.zsh_plugins.zsh` is **generated**, not versioned: antidote regenerates it
+on its own whenever `.zsh_plugins.txt` changes.
 
-La identidad de git vive en `~/.gitconfig.local`, **fuera del repo**, para que
-esto pueda ser público y cada máquina use su propio nombre/email.
+The git identity lives in `~/.gitconfig.local`, **outside the repo**, so this
+can be public and each machine uses its own name/email.
 
-`~/.claude/settings.json` tampoco se enlaza: Claude Code lo reescribe solo
-(tema, `/config`…) y un symlink acabaría sobrescrito. `install.sh` le hace
-merge de `statusLine` y `subagentStatusLine` con `jq`, que es idempotente.
+`~/.claude/settings.json` is not symlinked either: Claude Code rewrites it on
+its own (theme, `/config`…) and a symlink would end up overwritten.
+`install.sh` merges `statusLine` and `subagentStatusLine` into it with `jq`,
+which is idempotent.
 
-Para verlas sin reiniciar Claude, incluidos los casos que no puedes provocar a
-voluntad (límite al 95 %, contexto en rojo, PR con cambios pedidos, un agente
-atascado):
+To see them without restarting Claude, including the cases you cannot trigger
+at will (limit at 95%, context in red, PR with changes requested, a stuck
+agent):
 
 ```bash
 ~/dotfiles/claude/statusline-demo.sh
 ```
 
-La statusline principal son dos líneas: identidad arriba (modelo, ruta, rama,
-PR) en estilo powerline, y medidores abajo (contexto, límites de 5 h y 7 días,
-coste) sobre fondo limpio, para que el color siga funcionando como alarma.
-`STYLE` y `LINES`, al principio del script, cambian a `minimal` y a una sola
-línea. Ambas requieren una Nerd Font: la config de Ghostty ya la fija.
+The main statusline is two lines: identity on top (model, path, branch, PR) in
+powerline style, and gauges below (context, 5h and 7d limits, cost) on a clean
+background, so color keeps working as an alarm. `STYLE` and `LINES`, at the top
+of the script, switch to `minimal` and to a single line. Both require a Nerd
+Font: the Ghostty config already sets one.
 
-## Uso diario
+## Daily use
 
 ```bash
-brew upgrade                  # actualiza todo lo del sistema
-mise upgrade                  # actualiza runtimes
+brew upgrade                  # update everything from the system layer
+mise upgrade                  # update runtimes
 
-# Tras instalar algo nuevo, volcarlo al repo (incluye extensiones de VS Code):
+# After installing something new, dump it into the repo (VS Code extensions included):
 brew bundle dump --file=~/dotfiles/Brewfile --force
 ```
 
-Fijar versiones en un proyecto (crea `mise.toml`, versiónalo con el repo):
+Pin versions in a project (creates `mise.toml`, version it with the repo):
 
 ```bash
 mise use node@24 python@3.13

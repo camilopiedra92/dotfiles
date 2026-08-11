@@ -1,6 +1,6 @@
 # Starship — https://starship.rs/config
-# Prompt en dos lineas: el comando siempre empieza en la misma columna,
-# sin importar lo largo que sea el path o el nombre de la rama.
+# Two-line prompt: the command always starts in the same column, no matter how
+# long the path or the branch name is.
 
 add_newline = true
 
@@ -23,7 +23,7 @@ style = "bold purple"
 
 [git_status]
 style = "bold yellow"
-# Solo lo accionable: conflictos, cambios sin commitear, sin push
+# Only the actionable bits: conflicts, uncommitted changes, unpushed commits
 conflicted = "⚠"
 ahead = "⇡${count}"
 behind = "⇣${count}"
@@ -33,8 +33,8 @@ modified = "!${count}"
 staged = "+${count}"
 stashed = "≡"
 
-# Los runtimes solo aparecen dentro de un proyecto que los use.
-# Asi el prompt refleja lo que mise ha activado de verdad.
+# Runtimes only show up inside a project that uses them.
+# That way the prompt reflects what mise has actually activated.
 [python]
 symbol = " "
 style = "bold yellow"
@@ -50,7 +50,7 @@ symbol = " "
 style = "bold red"
 format = '[$symbol$version]($style) '
 
-# Avisa cuando un comando tarda: util para no quedarte mirando la pantalla
+# Warns when a command is slow: useful so you do not sit staring at the screen
 [cmd_duration]
 min_time = 2000
 format = "[took $duration]($style) "
