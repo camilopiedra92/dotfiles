@@ -32,6 +32,15 @@ Respect the toolchain each project already uses: the package manager the
 lockfile points to, the formatter and the linter that are configured. Do not
 change them or add new config on your own initiative.
 
+In a new project there is nothing to respect yet, so start from this machine's:
+runtimes come from mise and never from Homebrew, Python packages and virtualenvs
+from uv, and a project that needs a version other than the global one gets its
+own `mise.toml` rather than a global change. Never `pip install` into the
+interpreter itself, and never reach for `python -m venv` when `uv venv` is
+there. If a project needs a native library — the kind uv installs a wrapper for
+and cannot provide, like the pango behind weasyprint — say so, because that
+dependency is invisible to the lockfile and only surfaces at runtime.
+
 Do not create files that are not needed. No READMEs, summaries or
 "implementation notes" documents unless I ask for them.
 
