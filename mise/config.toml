@@ -1,3 +1,17 @@
 [tools]
-node = "lts"
+# A major, not "lts", and that is a deliberate choice with an expiry date.
+#
+# 26 is Current today: it entered on 2026-04-21 and becomes Active LTS on
+# 2026-10-28, supported until 2029-04-30. Asking for it by number is the only
+# way to be on it before that date, since "lts" resolves to 24 until then.
+#
+# The two converge in October. Once 26 is the LTS, changing this back to "lts"
+# is a no-op that restores the tracking -- the pin moves on its own again
+# instead of freezing here until someone remembers to edit it. Do that then.
+#
+# What this is NOT is "latest". That would land on 27 next October, and
+# odd-numbered majors never become LTS: they ship in October and are out of
+# support roughly six months later. Node 25 is the cautionary example -- it
+# reached end of life on 2026-06-01 and Homebrew was still serving it.
+node = "26"
 python = "3.13"
