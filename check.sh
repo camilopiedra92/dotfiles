@@ -82,7 +82,7 @@ printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x ./*.sh ./claude/*.sh ./githooks/*
+  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -91,7 +91,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d ./*.sh ./claude/*.sh ./githooks/*
+  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -108,11 +108,12 @@ else
   skip "actionlint" "brew install actionlint"
 fi
 
-syntax_bash() { for f in ./*.sh ./claude/*.sh ./githooks/*; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
-  check "zsh syntax" zsh -n zsh/.zshrc
+  syntax_zsh() { for f in zsh/.zshenv zsh/.zshrc; do zsh -n "$f" || return 1; done; }
+  check "zsh syntax" syntax_zsh
 else
   skip "zsh syntax" "zsh not installed"
 fi
@@ -180,7 +181,7 @@ for f in ('starship.toml', 'mise/config.toml'):
     tomllib.load(open(f, 'rb'))
 "
 
-check "gitconfig" git config --file git/.gitconfig --list
+check "gitconfig" git config --file git/config --list
 
 check "claude settings" python3 -c "import json; json.load(open('claude/settings.json'))"
 
@@ -302,10 +303,16 @@ install_is_idempotent() {
   # Only the symlink and jq-merge steps are exercised: installing Homebrew
   # packages and runtimes would take tens of minutes and is Homebrew's job to
   # get right, not this repo's.
+  #
+  # The range stops at 3c and not at 4, which is not an off-by-one. Everything
+  # here is sandboxed by pointing HOME at a temporary directory, and 3c is the
+  # one step that reaches its target by path instead: `git -C "$DOTFILES"`
+  # escapes that sandbox and writes core.hooksPath into the real repository. A
+  # check that mutates the tree it is checking is not a check.
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
-    sed -n '/^# --- 3\. Symlinks/,/^# --- 4\./p' install.sh
+    sed -n '/^# --- 3\. Symlinks/,/^# --- 3c\./p' install.sh
   } > "$steps"
 
   # Guard against the extraction silently going empty if those markers are ever
@@ -318,15 +325,32 @@ install_is_idempotent() {
       return 1
     }
 
+  # The other half of that guard: catch the day someone renames 3c and the range
+  # silently swallows it again. Without this the side effect returns unnoticed,
+  # because enabling a hook that was going to be enabled anyway looks like
+  # nothing went wrong.
+  # shellcheck disable=SC2016  # matching that literal text, not expanding it
+  grep -qF 'git -C "$DOTFILES" config' "$steps" &&
+    {
+      echo "extraction reached step 3c, which writes to the real repository"
+      return 1
+    }
+
   HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
   HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
 
-  [ -L "$tmp/home/.zshrc" ] || {
+  [ -L "$tmp/home/.config/zsh/.zshrc" ] || {
     echo ".zshrc was not symlinked"
     return 1
   }
-  [ "$(readlink "$tmp/home/.zshrc")" = "$PWD/zsh/.zshrc" ] || {
+  [ "$(readlink "$tmp/home/.config/zsh/.zshrc")" = "$PWD/zsh/.zshrc" ] || {
     echo ".zshrc points elsewhere"
+    return 1
+  }
+  # The one file that must NOT move: zsh reads it before ZDOTDIR exists, so
+  # linking it anywhere else means the rest is never found.
+  [ -L "$tmp/home/.zshenv" ] || {
+    echo ".zshenv was not linked into \$HOME"
     return 1
   }
   [ -L "$tmp/home/.claude/statusline.sh" ] || {

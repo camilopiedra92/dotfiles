@@ -119,6 +119,11 @@ mouse-hide-while-typing = true
 
 # Drop-down terminal over any app (works even when Ghostty is in the background)
 keybind = global:cmd+grave_accent=toggle_quick_terminal
+# Drops from the top like every other terminal that does this, and fast enough
+# to feel instant without skipping the animation entirely -- an abrupt appear
+# makes it hard to tell the panel opened at all.
+quick-terminal-position = top
+quick-terminal-animation-duration = 0.15
 
 # Notify on new stable releases without installing anything unattended
 auto-update = check

@@ -16,3 +16,8 @@ Icon?
 .env
 .env.local
 .venv/
+
+# Tools
+# Per-machine permissions Claude Code approves as you work. Machine state, not
+# project state, so it must never reach a shared branch.
+**/.claude/settings.local.json

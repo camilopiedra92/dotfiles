@@ -37,7 +37,10 @@ space_redirects = true
 
 # Tabs are syntax here, not style: git's config parser and Make both require
 # them, so an editor that "helpfully" converts them breaks the file.
-[{.gitconfig,*.gitconfig}]
+#
+# Matched by path rather than by name because the XDG filename is just
+# "config", which on its own would also catch any other file called that.
+[git/config]
 indent_style = tab
 
 [Makefile]

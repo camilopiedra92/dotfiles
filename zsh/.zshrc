@@ -13,11 +13,23 @@ fi
 
 export PATH="$HOME/.local/bin:$PATH"             # claude, user binaries
 export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # rustup does not symlink itself
+# Keg-only too: Homebrew keeps versioned formulae out of the main prefix so two
+# major versions can coexist. Without this there is no psql or pg_dump.
+export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
+
+# ---------- Homebrew ----------
+export HOMEBREW_NO_ENV_HINTS=1                # stop repeating hints already read
+export HOMEBREW_SERVICES_NO_DOMAIN_WARNING=1
 
 # ---------- History ----------
 # The most useful thing and the one almost nobody configures: by default zsh
 # keeps few lines and loses them when several windows close at once.
-HISTFILE="$HOME/.zsh_history"
+#
+# Under state and not config: this is data the shell writes, not something you
+# edit or would ever want versioned. XDG draws that line and zsh, being older
+# than the spec, does not -- hence the explicit path.
+HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history"
+[[ -d "${HISTFILE:h}" ]] || mkdir -p "${HISTFILE:h}"
 HISTSIZE=100000
 SAVEHIST=100000
 setopt HIST_IGNORE_ALL_DUPS      # a repeated command does not clutter history
@@ -42,8 +54,8 @@ export ZSH_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/zsh"
 
 # Static loading: antidote only runs if .zsh_plugins.txt has changed. On a
 # normal startup this is a single `source` of an already generated file.
-zsh_plugins_txt="$HOME/.zsh_plugins.txt"
-zsh_plugins_zsh="$HOME/.zsh_plugins.zsh"
+zsh_plugins_txt="${ZDOTDIR:-$HOME}/.zsh_plugins.txt"
+zsh_plugins_zsh="${ZDOTDIR:-$HOME}/.zsh_plugins.zsh"
 if [[ ! ${zsh_plugins_zsh} -nt ${zsh_plugins_txt} ]]; then
   source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
   antidote bundle <"${zsh_plugins_txt}" >| "${zsh_plugins_zsh}"
@@ -96,6 +108,10 @@ alias cd='z'
 alias dotfiles='cd ~/dotfiles'
 alias reload='exec zsh'
 
+# Resets a machine left in a bad state: hung apps, dev servers still holding a
+# port, stale DNS. Needs root for `purge`; see bin/dev-nuke.sh.
+alias nuke='sudo dev-nuke'
+
 # Update the whole environment at once (antidote included)
 alias update-all='brew upgrade && brew cleanup && mise upgrade && antidote update'
 
@@ -107,6 +123,14 @@ export VISUAL="$EDITOR"
 alias c='claude'
 alias cc='claude --continue'    # resume the last session in this folder
 
+# ---------- Greeting ----------
+# Around 10ms, so the cost is not the reason for the guard: a banner reprinted
+# by every nested shell turns a greeting into noise. SHLVL is 1 in a terminal
+# tab and in an editor's integrated terminal, and only grows when a shell is
+# opened inside another one.
+[[ $SHLVL -eq 1 ]] && fastfetch
+
 # ---------- Local (not versioned) ----------
-# For secrets, tokens and settings specific to this machine
-[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"
+# For secrets, tokens and settings specific to this machine. Next to this file
+# rather than in $HOME, so everything zsh reads lives in one directory.
+[ -f "${ZDOTDIR:-$HOME}/.zshrc.local" ] && source "${ZDOTDIR:-$HOME}/.zshrc.local"

@@ -36,14 +36,16 @@ The system Python (`/usr/bin/python3`) is never touched.
 
 ```
 Brewfile               packages, apps and VS Code extensions
+zsh/.zshenv            sets ZDOTDIR; the only file that must live in $HOME
 zsh/.zshrc             PATH, history, fzf, aliases
 zsh/.zsh_plugins.txt   plugins (antidote)
 starship.toml          prompt
 ghostty/config         terminal
-git/.gitconfig         git config (without identity)
-git/.gitignore_global
+git/config             git config (without identity)
+git/ignore             global gitignore
 mise/config.toml       global runtime versions
 vscode/settings.json   editor settings
+bin/dev-nuke.sh        resets a machine left in a bad state
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -55,11 +57,36 @@ githooks/pre-push      refuses to rewrite or delete main
 .editorconfig          formatting, read by shfmt and by the editor
 ```
 
-`~/.zsh_plugins.zsh` is **generated**, not versioned: antidote regenerates it
-on its own whenever `.zsh_plugins.txt` changes.
+`$ZDOTDIR/.zsh_plugins.zsh` is **generated**, not versioned: antidote
+regenerates it on its own whenever `.zsh_plugins.txt` changes.
 
-The git identity lives in `~/.gitconfig.local`, **outside the repo**, so this
-can be public and each machine uses its own name/email.
+## Where things land
+
+Everything goes to its XDG path, which for the older tools here is not the one
+they are usually installed to:
+
+| | |
+|---|---|
+| `~/.zshenv` | the single exception. zsh reads it before it can know about `ZDOTDIR`, so it cannot be moved — it exists to point at the directory below |
+| `~/.config/zsh/` | `.zshrc`, `.zsh_plugins.txt`, and the generated `.zsh_plugins.zsh` |
+| `~/.local/state/zsh/history` | state the shell writes, not config you edit |
+| `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
+| `~/.local/bin/` | `dev-nuke` |
+
+`install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
+git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
+so leaving it behind means the linked config is read and then overruled.
+
+The git identity lives in `~/.config/git/config.local`, **outside the repo**, so
+this can be public and each machine uses its own name/email.
+
+Git is linked to its XDG paths (`~/.config/git/config` and `~/.config/git/ignore`)
+and not to `~/.gitconfig` and `~/.gitignore_global`. The two cannot coexist —
+git reads both and the legacy one wins — so `install.sh` removes the old paths
+after linking the new ones. Using the default ignore location is also what lets
+`core.excludesfile` disappear from the config: naming a non-standard path is the
+only reason that option ever needs to exist, and doing so silently disables
+`~/.config/git/ignore` for everything else that expects to find it there.
 
 `~/.claude/settings.json` is not symlinked either: Claude Code rewrites it on
 its own (theme, `/config`…) and a symlink would end up overwritten.

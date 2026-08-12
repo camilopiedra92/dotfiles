@@ -1,0 +1,108 @@
+# Identity: lives in config.local, next to this file and outside the repo.
+# That way this repo can be public and each machine uses its own name/email.
+#
+# A relative path in an [include] resolves against the directory of the file
+# doing the including, so this keeps working wherever the config lives.
+[include]
+	path = config.local
+
+[init]
+	defaultBranch = main
+
+[push]
+	# Creates the remote branch on first push, no --set-upstream needed
+	autoSetupRemote = true
+	# Sends annotated tags that point into what is being pushed. Forgetting
+	# `git push --tags` is how a release tag ends up existing only locally.
+	followTags = true
+
+[pull]
+	# Rebase instead of merge: linear history, no junk merge commits
+	rebase = true
+
+[commit]
+	# Puts the full diff in the editor, below the message. You describe what you
+	# actually changed instead of what you remember changing.
+	verbose = true
+
+[rerere]
+	# Reuse Recorded Resolution: remembers how a conflict was resolved and
+	# replays it when the same one reappears. This pairs with pull.rebase above
+	# -- rebasing is exactly what makes you resolve the same conflict twice.
+	enabled = true
+	autoUpdate = true
+
+[fetch]
+	# Prunes local branches that no longer exist on the remote
+	prune = true
+	pruneTags = true
+
+[transfer]
+	# Validates every object as it arrives instead of trusting the sender, which
+	# is what turns a corrupted or deliberately malformed object into an error at
+	# fetch time rather than a mystery months later.
+	#
+	# The tradeoff is real and worth writing down: a handful of old public repos
+	# contain objects that predate today's rules and will now refuse to clone.
+	# The fix is per-repo and explicit, never turning this off globally:
+	#   git -c transfer.fsckObjects=false clone <url>
+	fsckObjects = true
+
+[rebase]
+	autoSquash = true
+	autoStash = true
+	# When a rebase rewrites commits that other local branches point at, move
+	# those branches too. Without it a stack of dependent branches silently
+	# keeps pointing at the pre-rebase commits.
+	updateRefs = true
+
+[merge]
+	# Shows the original state in conflicts too, not just the two sides
+	conflictStyle = zdiff3
+
+[diff]
+	algorithm = histogram
+	colorMoved = default
+	# i/ w/ c/ instead of a/ b/, so the prefix says which side is the index,
+	# the working tree or a commit rather than leaving you to infer it.
+	mnemonicPrefix = true
+
+[branch]
+	# git branch sorts by most recent commit, not alphabetically
+	sort = -committerdate
+
+[tag]
+	# Sorts v1.10.0 after v1.9.0. A plain string sort puts it before.
+	sort = -version:refname
+
+[column]
+	ui = auto
+
+[core]
+	# There is no excludesfile here on purpose. git's default is already
+	# $XDG_CONFIG_HOME/git/ignore, which is exactly where this repo now links
+	# its global ignore. Naming it would only be necessary to point somewhere
+	# non-standard -- and doing that silently disables the default path, which
+	# is how the ignore file sitting there stopped being read at all.
+	#
+	# Both attack the same cost: `git status` stat-ing the whole tree. fsmonitor
+	# runs a daemon fed by FSEvents so git is told what changed instead of
+	# looking, and untrackedCache remembers which directories held no untracked
+	# files. On a large repo this is the difference between seconds and
+	# milliseconds, and starship runs it on every prompt.
+	fsmonitor = true
+	untrackedCache = true
+
+[help]
+	# Fixes typos ("git stauts") after 1s instead of just suggesting
+	autocorrect = prompt
+
+# Written by `gh auth setup-git`. gh hands the token to git, so there are no
+# credentials stored here and no passwords to type on push/pull.
+# The empty "helper =" clears inherited helpers before setting its own.
+[credential "https://github.com"]
+	helper =
+	helper = !/opt/homebrew/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !/opt/homebrew/bin/gh auth git-credential
