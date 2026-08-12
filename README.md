@@ -148,14 +148,39 @@ at anything that opens a file itself. A one-line Python or Node script reads a
 denied path without touching any of it; that was checked here with a decoy, and
 both read it.
 
-So the deny list is a guardrail against mistakes, not a boundary. The boundary
-is `sandbox`, which enforces at the OS level and applies to subprocesses too;
-the docs describe the two as complementary and recommend both, and the deny
-rules above are merged into the sandbox boundary rather than replaced by it. It
-is not enabled here yet because `gh` and `gcloud` need
-`enableWeakerNetworkIsolation` on macOS, Docker needs its socket, and `brew` and
-`install.sh` write outside any project. Turning it on is a tuning exercise, not
-a flag.
+## Why the sandbox is not enabled
+
+`sandbox` is the OS-level layer that does cover Bash subprocesses, so it is the
+obvious answer to the gap above. It is off here on purpose, and the reason is
+fit rather than friction.
+
+Its whole model is that the project is the world: sandboxed commands may write
+to the working directory and the session temp directory, nothing else. That is
+the right shape for an agent working inside a repository, and the wrong one for
+a repository whose job is to configure the machine — `brew` writes to
+`/opt/homebrew`, and `install.sh` writes symlinks across `$HOME`. The default
+scope agrees: the `/sandbox` panel saves to a project's
+`.claude/settings.local.json`, not to user settings. Per project is the
+granularity it was designed for, and it is worth turning on in repositories
+where Claude runs unattended on code that did not come from here.
+
+Three things are worth stating plainly before treating it as a security answer:
+
+- **It does not protect credentials by default.** The default read policy is the
+  entire computer, and the documentation names `~/.aws/credentials` and `~/.ssh/`
+  as still readable. That takes a deliberate `sandbox.credentials` block.
+- **It does not cover Read, Edit or Write**, which go through the permission
+  system directly. The deny rules above and the sandbox protect different
+  things; neither replaces the other, which is why the docs recommend both.
+- **The documentation does not call it a boundary**: "Sandboxing reduces risk but
+  is not a complete isolation boundary." The proxy does not inspect TLS, so a
+  broad `allowedDomains` entry can be reached around by domain fronting.
+
+The tools that would need excluding here are the ones in daily use. `docker` is
+documented as incompatible. `gh`, `gcloud` and `terraform` may fail TLS
+verification under Seatbelt and are meant to go in `excludedCommands` too — and
+an excluded command runs with no sandbox at all, so each exception reopens the
+hole for that tool.
 
 To see them without restarting Claude, including the cases you cannot trigger
 at will (limit at 95%, context in red, PR with changes requested, a stuck
