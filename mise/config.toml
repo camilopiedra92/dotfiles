@@ -14,4 +14,18 @@
 # support roughly six months later. Node 25 is the cautionary example -- it
 # reached end of life on 2026-06-01 and Homebrew was still serving it.
 node = "26"
-python = "3.13"
+
+# Python has no LTS, and none of the reasoning above transfers to it. Every
+# stable release gets the same five years -- two of bugfixes, three of security
+# -- so there is no parity trap to sidestep and no date to wait for. The newest
+# stable simply is the recommended one.
+#
+# 3.14 shipped 2025-10-07 and is supported until 2030-10-31. Staying on 3.13 was
+# only ever worth it while the ecosystem caught up on wheels, and ten months is
+# well past that.
+#
+# The minor is pinned rather than "latest" for the one reason that does apply:
+# 3.15 arrives this October and the C-extension packages that matter will take
+# months to publish wheels for it. Bumping this by hand once a year is the
+# deliberate step that "latest" would take for you at the worst moment.
+python = "3.14"
