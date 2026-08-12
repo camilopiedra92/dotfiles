@@ -1,4 +1,33 @@
 {
+  // ---------- Appearance ----------
+  // The extension is declared in the Brewfile: a theme named here but not
+  // installed there leaves a fresh machine with the default icons and no clue
+  // why.
+  "workbench.iconTheme": "material-icon-theme",
+
+  // ---------- Font ----------
+  // The same font and features as ghostty/config, so a prompt looks identical
+  // whichever terminal it is in. Left unset, VS Code falls back to Menlo.
+  //
+  // What actually breaks under Menlo is `eza --icons`, which the ls/ll/la/lt
+  // aliases all pass: its icons are Private Use Area codepoints that only a
+  // Nerd Font carries, so every line of a directory listing starts with an
+  // empty box. The starship prompt survives -- it is built entirely from
+  // standard Unicode arrows, which Menlo does have.
+  //
+  // Features are JetBrains Mono's own, by the names the font itself declares:
+  // calt carries the ligatures (this font ships no `liga`), zero slashes the
+  // zero, ss02 is "Closed construction" -- tighter apertures on a/c/e/s.
+  "editor.fontFamily": "JetBrainsMono Nerd Font, Menlo, monospace",
+  "editor.fontLigatures": "'calt', 'zero', 'ss02'",
+  // Stated separately even though the terminal would inherit the line above:
+  // this is the one that has to be a Nerd Font, and an inherited value is the
+  // kind that gets broken by an unrelated edit.
+  "terminal.integrated.fontFamily": "JetBrainsMono Nerd Font",
+  // Matches ghostty's adjust-cell-height = 12%, so line spacing does not jump
+  // when the same shell is opened in the other terminal.
+  "terminal.integrated.lineHeight": 1.12,
+
   // ---------- Editor ----------
   "editor.formatOnSave": true,
   "editor.bracketPairColorization.enabled": true,
@@ -60,7 +89,12 @@
   // ---------- Noise ----------
   "errorLens.enabledDiagnosticLevels": ["error", "warning"],
   "workbench.startupEditor": "none",
+  "workbench.editor.empty.hint": "hidden",
   "telemetry.telemetryLevel": "off",
+  // Red Hat extensions ship their own telemetry, on a separate switch that
+  // telemetry.telemetryLevel does not reach. Set here so it is already off if
+  // one of them is ever installed.
+  "redhat.telemetry.enabled": false,
   "update.showReleaseNotes": false,
   "files.exclude": {
     "**/.venv": true,
@@ -70,4 +104,8 @@
     "**/node_modules": true,
   },
   "chat.mcp.gallery.enabled": true,
+
+  // ---------- Claude Code ----------
+  // The panel, not the sidebar: it keeps the full editor width for code.
+  "claudeCode.preferredLocation": "panel",
 }
