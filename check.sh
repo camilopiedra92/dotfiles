@@ -206,6 +206,67 @@ else
   skip "ghostty" "brew install --cask ghostty"
 fi
 
+# Nerd Font glyphs need three files to agree: the Brewfile installs the font,
+# ghostty/config asks for it, and vscode/settings.json asks for the same one in
+# two separate keys. Every one of them is valid in isolation -- VS Code
+# declaring no font at all is perfectly legal -- so no per-file check can see
+# the disagreement. That is exactly how `eza --icons` came to render as empty
+# boxes in the integrated terminal while looking correct in Ghostty.
+#
+# Two fonts installed is not better than one. When something falls back, or a
+# family name is misspelled, a second Nerd Font lets it resolve to the wrong one
+# and still work -- with glyphs that look subtly different and no way to tell
+# why. One font makes that failure immediate.
+one_nerd_font() {
+  python3 - << 'PY'
+import json, re, sys
+
+problems = []
+
+
+def jsonc(path):
+    s = open(path).read()
+    s = re.sub(r'^\s*//.*$', '', s, flags=re.M)
+    s = re.sub(r',(\s*[}\]])', r'\1', s)
+    return json.loads(s)
+
+
+ghostty = None
+for line in open('ghostty/config'):
+    m = re.match(r'\s*font-family\s*=\s*"?([^"\n]+)"?', line)
+    if m:
+        ghostty = m.group(1).strip()
+
+if ghostty is None:
+    problems.append('ghostty/config declares no font-family')
+elif 'Nerd Font' not in ghostty:
+    problems.append('ghostty font-family is not a Nerd Font: %r' % ghostty)
+
+v = jsonc('vscode/settings.json')
+# The editor may list fallbacks; only the first entry is the one that renders.
+editor = (v.get('editor.fontFamily') or '').split(',')[0].strip()
+term = (v.get('terminal.integrated.fontFamily') or '').strip()
+
+for key, got in (('editor.fontFamily', editor),
+                 ('terminal.integrated.fontFamily', term)):
+    if not got:
+        problems.append('vscode/settings.json declares no %s' % key)
+    elif ghostty and got != ghostty:
+        problems.append('%s is %r, ghostty uses %r' % (key, got, ghostty))
+
+# Exactly one, not at least one: see the note above this function.
+casks = re.findall(r'^cask "(font-.*nerd-font)"', open('Brewfile').read(), re.M)
+if len(casks) != 1:
+    problems.append('Brewfile declares %d Nerd Font casks, expected 1: %s'
+                    % (len(casks), ', '.join(casks) or 'none'))
+
+for p in problems:
+    print(p)
+sys.exit(1 if problems else 0)
+PY
+}
+check "one nerd font, declared everywhere it renders" one_nerd_font
+
 # The repo is English-only by policy (claude/CLAUDE.md). The pattern is written
 # as escapes rather than literal accented characters for a practical reason:
 # spelled out, this line would match itself and the check could never pass.
