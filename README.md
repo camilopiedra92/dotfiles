@@ -130,13 +130,32 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
 - **`deny` covers the credential stores that exist on this machine**, not a
   generic list. Blocking `~/.ssh/**` while leaving `~/.config/gh/hosts.yml`
   readable protects the key and hands over the token that can push in its place.
+- **Home rules carry a `~/` prefix and project rules do not**, which is the
+  difference between a rule that works and one that reads as if it does. An
+  unprefixed pattern in user settings anchors at the *current directory*, so
+  `Read(**/.ssh/**)` only ever matched a `.ssh` folder inside whatever project
+  was open. Verified by putting the same file in two places: inside the working
+  directory it was refused, outside it was read.
+- **`disableBypassPermissionsMode` is `disable`, set on purpose.** The
+  documentation limits `bypassPermissions` to "isolated environments like
+  containers or VMs where Claude Code can't cause damage", and this laptop is
+  neither. The same page notes a user can set this in their own settings to lock
+  themselves out of the mode, which is what this does.
 
-A deny list is a list of things someone thought of, so it is never finished.
-`sandbox` in the same schema bounds what a command can reach instead of
-enumerating what it may not, which is the stronger shape; it is not enabled here
-yet because `gh` and `gcloud` need `enableWeakerNetworkIsolation` on macOS,
-Docker needs its socket, and `brew` and `install.sh` write outside any project.
-Turning it on is a tuning exercise, not a flag.
+Note what a deny rule can and cannot reach. It covers Claude's own file tools
+and the shell commands Claude Code recognises — `cat`, `head`, `sed` — and stops
+at anything that opens a file itself. A one-line Python or Node script reads a
+denied path without touching any of it; that was checked here with a decoy, and
+both read it.
+
+So the deny list is a guardrail against mistakes, not a boundary. The boundary
+is `sandbox`, which enforces at the OS level and applies to subprocesses too;
+the docs describe the two as complementary and recommend both, and the deny
+rules above are merged into the sandbox boundary rather than replaced by it. It
+is not enabled here yet because `gh` and `gcloud` need
+`enableWeakerNetworkIsolation` on macOS, Docker needs its socket, and `brew` and
+`install.sh` write outside any project. Turning it on is a tuning exercise, not
+a flag.
 
 To see them without restarting Claude, including the cases you cannot trigger
 at will (limit at 95%, context in red, PR with changes requested, a stuck

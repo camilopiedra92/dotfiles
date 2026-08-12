@@ -144,6 +144,12 @@ LOCAL_ONLY = {
     # Split ownership: the repo owns `deny`, while `allow` accumulates per
     # project (domains, MCP tools) and does not transfer to another machine.
     'permissions',
+    # Not a preference: the schema calls it "whether the user has accepted the
+    # bypass permissions mode dialog", managed by the CLI. Versioning it would
+    # pre-accept that dialog on every new machine, which is the one thing it
+    # exists to prevent. The policy lives in permissions.disableBypassPermissionsMode
+    # instead, where it is a decision rather than a record of a click.
+    'skipDangerousModePermissionPrompt',
 }
 
 live_path = os.path.expanduser('~/.claude/settings.json')
