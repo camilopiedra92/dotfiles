@@ -8,8 +8,25 @@
 # breaks tools that parse a command's output.
 export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 
-# mise shims, here rather than in .zshrc, and this is the whole reason this file
-# does more than one thing.
+# Homebrew, for the same reason as the shims below: it was in .zshrc, and .zshrc
+# is only read by interactive shells. Everything else got the system PATH, where
+# /opt/homebrew does not appear -- so a launchd job or a cron entry resolved
+# /usr/bin/git (Apple's fork, three minors behind) while the terminal resolved
+# the one this Brewfile installs. Same tool, different binary, decided by
+# whether a terminal happened to be attached.
+#
+# `brew shellenv` has a fast path that does not load the rest of Homebrew, so
+# this costs about 10ms and is worth the exactness. It also exports
+# HOMEBREW_PREFIX, HOMEBREW_CELLAR, FPATH and INFOPATH, which is why it is a
+# subprocess rather than a hardcoded PATH prepend: those would have to be
+# duplicated here and would rot the day Homebrew moves anything.
+if [[ -x /opt/homebrew/bin/brew && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
+# mise shims, here rather than in .zshrc, and after Homebrew on purpose: this
+# prepends, so the shims end up ahead of /opt/homebrew/bin and a runtime is
+# always resolved by mise even if one is ever installed through Homebrew again.
 #
 # `mise activate` lives in .zshrc, which only interactive shells read. Every
 # other zsh -- a script, a hook, anything invoked without a terminal -- skipped

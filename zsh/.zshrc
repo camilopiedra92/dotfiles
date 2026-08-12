@@ -4,12 +4,12 @@
 # ═══════════════════════════════════════════════════════════
 
 # ---------- PATH ----------
-# Homebrew usually sets this in .zprofile, which is only read by login shells.
-# This covers the ones that are not: editor integrated terminals, tmux, `zsh`
-# launched inside another shell. The guard keeps entries from being duplicated.
-if [[ -x /opt/homebrew/bin/brew && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-fi
+# Homebrew is not set up here. It moved to .zshenv, which every zsh reads, not
+# just the interactive ones -- otherwise a script resolved /usr/bin/git and this
+# shell resolved /opt/homebrew/bin/git, and which one you got depended on
+# whether a terminal was attached.
+#
+# What stays here is what only an interactive shell needs.
 
 export PATH="$HOME/.local/bin:$PATH"             # claude, user binaries
 export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # rustup does not symlink itself

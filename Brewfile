@@ -4,6 +4,9 @@ brew "actionlint"
 brew "antidote"
 # Clone of cat(1) with syntax highlighting and Git integration
 brew "bat"
+# Resource monitor. Not a development tool in the strict sense, and here anyway:
+# what you reach for when a build pins a core or a container eats the machine.
+brew "btop"
 # Modern, maintained replacement for ls
 brew "eza"
 # Like neofetch, but much faster because written mostly in C
@@ -12,8 +15,24 @@ brew "fastfetch"
 brew "fd"
 # Command-line fuzzy finder written in Go
 brew "fzf"
+# Disk usage analyzer with console interface written in Go
+brew "gdu"
 # GitHub command-line tool
 brew "gh"
+# macOS already ships git through the Xcode command line tools, and this is here
+# anyway. Two reasons, neither of them "the Apple one is old" -- 2.50.1 is recent
+# and supports every option in git/config.
+#
+# It is installed, so leaving it undeclared is drift by definition. And the
+# Xcode tools are outside this file's reach: they update on Apple's schedule,
+# can be absent on a fresh machine, and are occasionally reset by an OS upgrade.
+# A Brewfile that claims to rebuild this machine cannot depend on a component it
+# neither installs nor pins.
+brew "git"
+# Rewrites history in ways filter-branch cannot do safely or quickly
+brew "git-filter-repo"
+# Task runner. There is a Taskfile.yml in the projects here that needs it.
+brew "go-task"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
 # Polyglot runtime manager (asdf rust clone)
@@ -26,6 +45,11 @@ brew "ripgrep"
 brew "shellcheck"
 # Autoformat shell script source code
 brew "shfmt"
+# Community-written examples for a command, which is what you actually want from
+# `man tar` nine times out of ten
+brew "tldr"
+# Terminal multiplexer
+brew "tmux"
 # Rust toolchain installer
 brew "rustup"
 # Cross-shell prompt for astronauts
