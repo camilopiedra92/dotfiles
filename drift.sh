@@ -57,10 +57,57 @@ report "casks" "add to the Brewfile, or: brew uninstall --cask <name>" \
 # VS Code extensions are the third thing `brew bundle` manages and the easiest
 # to accumulate by accident: they install from inside the editor, where nothing
 # suggests writing them down.
+#
+# Only the ones chosen directly, for the same reason the formulae above use
+# `brew leaves`. An extension VS Code installed on another one's behalf is not a
+# decision anybody made, and listing it is the difference between a report you
+# act on and one you learn to scroll past -- ms-toolsai.jupyter alone brings
+# four, and the C++ pack brings four more. The relationship is declared by the
+# parent, in package.json: extensionPack for a bundle, extensionDependencies for
+# a hard requirement.
+vscode_leaves() {
+  python3 - << 'PY'
+import glob
+import json
+import os
+import subprocess
+
+installed = {
+    line.strip().lower()
+    for line in subprocess.run(
+        ['code', '--list-extensions'],
+        capture_output=True, text=True, check=True).stdout.splitlines()
+    if line.strip()
+}
+
+manifests = glob.glob(os.path.expanduser('~/.vscode/extensions/*/package.json'))
+if not manifests and installed:
+    # Never degrade quietly into "no parents found, so everything is a leaf":
+    # that reads exactly like a clean report with more rows.
+    print('cannot read ~/.vscode/extensions, so parents are unknown')
+
+pulled = set()
+for path in manifests:
+    try:
+        with open(path, encoding='utf-8') as handle:
+            meta = json.load(handle)
+    except (OSError, ValueError):
+        continue
+    publisher, name = meta.get('publisher'), meta.get('name')
+    if not publisher or ('%s.%s' % (publisher, name)).lower() not in installed:
+        continue
+    children = (meta.get('extensionPack') or []) + \
+               (meta.get('extensionDependencies') or [])
+    pulled.update(child.lower() for child in children)
+
+for extension in sorted(installed - pulled):
+    print(extension)
+PY
+}
+
 if command -v code > /dev/null 2>&1; then
   report "vscode extensions" "add to the Brewfile, or uninstall in the editor" \
-    "$(comm -23 <(code --list-extensions | tr '[:upper:]' '[:lower:]' | sort) \
-      <(declared vscode | tr '[:upper:]' '[:lower:]'))"
+    "$(comm -23 <(vscode_leaves) <(declared vscode | tr '[:upper:]' '[:lower:]'))"
 else
   printf '  %sDRIFT%s vscode extensions %s(code not on PATH)%s\n' "$RED" "$OFF" "$DIM" "$OFF"
   FAILED=1
