@@ -96,6 +96,12 @@ idempotent.
 
 That file is strict JSON with no room for comments, so the reasoning lives here:
 
+- **`forceLoginMethod` is `claudeai`, matching the account that pays for this.**
+  It is not cosmetic in either direction. Set to `console` it would refuse the
+  login entirely on a new machine, and the wrong value in the other direction
+  lets an accidental Console login bill per token instead of drawing on the
+  subscription. Nothing surfaces this on a machine that is already signed in,
+  which is what makes it worth writing down.
 - **`effortLevel` is absent on purpose, and not set to `high` either.** The
   model's own default is already `high`, and writing that down would freeze it:
   a future model shipping a better default would be overridden by a line nobody
