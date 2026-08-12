@@ -51,6 +51,7 @@ claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
+drift.sh               what this machine has that the Brewfile does not say
 bump-tools.sh          moves the CI tool pins to their latest releases
 githooks/pre-commit    runs check.sh before each commit
 githooks/pre-push      refuses to rewrite or delete main
@@ -139,6 +140,24 @@ versions you have are checked against the ones `ci.yml` pins, and a drift fails
 here rather than turning into a CI failure nobody can explain later. When it
 does fail, either upgrade the pin and its hash in `.github/tool-checksums.txt`,
 or pin your local tool back.
+
+## Finding drift
+
+```bash
+./drift.sh
+```
+
+`brew bundle check` only asks whether everything declared is installed, and a
+subset always answers yes to that. The gap it leaves is everything installed and
+never written down, which is the direction drift actually grows in. `drift.sh`
+reports both, plus VS Code extensions, plus any runtime that came from Homebrew
+instead of mise — the rule stated at the top of this file, which nothing
+enforced until now.
+
+It is not part of `check.sh` and CI never runs it, on purpose. Every check in
+there has to mean the same thing on a runner as on this laptop; this one cannot,
+because a runner arrives with its own preinstalled packages and would report
+drift forever.
 
 ## Updating the pins
 
