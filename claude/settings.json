@@ -3,15 +3,24 @@
   "forceLoginMethod": "console",
   "theme": "dark-ansi",
   "tui": "fullscreen",
+  "language": "spanish",
+  "outputStyle": "Explanatory",
   "model": "opus[1m]",
-  "effortLevel": "xhigh",
+  "fallbackModel": [
+    "opus",
+    "sonnet"
+  ],
   "teammateMode": "auto",
   "alwaysThinkingEnabled": true,
   "spinnerTipsEnabled": false,
-  "includeCoAuthoredBy": false,
+  "autoUpdatesChannel": "stable",
   "cleanupPeriodDays": 60,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
