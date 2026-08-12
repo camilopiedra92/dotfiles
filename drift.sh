@@ -88,6 +88,85 @@ report "no runtime comes from Homebrew" \
   "install it with mise instead: brew uninstall <name> && mise use -g <name>@lts" \
   "${through_brew%$'\n'}"
 
+# Running a version nobody patches anymore is not drift between two files: it is
+# drift against a calendar, so no amount of reading this repo can detect it. A
+# pin that was correct when it was written becomes wrong on a date, silently,
+# and the only signal is that security fixes stop arriving.
+#
+# This is the one check here that needs the network. It is also why the whole
+# file is run by hand: a check that fails because GitHub's DNS blinked has no
+# business gating a commit.
+#
+# endoflife.date rather than nodejs.org's own schedule.json, which is
+# first-party and would be the better source if node were the only thing pinned.
+# It is not -- and endoflife.date returns the same shape for python, go and
+# ruby, so covering another runtime is one line in the map below instead of a
+# second parser for a second format.
+eol_runtimes() {
+  python3 - << 'PY'
+import datetime
+import json
+import subprocess
+import sys
+import urllib.request
+
+# A runtime missing from this map is reported, not skipped. An unchecked runtime
+# reads exactly like a supported one, which is the failure this file exists for.
+PRODUCTS = {
+    'node': 'nodejs',
+    'python': 'python',
+    'go': 'go',
+    'ruby': 'ruby',
+    'rust': 'rust',
+    'php': 'php',
+    'bun': 'bun',
+    'deno': 'deno',
+}
+
+problems = []
+today = datetime.date.today()
+
+current = json.loads(subprocess.run(
+    ['mise', 'ls', '--current', '--json'],
+    capture_output=True, text=True, check=True).stdout)
+
+for tool, entries in sorted(current.items()):
+    product = PRODUCTS.get(tool)
+    if product is None:
+        problems.append('%s: no end-of-life source mapped for it' % tool)
+        continue
+    try:
+        url = 'https://endoflife.date/api/%s.json' % product
+        with urllib.request.urlopen(url, timeout=20) as response:
+            cycles = json.load(response)
+    except Exception as err:
+        problems.append('%s: could not reach endoflife.date (%s)' % (tool, err))
+        continue
+
+    for entry in entries:
+        version = entry['version']
+        # Longest matching cycle wins, so 3.13 is preferred over a bare 3.
+        matches = [c for c in cycles
+                   if version == c['cycle'] or version.startswith(c['cycle'] + '.')]
+        if not matches:
+            problems.append('%s %s: matches no known release cycle' % (tool, version))
+            continue
+        eol = max(matches, key=lambda c: len(c['cycle']))['eol']
+        # Some products report a boolean instead of a date once it has passed.
+        if eol is True:
+            problems.append('%s %s: past end of life' % (tool, version))
+        elif isinstance(eol, str) and datetime.date.fromisoformat(eol) <= today:
+            problems.append('%s %s: end of life since %s' % (tool, version, eol))
+
+for problem in problems:
+    print(problem)
+sys.exit(1 if problems else 0)
+PY
+}
+report "no runtime is past end of life" \
+  "upgrade it: mise use -g <tool>@<newer>" \
+  "$(eol_runtimes)"
+
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
 else

@@ -154,10 +154,17 @@ reports both, plus VS Code extensions, plus any runtime that came from Homebrew
 instead of mise — the rule stated at the top of this file, which nothing
 enforced until now.
 
+It also asks endoflife.date whether anything mise installed has stopped being
+supported. That is drift against a calendar rather than between two files: a pin
+that was right when it was written becomes wrong on a date, and the only symptom
+is that security fixes quietly stop arriving. It would have caught the node 25
+this repo was serving through Homebrew, end of life since 2026-06-01.
+
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,
 because a runner arrives with its own preinstalled packages and would report
-drift forever.
+drift forever. The end-of-life check adds a second reason: it needs the network,
+and a check that fails because DNS blinked has no business gating a commit.
 
 ## Updating the pins
 
