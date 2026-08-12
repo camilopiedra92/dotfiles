@@ -28,6 +28,19 @@ design decision with real alternatives, propose the approach before writing.
 Ask before introducing a new dependency. I almost always prefer solving it
 with what is already in the project or with the standard library.
 
+When I ask whether something is best practice, judge it against the
+authoritative source — the published schema, the vendor's docs, the upstream
+release calendar — and not against what is already configured here. Reading a
+setup in order to review it biases towards keeping it. Deleting a line is a
+valid answer and often the right one: pinning a value that is already the
+default buys nothing today and blocks the better default tomorrow.
+
+Prove things rather than assert them. If a claim can be settled with a command,
+run it first — and say plainly when something cannot be determined from here
+instead of picking the likely answer. When you add a check, break it on purpose
+before trusting it: a check nobody has watched fail is a check nobody should
+rely on.
+
 Respect the toolchain each project already uses: the package manager the
 lockfile points to, the formatter and the linter that are configured. Do not
 change them or add new config on your own initiative.
