@@ -96,6 +96,20 @@ idempotent.
 
 That file is strict JSON with no room for comments, so the reasoning lives here:
 
+- **`effortLevel` is absent on purpose, and not set to `high` either.** The
+  model's own default is already `high`, and writing that down would freeze it:
+  a future model shipping a better default would be overridden by a line nobody
+  revisits. It is the same argument as `node = "lts"` rather than a number.
+  Escalate per session with `/effort`, which is also the only place `max` and
+  `ultracode` are reachable — the settings file does not accept them.
+- **`fallbackModel` matters because `model` is pinned.** With one model named
+  and no chain, an overload is a stopped session rather than a slower one.
+- **`autoUpdatesChannel` is `stable`**, described as roughly a week behind and
+  skipping releases with major regressions. Every other tool here is pinned and
+  checksum-verified; following `latest` for the tool doing the work was the
+  inconsistency.
+- **`attribution` replaces `includeCoAuthoredBy`**, which the schema marks
+  deprecated. Same intent, the key that still exists.
 - **`enabledPlugins` lists only the eight that are on.** A `false` entry is a
   plugin someone tried and turned off, and reproducing it on a new machine would
   mean installing it in order to disable it.
