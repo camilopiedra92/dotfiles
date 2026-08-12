@@ -91,8 +91,32 @@ only reason that option ever needs to exist, and doing so silently disables
 
 `~/.claude/settings.json` is not symlinked either: Claude Code rewrites it on
 its own (theme, `/config`…) and a symlink would end up overwritten.
-`install.sh` merges `statusLine` and `subagentStatusLine` into it with `jq`,
-which is idempotent.
+`install.sh` merges `claude/settings.json` into it with `jq`, which is
+idempotent.
+
+That file is strict JSON with no room for comments, so the reasoning lives here:
+
+- **`enabledPlugins` lists only the eight that are on.** A `false` entry is a
+  plugin someone tried and turned off, and reproducing it on a new machine would
+  mean installing it in order to disable it.
+- **`extraKnownMarketplaces` is not versioned at all.** Every enabled plugin
+  comes from `claude-plugins-official`, so declaring the extra marketplaces adds
+  surface and no reproducibility. One of them points at a local directory and
+  could not transfer anyway.
+- **`permissions` has split ownership.** The repo owns `deny`, which is the same
+  everywhere. `allow` accumulates per project — domains, MCP tools — and stays
+  out, which is why `deny` is an array the merge replaces whole while `allow` is
+  never mentioned.
+- **`deny` covers the credential stores that exist on this machine**, not a
+  generic list. Blocking `~/.ssh/**` while leaving `~/.config/gh/hosts.yml`
+  readable protects the key and hands over the token that can push in its place.
+
+A deny list is a list of things someone thought of, so it is never finished.
+`sandbox` in the same schema bounds what a command can reach instead of
+enumerating what it may not, which is the stronger shape; it is not enabled here
+yet because `gh` and `gcloud` need `enableWeakerNetworkIsolation` on macOS,
+Docker needs its socket, and `brew` and `install.sh` write outside any project.
+Turning it on is a tuning exercise, not a flag.
 
 To see them without restarting Claude, including the cases you cannot trigger
 at will (limit at 95%, context in red, PR with changes requested, a stuck

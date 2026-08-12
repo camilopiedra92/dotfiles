@@ -118,6 +118,79 @@ printf '\n%sDeclared but not installed%s\n' "$DIM" "$OFF"
 missing=$(brew bundle check --file=Brewfile --verbose 2>&1 | sed -n 's/^→ //p')
 report "Brewfile is satisfied" "brew bundle install --file=Brewfile" "$missing"
 
+printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
+
+# settings.json is merged rather than symlinked, because Claude Code rewrites it
+# on its own -- install.sh explains that choice. What the merge does not do is
+# look back: the repo's values land on top, and nothing reports what Claude Code
+# added underneath. That is the same one-directional blindness that lets
+# `brew bundle check` pass on a subset, and it is how eight keys accumulated in
+# there before anyone noticed.
+claude_settings_drift() {
+  python3 - << 'PY'
+import json
+import os
+
+# Keys that belong to this machine, listed rather than inferred. Putting one
+# here is a decision recorded in the repo -- "local on purpose" -- not a way to
+# quiet the report. Anything absent from both this list and the repo's settings
+# is a choice someone made in /config and never wrote down.
+LOCAL_ONLY = {
+    # Command strings holding absolute paths that exist on this machine only.
+    'hooks',
+    # One entry points at a local directory, and no enabled plugin comes from
+    # the other two, so versioning them would add surface and no reproducibility.
+    'extraKnownMarketplaces',
+    # Split ownership: the repo owns `deny`, while `allow` accumulates per
+    # project (domains, MCP tools) and does not transfer to another machine.
+    'permissions',
+}
+
+live_path = os.path.expanduser('~/.claude/settings.json')
+
+try:
+    with open(live_path, encoding='utf-8') as handle:
+        live = json.load(handle)
+except (OSError, ValueError) as err:
+    print('cannot read %s (%s)' % (live_path, err))
+    raise SystemExit(0)
+
+with open('claude/settings.json', encoding='utf-8') as handle:
+    repo = json.load(handle)
+
+for key in sorted(set(live) - set(repo) - LOCAL_ONLY):
+    value = json.dumps(live[key])
+    print('%s = %s' % (key, value if len(value) <= 60 else value[:57] + '...'))
+
+
+def enabled(plugins):
+    # Only the ones switched on. A `false` entry is a plugin someone tried and
+    # turned off, which is a non-decision: carrying it to another machine would
+    # install it in order to disable it. Comparing the whole object instead
+    # would report drift forever, because the merge keeps those entries here.
+    return {name for name, on in (plugins or {}).items() if on}
+
+
+for key in sorted(set(repo) & set(live)):
+    if key in LOCAL_ONLY:
+        continue
+    if key == 'enabledPlugins':
+        missing = enabled(repo[key]) - enabled(live[key])
+        extra = enabled(live[key]) - enabled(repo[key])
+        for name in sorted(extra):
+            print('plugin enabled but not declared: %s' % name)
+        for name in sorted(missing):
+            print('plugin declared but not enabled: %s' % name)
+    # A repo value the merge did not win means the merge silently did nothing.
+    elif live[key] != repo[key]:
+        print('%s: repo says %s, this machine has %s'
+              % (key, json.dumps(repo[key])[:40], json.dumps(live[key])[:40]))
+PY
+}
+report "settings.json declares every choice" \
+  "add it to claude/settings.json, or drop it with /config" \
+  "$(claude_settings_drift)"
+
 printf '\n%sRuntimes%s\n' "$DIM" "$OFF"
 
 # The README states this as a rule -- "Homebrew installs programs, mise installs
