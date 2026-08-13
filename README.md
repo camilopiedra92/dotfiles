@@ -318,6 +318,18 @@ adopt a key upstream added after the copy was taken, and the check calls your
 correct config invalid. `drift.sh` is what notices — it already asks the network
 the questions the commit path must not.
 
+Formatting is a separate check, the same split as `shellcheck` and `shfmt`: one
+says the file is wrong, the other that it is untidy, and merging them makes a
+whitespace diff look like a broken config. **`.editorconfig` does not govern
+TOML** — taplo does not read it, verified rather than assumed: set `indent_size`
+to 8 there and it still emits two spaces. Its defaults agree with the `[*]`
+section today, so nothing visibly disagrees, but changing `indent_size` would
+move the editor and leave the check where it was. `.taplo.toml` deliberately
+does not restate those defaults; pinning a value that is already the default
+buys nothing now and refuses a better default later. `reorder_keys` stays off
+for a stronger reason than being the default: these configs are ordered to be
+read.
+
 Those pins only mean something while your machine agrees with them, and the
 Brewfile installs whatever is current — Ghostty updates itself outright. So the
 versions you have are checked against the ones `ci.yml` pins, and a drift fails

@@ -237,10 +237,21 @@ printf '\n%sConfig%s\n' "$DIM" "$OFF"
 # under a heading reading "toml" — pointing at the config for something that was
 # the interpreter's fault. Which python answered was decided by PATH, making it
 # the .zshenv failure in another coat.
+#
+# Formatting is checked separately, the same split as shellcheck and shfmt: one
+# says the file is wrong, the other says it is untidy, and collapsing them makes
+# a diff of whitespace look like a broken config. taplo's defaults are taken as
+# they come rather than restated in .taplo.toml -- pinning a value that is
+# already the default buys nothing today and refuses the better default
+# tomorrow. reorder_keys and align_entries stay off, which is also their
+# default: these configs are ordered to be read, and sorting them alphabetically
+# would destroy that to gain nothing.
 if command -v taplo > /dev/null 2>&1; then
   check "toml" taplo lint
+  check "toml format" taplo fmt --check --diff
 else
   skip "toml" "brew install taplo"
+  skip "toml format" "brew install taplo"
 fi
 
 check "gitconfig" git config --file git/config --list
