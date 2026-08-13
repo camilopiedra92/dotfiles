@@ -46,8 +46,13 @@ brew "shellcheck"
 # Autoformat shell script source code
 brew "shfmt"
 # Community-written examples for a command, which is what you actually want from
-# `man tar` nine times out of ten
-brew "tldr"
+# `man tar` nine times out of ten.
+#
+# tlrc and not tldr: the tldr formula is the old C client, unmaintained upstream
+# and disabled by Homebrew on 2025-10-24, so that line could never be satisfied
+# and `brew bundle check` reported it as missing forever. tlrc is the same
+# project's official client and still installs the `tldr` command.
+brew "tlrc"
 # Terminal multiplexer
 brew "tmux"
 # Rust toolchain installer
