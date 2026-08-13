@@ -60,7 +60,6 @@ zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 # fzf-tab replaces the native menu, so it is disabled to avoid duplication
 zstyle ':completion:*' menu no
 zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
-zstyle ':fzf-tab:complete:z:*'  fzf-preview 'eza -1 --color=always $realpath'
 zstyle ':fzf-tab:*' switch-group '<' '>'
 
 # ---------- Runtimes ----------
@@ -71,8 +70,12 @@ eval "$(mise activate zsh)"
 eval "$(starship init zsh)"
 
 # ---------- Smart navigation ----------
-# zoxide learns from your cd's: "z dotfiles" jumps there from anywhere
-eval "$(zoxide init zsh)"
+# zoxide learns from your cd's: "cd dotfiles" jumps there from anywhere.
+#
+# --cmd cd is zoxide's own way of taking over cd, and replaces `alias cd='z'`.
+# The alias left `cd` completing as the builtin, so tab offered subdirectories
+# of the current directory and never the database zoxide had just learned.
+eval "$(zoxide init --cmd cd zsh)"
 
 # ---------- Fuzzy finding ----------
 # Ctrl+R  history   |   Ctrl+T  files   |   Alt+C  cd into a directory
@@ -83,9 +86,16 @@ export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
 export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
 
 # ---------- Keys ----------
-# Up/down arrows search history by what you have already typed
+# Up/down arrows search history by what you have already typed.
+#
+# Both sequences, which is what the plugin's own README asks for: a terminal in
+# normal mode sends ^[[A and in application mode ^[OA, and which one you get
+# depends on whether something enabled the keypad transmit mode. Binding one of
+# the two leaves the arrows silently falling back to plain history in the other.
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
+bindkey '^[OA' history-substring-search-up
+bindkey '^[OB' history-substring-search-down
 bindkey '^[[1;5C' forward-word      # Ctrl+right
 bindkey '^[[1;5D' backward-word     # Ctrl+left
 
@@ -95,7 +105,6 @@ alias ll='eza -l --icons --group-directories-first --git'
 alias la='eza -la --icons --group-directories-first --git'
 alias lt='eza --tree --level=2 --icons'
 alias cat='bat --style=plain --paging=never'
-alias cd='z'
 
 alias dotfiles='cd ~/dotfiles'
 alias reload='exec zsh'
