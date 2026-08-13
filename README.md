@@ -324,11 +324,15 @@ whitespace diff look like a broken config. **`.editorconfig` does not govern
 TOML** — taplo does not read it, verified rather than assumed: set `indent_size`
 to 8 there and it still emits two spaces. Its defaults agree with the `[*]`
 section today, so nothing visibly disagrees, but changing `indent_size` would
-move the editor and leave the check where it was. `.taplo.toml` deliberately
-does not restate those defaults; pinning a value that is already the default
-buys nothing now and refuses a better default later. `reorder_keys` stays off
-for a stronger reason than being the default: these configs are ordered to be
-read.
+move the editor and leave the check where it was.
+
+`.taplo.toml` restates exactly one formatter default and deliberately not the
+others. `indent_string`, `column_width` and `align_entries` are preferences: a
+better upstream default would be welcome, and pinning them would refuse it.
+`reorder_keys = false` is a different kind of thing — alphabetising these keys
+is not a preference this project might come round to, it is permanently wrong,
+and the command you would reach for after a failed format check (`taplo fmt`,
+which unlike `--check` writes) is exactly what would apply it.
 
 Those pins only mean something while your machine agrees with them, and the
 Brewfile installs whatever is current — Ghostty updates itself outright. So the
