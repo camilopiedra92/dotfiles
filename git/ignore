@@ -1,13 +1,55 @@
-# macOS
+# macOS, from github/gitignore Global/macOS.gitignore.
+#
+# The Finder writes the custom-folder-icon file as "Icon" plus a carriage
+# return. Upstream matches it with a literal CR inside a bracket, which is a
+# byte no editor here will preserve reliably; [[:cntrl:]] is the same match
+# written in characters. Not `Icon?`, which the old file used: that also
+# matches anything five characters long starting with Icon, so a project with
+# an `Icons` directory would lose it with no error to explain why.
 .DS_Store
+.localized
+__MACOSX/
 .AppleDouble
 .LSOverride
-Icon?
+Icon[[:cntrl:]]
+
+# Resource forks
 ._*
 
+# What ends up in a repo living on an external or network volume
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
 # Editors
-.vscode/
-.idea/
+#
+# Ignoring the contents and un-ignoring the four shared files, which is what
+# github/gitignore does and what a blanket `.vscode/` gets wrong. Those files
+# are project configuration meant to be committed -- extensions.json is how a
+# repo tells a new contributor which extensions it expects -- and a global
+# ignore of the whole directory makes `git add .vscode/extensions.json` do
+# nothing at all, with no error to explain why.
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# JetBrains keeps per-user state inside a directory that also holds shared
+# project settings, so the same rule applies.
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+
 *.swp
 *.swo
 *~
