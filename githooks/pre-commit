@@ -10,7 +10,21 @@ set -uo pipefail
 
 repo=$(git rev-parse --show-toplevel)
 
-if ! "$repo/check.sh"; then
+# --strict, because this is a gate and not a report. check.sh has two audiences
+# and they need different answers to a missing tool: run by hand it prints an
+# amber skip, which is a nudge to install it. Here that reading is wrong. A hook
+# that exits 0 having linted nothing says "this commit passed" when what
+# happened is that nothing checked it -- and the commit lands either way.
+#
+# Measured with shellcheck taken off PATH and nothing else changed: without the
+# flag the run ends `All checks passed`, exit 0; with it, `FAIL shellcheck (not
+# installed)`, exit 1. Same tree, same absent tool, opposite verdicts.
+#
+# It also makes the hook agree with the gate that judges it afterwards. CI turns
+# strict on by itself, so without this the local run is the more permissive of
+# the two and waves through exactly what CI will reject -- the round trip this
+# hook exists to save.
+if ! "$repo/check.sh" --strict; then
   echo "Commit aborted. Fix the above, or bypass with: git commit --no-verify" >&2
   exit 1
 fi

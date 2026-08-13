@@ -15,9 +15,12 @@
 # missing, nothing ran, and the run still ends green. That is not theoretical —
 # it is how this repo reported success while never once validating the Ghostty
 # config. Strict mode turns a skip into a failure, so coverage cannot shrink
-# without the run going red. It is on automatically under CI, which is what
-# makes CI's promise ("green here means a clean run there") true by
-# construction rather than by a list somebody remembers to update.
+# without the run going red. It is on automatically under CI and in the
+# pre-commit hook, which is what makes CI's promise ("green here means a clean
+# run there") true by construction rather than by a list somebody remembers to
+# update. Both are gates: they decide whether something lands, so a run that
+# checked nothing must not read as one that passed. Invoked by hand it is a
+# report and not a gate, and there an amber skip is the useful answer.
 #
 # Every check here is a function invoked indirectly, by name, through check().
 # The linter cannot see that, and would report all of them as unused code, or

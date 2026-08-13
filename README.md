@@ -268,10 +268,18 @@ anything — checks written twice drift, and the moment CI and local disagree yo
 stop trusting both. To bypass the hook once: `git commit --no-verify`.
 
 A check either runs (`ok` / `FAIL`) or is skipped because its tool is missing.
-A skip is a hole in coverage, not a neutral third outcome, so under CI it is a
-failure; `./check.sh --strict` reproduces that locally. Without it a missing
-tool turns into a green run that verified less than you think, which is not
-hypothetical: CI passed for a while without ever validating the Ghostty config.
+A skip is a hole in coverage, not a neutral third outcome, so both gates —
+CI and the pre-commit hook — turn it into a failure; `./check.sh --strict`
+reproduces that by hand. Without it a missing tool turns into a green run that
+verified less than you think, which is not hypothetical: CI passed for a while
+without ever validating the Ghostty config.
+
+The split is between a gate and a report. Run by hand, an amber skip is a nudge
+to install the tool. In the hook it would be a lie: exiting 0 having linted
+nothing reads as "this commit passed" when nothing checked it, and the commit
+lands regardless. Take shellcheck off `PATH` and change nothing else — without
+the flag the run ends `All checks passed` and exits 0, with it `FAIL shellcheck
+(not installed)` and exits 1.
 
 This is why CI installs pinned, checksummed copies of shellcheck, shfmt,
 actionlint and Ghostty instead of trusting the runner image: strict mode means
