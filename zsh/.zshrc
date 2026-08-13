@@ -4,18 +4,10 @@
 # ═══════════════════════════════════════════════════════════
 
 # ---------- PATH ----------
-# Homebrew is not set up here. It moved to .zshenv, which every zsh reads, not
-# just the interactive ones -- otherwise a script resolved /usr/bin/git and this
-# shell resolved /opt/homebrew/bin/git, and which one you got depended on
-# whether a terminal was attached.
-#
-# What stays here is what only an interactive shell needs.
-
-export PATH="$HOME/.local/bin:$PATH"             # claude, user binaries
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # rustup does not symlink itself
-# Keg-only too: Homebrew keeps versioned formulae out of the main prefix so two
-# major versions can coexist. Without this there is no psql or pg_dump.
-export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
+# There is none here on purpose. PATH is built in .zshenv and re-asserted in
+# .zprofile after macOS runs path_helper; setting any of it here would mean a
+# directory that exists only where a terminal is attached, which is the bug
+# those two files exist to close.
 
 # ---------- Homebrew ----------
 export HOMEBREW_NO_ENV_HINTS=1                # stop repeating hints already read

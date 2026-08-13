@@ -8,25 +8,38 @@
 # breaks tools that parse a command's output.
 export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 
-# Homebrew, for the same reason as the shims below: it was in .zshrc, and .zshrc
-# is only read by interactive shells. Everything else got the system PATH, where
-# /opt/homebrew does not appear -- so a launchd job or a cron entry resolved
-# /usr/bin/git (Apple's fork, three minors behind) while the terminal resolved
-# the one this Brewfile installs. Same tool, different binary, decided by
-# whether a terminal happened to be attached.
+# Deduplicated, leftmost occurrence wins. This is what makes everything below
+# idempotent rather than guarded: prepending a directory that is already further
+# down the list moves it to the front instead of adding a second copy. So this
+# file can be sourced a second time -- and $ZDOTDIR/.zprofile does exactly that,
+# for the reason documented there -- without stacking entries.
+typeset -U path PATH
+
+# Homebrew, here rather than in .zshrc, because .zshrc is only read by
+# interactive shells. Everything else got the system PATH, where /opt/homebrew
+# does not appear -- so a launchd job resolved /usr/bin/git (Apple's fork, three
+# minors behind) while the terminal resolved the one this Brewfile installs.
+# Same tool, different binary, decided by whether a terminal was attached.
 #
 # `brew shellenv` has a fast path that does not load the rest of Homebrew, so
-# this costs about 10ms and is worth the exactness. It also exports
-# HOMEBREW_PREFIX, HOMEBREW_CELLAR, FPATH and INFOPATH, which is why it is a
-# subprocess rather than a hardcoded PATH prepend: those would have to be
-# duplicated here and would rot the day Homebrew moves anything.
-if [[ -x /opt/homebrew/bin/brew && ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-fi
+# this costs about 10ms and is worth the exactness. It is a subprocess rather
+# than a hardcoded PATH prepend because it also exports HOMEBREW_PREFIX,
+# HOMEBREW_CELLAR, FPATH and INFOPATH, which would have to be duplicated here
+# and would rot the day Homebrew moves anything.
+[[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
 
-# mise shims, here rather than in .zshrc, and after Homebrew on purpose: this
-# prepends, so the shims end up ahead of /opt/homebrew/bin and a runtime is
-# always resolved by mise even if one is ever installed through Homebrew again.
+# The rest of what every zsh needs, not just the interactive ones: a git hook or
+# a launchd job has to resolve these too, and until now they were set in .zshrc
+# and so existed only where a terminal was attached.
+path=(
+  "$HOME/.local/bin"                  # claude, dev-nuke, user binaries
+  /opt/homebrew/opt/rustup/bin        # rustup does not symlink itself
+  /opt/homebrew/opt/postgresql@17/bin # keg-only, so no psql without this
+  $path
+)
+
+# mise shims go in front of all of it: a runtime is then always resolved by mise
+# even if one is ever installed through Homebrew again.
 #
 # `mise activate` lives in .zshrc, which only interactive shells read. Every
 # other zsh -- a script, a hook, anything invoked without a terminal -- skipped
@@ -38,11 +51,4 @@ fi
 # nothing to put on PATH and resolve the same versions. .zshrc still activates
 # afterwards and takes precedence there, which avoids paying a subprocess hop
 # per command in the shell you actually type in.
-# The guard is the same one .zshrc uses for Homebrew: zsh reads this file from
-# $ZDOTDIR instead of $HOME when ZDOTDIR is already exported, so in a nested
-# shell it can run more than once and would otherwise stack duplicates.
-mise_shims="${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims"
-if [[ ":$PATH:" != *":$mise_shims:"* ]]; then
-  export PATH="$mise_shims:$PATH"
-fi
-unset mise_shims
+path=("${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims" $path)
