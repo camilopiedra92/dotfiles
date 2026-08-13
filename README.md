@@ -36,7 +36,7 @@ The system Python (`/usr/bin/python3`) is never touched.
 
 ```
 Brewfile               packages, apps and VS Code extensions
-zsh/.zshenv            sets ZDOTDIR and builds PATH; the only file that must live in $HOME
+zsh/.zshenv            sets ZDOTDIR and builds PATH; linked into both $HOME and ZDOTDIR (see below)
 zsh/.zprofile          re-asserts PATH after macOS rewrites it (see below)
 zsh/.zshrc             history, completion, fzf, aliases
 zsh/.zsh_plugins.txt   plugins (antidote)
@@ -69,8 +69,8 @@ they are usually installed to:
 
 | | |
 |---|---|
-| `~/.zshenv` | the single exception. zsh reads it before it can know about `ZDOTDIR`, so it cannot be moved — it exists to point at the directory below |
-| `~/.config/zsh/` | `.zprofile`, `.zshrc`, `.zsh_plugins.txt`, and the generated `.zsh_plugins.zsh` |
+| `~/.zshenv` | cannot be moved: zsh reads it before it can know about `ZDOTDIR`, and it is what points at the directory below |
+| `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see below — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
 | `~/.local/bin/` | `dev-nuke` |
@@ -79,10 +79,36 @@ they are usually installed to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
 so leaving it behind means the linked config is read and then overruled.
 
+## Why .zshenv is linked twice
+
+The usual one-line summary — "`.zshenv` is the one file zsh always reads from
+`$HOME`" — is only true of a cold start. The actual rule has two branches:
+
+| how the shell starts | which `.zshenv` zsh reads |
+|---|---|
+| `ZDOTDIR` unset in the environment | `$HOME/.zshenv` |
+| `ZDOTDIR` already exported | `$ZDOTDIR/.zshenv` |
+
+It reads one or the other, never both. The second branch is every shell spawned
+from one this repo already configured: a git hook, `zsh -c` from an editor,
+anything under a running session. With only the `$HOME` copy linked those read
+*neither* file and start with the bare system `PATH` — no mise shims, so a hook
+reports `node: command not found` on a machine where the terminal beside it
+resolves node fine. A login shell hid this, because `$ZDOTDIR/.zprofile`
+re-sources `$HOME/.zshenv` by name for the reason below; only `zsh -c` broke.
+
+So `install.sh` links the same file into both places. That is safe rather than
+merely tolerable: `typeset -U path` makes the file idempotent by construction,
+which is the property `.zprofile` already leans on.
+
+This fixes shells. It does not fix `sh` — `/bin/sh` reads no zsh file under any
+branch, so anything invoked as `sh -c` still needs the shims put on `PATH`
+by whatever invokes it.
+
 ## Why there is a .zprofile
 
-Setting `ZDOTDIR` is not free, and this is what it costs. Only `.zshenv` is read
-from `$HOME`; `.zprofile`, `.zshrc` and `.zlogin` follow `ZDOTDIR`. The Homebrew
+Setting `ZDOTDIR` is not free, and this is what it costs. `.zprofile`, `.zshrc`
+and `.zlogin` are read from `ZDOTDIR` and never from `$HOME`. The Homebrew
 installer writes a `~/.zprofile`, and from the moment `.zshenv` exports
 `ZDOTDIR` that file is never read again — which matters here, because it was the
 only thing putting Homebrew ahead of `/usr/bin` on this machine.

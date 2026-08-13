@@ -118,6 +118,42 @@ else
   skip "zsh syntax" "zsh not installed"
 fi
 
+# The mode that matters lives in git, not on this machine: a fresh clone gets
+# whatever the tree says, and `~/dotfiles/install.sh` -- the invocation the
+# README documents -- then dies with permission denied. The bit is lost silently
+# and by accident, by anything that replaces the file rather than editing it in
+# place: an editor writing through a temp file, or a `mv` from /tmp, which is
+# how it was lost here. Nothing else in this run would have noticed, because
+# every check invokes these through `bash <file>` and that works at 644.
+#
+# The rule is the shebang, not the .sh suffix, and it is checked both ways.
+# githooks/pre-commit has no suffix and must be executable; zsh/.zshenv has no
+# shebang and must stay 644, since it is sourced and never run. A file that
+# names an interpreter exists to be executed, and one that does not, does not.
+exec_bits() {
+  local bad=0 meta path mode first
+  while IFS=$'\t' read -r meta path; do
+    mode=${meta%% *}
+    first=$(head -n1 "$path" 2> /dev/null)
+    case "$first" in
+      '#!'*)
+        if [ "$mode" != 100755 ]; then
+          echo "$path declares an interpreter but is $mode in git, so a clone cannot run it"
+          bad=1
+        fi
+        ;;
+      *)
+        if [ "$mode" = 100755 ]; then
+          echo "$path is executable in git but has no shebang"
+          bad=1
+        fi
+        ;;
+    esac
+  done < <(git ls-files -s)
+  return "$bad"
+}
+check "tracked scripts are executable in git" exec_bits
+
 # ── Tool versions ────────────────────────────────────────────────────────────
 # CI pins these four and verifies them by checksum; the Brewfile installs
 # whatever is current. "CI and your machine run the same binaries" is therefore
@@ -414,6 +450,42 @@ install_is_idempotent() {
     echo ".zshenv was not linked into \$HOME"
     return 1
   }
+  # And the copy under ZDOTDIR, which is the one a nested shell reads instead.
+  [ -L "$tmp/home/.config/zsh/.zshenv" ] || {
+    echo ".zshenv was not linked into \$ZDOTDIR"
+    return 1
+  }
+
+  # Both symlinks existing is structure; this is the behaviour they exist for.
+  # zsh reads exactly one .zshenv, chosen by whether ZDOTDIR was already in the
+  # environment, so the PATH has to come out built either way. The second case
+  # is a shell spawned from an already-configured one -- a git hook, `zsh -c`
+  # from an editor -- and when only the $HOME copy was linked it read neither
+  # file and got the bare system PATH, which is `node: command not found` from
+  # a hook on a machine where node is installed and on PATH in the terminal.
+  #
+  # env -i, because inheriting this run's PATH would make it pass with the
+  # symlink deleted. Asserting on PATH and not on `command -v node` keeps it
+  # true in CI, where mise is not installed: zsh keeps a non-existent directory
+  # in the path array, so the string is there to check for regardless.
+  if command -v zsh > /dev/null 2>&1; then
+    local zdotdir="$tmp/home/.config/zsh" start p
+    # shellcheck disable=SC2016  # $PATH is expanded by the zsh being tested, not here
+    for start in cold nested; do
+      if [ "$start" = cold ]; then
+        p=$(env -i HOME="$tmp/home" PATH=/usr/bin:/bin zsh -c 'echo $PATH')
+      else
+        p=$(env -i HOME="$tmp/home" ZDOTDIR="$zdotdir" PATH=/usr/bin:/bin zsh -c 'echo $PATH')
+      fi
+      case "$p" in
+        *"$tmp/home/.local/share/mise/shims"*) ;;
+        *)
+          echo "$start zsh -c did not get the mise shims on PATH: $p"
+          return 1
+          ;;
+      esac
+    done
+  fi
   [ -L "$tmp/home/.claude/statusline.sh" ] || {
     echo "statusline was not symlinked"
     return 1

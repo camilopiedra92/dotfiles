@@ -32,11 +32,25 @@ link() {
   echo "    $dest -> $src"
 }
 
-# .zshenv is the exception that has to stay in $HOME: zsh reads it before it can
-# know about ZDOTDIR, and all it does is point at the directory below.
+# .zshenv is linked twice, to the same file, because zsh picks exactly one of the
+# two depending on how it was started -- it never reads both.
+#
+#   ZDOTDIR unset in the environment  ->  $HOME/.zshenv       (cold start)
+#   ZDOTDIR already exported          ->  $ZDOTDIR/.zshenv    (nested shell)
+#
+# The second case is every shell spawned from one this repo already configured:
+# a git hook, `zsh -c` from an editor, anything under a running session. With
+# only the $HOME copy linked, those shells read neither file and start with the
+# bare system PATH -- no mise shims, so `node: command not found` from a hook
+# while the terminal right next to it resolves node fine.
+#
+# Linking both is safe rather than merely tolerable: `typeset -U path` makes the
+# file idempotent by construction, which is the same property $ZDOTDIR/.zprofile
+# already relies on when it re-sources it.
 link "$DOTFILES/zsh/.zshenv" "$HOME/.zshenv"
+link "$DOTFILES/zsh/.zshenv" "$HOME/.config/zsh/.zshenv"
 # Under ZDOTDIR and not $HOME: once .zshenv exports ZDOTDIR, zsh looks for
-# everything except .zshenv there. See the file for why it exists at all.
+# .zprofile, .zshrc and .zlogin there. See the file for why it exists at all.
 link "$DOTFILES/zsh/.zprofile" "$HOME/.config/zsh/.zprofile"
 link "$DOTFILES/zsh/.zshrc" "$HOME/.config/zsh/.zshrc"
 link "$DOTFILES/zsh/.zsh_plugins.txt" "$HOME/.config/zsh/.zsh_plugins.txt"
