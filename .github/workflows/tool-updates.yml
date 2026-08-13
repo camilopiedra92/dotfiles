@@ -2,7 +2,7 @@
 #
 # dependabot.yml covers the pinned action SHA and argues, correctly, that
 # pinning without something to renew it just trades one risk for another. The
-# four tool versions in ci.yml have no such thing: there is no ecosystem for a
+# five tool versions in ci.yml have no such thing: there is no ecosystem for a
 # version in a workflow env var plus a hash in a text file, and Renovate's
 # regex managers can move the version but not regenerate the hash, which needs
 # postUpgradeTasks and so a self-hosted instance. This is that something.

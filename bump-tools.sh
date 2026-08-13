@@ -8,7 +8,7 @@
 # ecosystem for "a version in a workflow env var plus a hash in a text file",
 # and Renovate's regex managers can move the version but not regenerate the
 # hash, which needs postUpgradeTasks and therefore a self-hosted instance. This
-# script is the thing that renews those four pins, and the scheduled workflow
+# script is the thing that renews those five pins, and the scheduled workflow
 # in tool-updates.yml is what remembers to run it.
 #
 # It never merges anything by itself. The hashes it writes are whatever
@@ -20,7 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 WORKFLOW=.github/workflows/ci.yml
 CHECKSUMS=.github/tool-checksums.txt
-TOOLS="shellcheck shfmt actionlint ghostty"
+TOOLS="shellcheck shfmt actionlint ghostty taplo"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[32m'
@@ -39,6 +39,7 @@ var_of() {
     shfmt) echo SHFMT_VERSION ;;
     actionlint) echo ACTIONLINT_VERSION ;;
     ghostty) echo GHOSTTY_VERSION ;;
+    taplo) echo TAPLO_VERSION ;;
   esac
 }
 
@@ -62,6 +63,7 @@ latest_of() {
       gh api "repos/ghostty-org/ghostty/tags?per_page=100" --jq '.[].name' |
         grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 | sed 's/^v//'
       ;;
+    taplo) gh api repos/tamasfe/taplo/releases/latest --jq .tag_name | sed 's/^v//' ;;
   esac
 }
 
@@ -75,6 +77,7 @@ url_of() {
     shfmt) echo "https://github.com/mvdan/sh/releases/download/v$2/shfmt_v${2}_darwin_arm64" ;;
     actionlint) echo "https://github.com/rhysd/actionlint/releases/download/v$2/actionlint_${2}_darwin_arm64.tar.gz" ;;
     ghostty) echo "https://release.files.ghostty.org/$2/ghostty-macos-universal.zip" ;;
+    taplo) echo "https://github.com/tamasfe/taplo/releases/download/$2/taplo-darwin-aarch64.gz" ;;
   esac
 }
 
@@ -84,6 +87,7 @@ name_of() {
     shfmt) echo "shfmt_v${2}_darwin_arm64" ;;
     actionlint) echo "actionlint_${2}_darwin_arm64.tar.gz" ;;
     ghostty) echo "ghostty-$2-macos-universal.zip" ;;
+    taplo) echo "taplo-darwin-aarch64.gz" ;;
   esac
 }
 

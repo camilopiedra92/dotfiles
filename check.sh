@@ -15,9 +15,12 @@
 # missing, nothing ran, and the run still ends green. That is not theoretical —
 # it is how this repo reported success while never once validating the Ghostty
 # config. Strict mode turns a skip into a failure, so coverage cannot shrink
-# without the run going red. It is on automatically under CI, which is what
-# makes CI's promise ("green here means a clean run there") true by
-# construction rather than by a list somebody remembers to update.
+# without the run going red. It is on automatically under CI and in the
+# pre-commit hook, which is what makes CI's promise ("green here means a clean
+# run there") true by construction rather than by a list somebody remembers to
+# update. Both are gates: they decide whether something lands, so a run that
+# checked nothing must not read as one that passed. Invoked by hand it is a
+# report and not a gate, and there an amber skip is the useful answer.
 #
 # Every check here is a function invoked indirectly, by name, through check().
 # The linter cannot see that, and would report all of them as unused code, or
@@ -155,7 +158,7 @@ exec_bits() {
 check "tracked scripts are executable in git" exec_bits
 
 # ── Tool versions ────────────────────────────────────────────────────────────
-# CI pins these four and verifies them by checksum; the Brewfile installs
+# CI pins these five and verifies them by checksum; the Brewfile installs
 # whatever is current. "CI and your machine run the same binaries" is therefore
 # a claim nothing was enforcing, true only as long as nobody upgraded. Ghostty
 # does not even need that: it is a cask that updates itself, and its own config
@@ -180,13 +183,14 @@ installed() {
     shfmt) shfmt --version | sed 's/^v//' ;;
     actionlint) actionlint --version | head -1 ;;
     ghostty) ghostty +version | awk 'NR == 1 { print $2 }' ;;
+    taplo) taplo --version | awk '{ print $2 }' ;;
   esac
 }
 
 versions_match() {
   local status=0 tool var want have
   for pair in shellcheck:SHELLCHECK_VERSION shfmt:SHFMT_VERSION \
-    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION; do
+    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION taplo:TAPLO_VERSION; do
     tool=${pair%%:*}
     var=${pair##*:}
     # A missing tool is already reported by its own check above; repeating it
@@ -211,11 +215,43 @@ check "installed tools match the ci.yml pins" versions_match
 # while setting that machine up.
 printf '\n%sConfig%s\n' "$DIM" "$OFF"
 
-check "toml" python3 -c "
-import tomllib
-for f in ('starship.toml', 'mise/config.toml'):
-    tomllib.load(open(f, 'rb'))
-"
+# Parsing was never the interesting half. A TOML file can be flawless syntax and
+# still be wrong in the way that actually bites: `add_newlines` for
+# `add_newline` parses fine, and starship answers with a warning on stderr and
+# exit 0, so the option is dropped and the prompt just quietly lacks it. That is
+# the same silent-drop failure the ghostty check below exists to prevent, and
+# until this used a schema it was the one config here without that cover.
+#
+# taplo validates against the vendored schemas wired up in .taplo.toml, so a key
+# that does not exist is an error with a line and a column. It reads no network
+# doing it — verified with the proxy pointed at a dead port — because online
+# schema catalogs are opt-in and the schemas are referenced by path.
+#
+# No file list here on purpose: taplo discovers every .toml in the repo, so a
+# config added later is covered by having been added, not by somebody
+# remembering to extend an argument list.
+#
+# This replaces a python3 -c tomllib one-liner, which had a dependency it never
+# declared: tomllib is stdlib only from 3.11 and macOS ships 3.9, so on the
+# system interpreter that check did not skip, it FAILED with ModuleNotFoundError
+# under a heading reading "toml" — pointing at the config for something that was
+# the interpreter's fault. Which python answered was decided by PATH, making it
+# the .zshenv failure in another coat.
+#
+# Formatting is checked separately, the same split as shellcheck and shfmt: one
+# says the file is wrong, the other says it is untidy, and collapsing them makes
+# a diff of whitespace look like a broken config. taplo's defaults are taken as
+# they come rather than restated in .taplo.toml -- pinning a value that is
+# already the default buys nothing today and refuses the better default
+# tomorrow. The single exception is reorder_keys, declared there because it is
+# not a preference that could improve; see that file.
+if command -v taplo > /dev/null 2>&1; then
+  check "toml" taplo lint
+  check "toml format" taplo fmt --check --diff
+else
+  skip "toml" "brew install taplo"
+  skip "toml format" "brew install taplo"
+fi
 
 check "gitconfig" git config --file git/config --list
 
@@ -308,8 +344,16 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # spelled out, this line would match itself and the check could never pass.
 # The range covers Latin-1 Supplement and Latin Extended A/B, so no English
 # word trips it while Spanish prose of any length always does.
+#
+# schemas/ is excluded because the policy is about prose written here, and none
+# of it is: those files are upstream's, vendored byte-for-byte so drift.sh can
+# compare them against what starship and mise publish. starship's uses a slashed
+# capital O as a module symbol -- named rather than spelled for the same reason
+# the pattern above is, since writing it here would trip this check. Editing the
+# schema to satisfy the rule would break that comparison and the validation
+# both, to police text nobody here wrote.
 english_only() {
-  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . 2> /dev/null
+  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
 }
 check "english only" english_only
 

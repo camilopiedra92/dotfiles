@@ -3,6 +3,14 @@
 # through the EditorConfig extension already in the Brewfile, and any editor
 # anyone else opens the repo with. Encoding it here rather than in tool flags is
 # what keeps the editor and the pre-commit hook from disagreeing.
+#
+# One exception, and it is worth knowing before you edit anything below. .toml
+# files are formatted by taplo, which does not read this file — verified, not
+# assumed: with indent_size set to 8 here it still emits two spaces. Its
+# defaults happen to agree with the [*] section today, so nothing visibly
+# disagrees, but changing indent_size below would move the editor and leave
+# `taplo fmt --check` where it was. TOML style is taplo's defaults; .taplo.toml
+# deliberately does not restate them.
 root = true
 
 [*]
