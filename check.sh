@@ -214,11 +214,31 @@ check "installed tools match the ci.yml pins" versions_match
 # while setting that machine up.
 printf '\n%sConfig%s\n' "$DIM" "$OFF"
 
-check "toml" python3 -c "
+# tomllib is stdlib from 3.11 on, and macOS still ships 3.9 at /usr/bin/python3
+# — so this check's real dependency is a python newer than the system one, which
+# it was not declaring. Unguarded it did not skip, it FAILED, with
+# `ModuleNotFoundError: No module named 'tomllib'` under a heading that reads
+# "toml". That names the wrong culprit: the file is fine and the interpreter is
+# old, but the run says the config is broken.
+#
+# Which interpreter answers is decided by PATH, so this is the .zshenv failure
+# in another coat: a commit made from a GUI launched by launchd gets the system
+# python and a bad verdict, while the same commit from a terminal gets mise's
+# and a good one. The guard cannot make the check run there, but it can stop it
+# from blaming the config, and under strict it still refuses to pass.
+#
+# mise parses TOML too and would need no guard, but CI does not install it, so
+# there it would skip -- and a skip is a failure under CI. Adding mise to the
+# workflow to validate two files is a dependency this does not need.
+if python3 -c 'import tomllib' 2> /dev/null; then
+  check "toml" python3 -c "
 import tomllib
 for f in ('starship.toml', 'mise/config.toml'):
     tomllib.load(open(f, 'rb'))
 "
+else
+  skip "toml" "python 3.11+ for tomllib, this one is $(python3 -V 2>&1 | cut -d' ' -f2)"
+fi
 
 check "gitconfig" git config --file git/config --list
 
