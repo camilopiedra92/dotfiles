@@ -293,6 +293,61 @@ report "no runtime is past end of life" \
   "upgrade it: mise use -g <tool>@<newer>" \
   "$(eol_runtimes)"
 
+# The schemas under schemas/ are copies of something upstream keeps changing,
+# and a copy is only as good as the thing that notices it went stale. Stale here
+# has a specific and annoying shape: adopt a key that starship or mise added
+# after the copy was taken, and taplo calls your correct config invalid. The
+# check that guards the configs would be the thing blocking you.
+#
+# This lives here and not in check.sh for the reason stated at the top of this
+# file: it needs the network, and a gate that fails because DNS blinked is a
+# gate you learn to ignore. Vendoring is what keeps the commit path offline;
+# this is what keeps the vendored copy honest.
+#
+# Compared as parsed JSON rather than byte-for-byte, so a reordered key or a
+# reindent upstream does not read as a change worth acting on.
+stale_schemas() {
+  python3 - << 'PY'
+import json
+import urllib.request
+
+SCHEMAS = {
+    "schemas/starship.json": "https://starship.rs/config-schema.json",
+    "schemas/mise.json": "https://mise.jdx.dev/schema/mise.json",
+}
+
+# Both hosts sit behind a CDN that answers urllib's default User-Agent with a
+# 403, which arrives here as "could not reach" and reads as a network problem
+# it is not. Anything else gets through; this says who is asking rather than
+# pretending to be a browser.
+HEADERS = {"User-Agent": "dotfiles-drift (+https://github.com/camilopiedra92/dotfiles)"}
+
+
+def canonical(raw):
+    return json.dumps(json.loads(raw), sort_keys=True, separators=(",", ":"))
+
+
+problems = []
+for path, url in sorted(SCHEMAS.items()):
+    try:
+        request = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(request, timeout=10) as response:
+            remote = canonical(response.read())
+    except Exception as err:
+        problems.append("%s: could not reach %s (%s)" % (path, url, err))
+        continue
+    with open(path, "rb") as handle:
+        if canonical(handle.read()) != remote:
+            problems.append("%s is behind: curl -fsSL %s -o %s" % (path, url, path))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "vendored schemas match upstream" \
+  "refresh it, then ./check.sh -- a newer schema can reject a config it used to accept" \
+  "$(stale_schemas)"
+
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
 else

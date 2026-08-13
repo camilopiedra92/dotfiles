@@ -158,7 +158,7 @@ exec_bits() {
 check "tracked scripts are executable in git" exec_bits
 
 # ── Tool versions ────────────────────────────────────────────────────────────
-# CI pins these four and verifies them by checksum; the Brewfile installs
+# CI pins these five and verifies them by checksum; the Brewfile installs
 # whatever is current. "CI and your machine run the same binaries" is therefore
 # a claim nothing was enforcing, true only as long as nobody upgraded. Ghostty
 # does not even need that: it is a cask that updates itself, and its own config
@@ -183,13 +183,14 @@ installed() {
     shfmt) shfmt --version | sed 's/^v//' ;;
     actionlint) actionlint --version | head -1 ;;
     ghostty) ghostty +version | awk 'NR == 1 { print $2 }' ;;
+    taplo) taplo --version | awk '{ print $2 }' ;;
   esac
 }
 
 versions_match() {
   local status=0 tool var want have
   for pair in shellcheck:SHELLCHECK_VERSION shfmt:SHFMT_VERSION \
-    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION; do
+    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION taplo:TAPLO_VERSION; do
     tool=${pair%%:*}
     var=${pair##*:}
     # A missing tool is already reported by its own check above; repeating it
@@ -214,30 +215,32 @@ check "installed tools match the ci.yml pins" versions_match
 # while setting that machine up.
 printf '\n%sConfig%s\n' "$DIM" "$OFF"
 
-# tomllib is stdlib from 3.11 on, and macOS still ships 3.9 at /usr/bin/python3
-# — so this check's real dependency is a python newer than the system one, which
-# it was not declaring. Unguarded it did not skip, it FAILED, with
-# `ModuleNotFoundError: No module named 'tomllib'` under a heading that reads
-# "toml". That names the wrong culprit: the file is fine and the interpreter is
-# old, but the run says the config is broken.
+# Parsing was never the interesting half. A TOML file can be flawless syntax and
+# still be wrong in the way that actually bites: `add_newlines` for
+# `add_newline` parses fine, and starship answers with a warning on stderr and
+# exit 0, so the option is dropped and the prompt just quietly lacks it. That is
+# the same silent-drop failure the ghostty check below exists to prevent, and
+# until this used a schema it was the one config here without that cover.
 #
-# Which interpreter answers is decided by PATH, so this is the .zshenv failure
-# in another coat: a commit made from a GUI launched by launchd gets the system
-# python and a bad verdict, while the same commit from a terminal gets mise's
-# and a good one. The guard cannot make the check run there, but it can stop it
-# from blaming the config, and under strict it still refuses to pass.
+# taplo validates against the vendored schemas wired up in .taplo.toml, so a key
+# that does not exist is an error with a line and a column. It reads no network
+# doing it — verified with the proxy pointed at a dead port — because online
+# schema catalogs are opt-in and the schemas are referenced by path.
 #
-# mise parses TOML too and would need no guard, but CI does not install it, so
-# there it would skip -- and a skip is a failure under CI. Adding mise to the
-# workflow to validate two files is a dependency this does not need.
-if python3 -c 'import tomllib' 2> /dev/null; then
-  check "toml" python3 -c "
-import tomllib
-for f in ('starship.toml', 'mise/config.toml'):
-    tomllib.load(open(f, 'rb'))
-"
+# No file list here on purpose: taplo discovers every .toml in the repo, so a
+# config added later is covered by having been added, not by somebody
+# remembering to extend an argument list.
+#
+# This replaces a python3 -c tomllib one-liner, which had a dependency it never
+# declared: tomllib is stdlib only from 3.11 and macOS ships 3.9, so on the
+# system interpreter that check did not skip, it FAILED with ModuleNotFoundError
+# under a heading reading "toml" — pointing at the config for something that was
+# the interpreter's fault. Which python answered was decided by PATH, making it
+# the .zshenv failure in another coat.
+if command -v taplo > /dev/null 2>&1; then
+  check "toml" taplo lint
 else
-  skip "toml" "python 3.11+ for tomllib, this one is $(python3 -V 2>&1 | cut -d' ' -f2)"
+  skip "toml" "brew install taplo"
 fi
 
 check "gitconfig" git config --file git/config --list
@@ -331,8 +334,16 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # spelled out, this line would match itself and the check could never pass.
 # The range covers Latin-1 Supplement and Latin Extended A/B, so no English
 # word trips it while Spanish prose of any length always does.
+#
+# schemas/ is excluded because the policy is about prose written here, and none
+# of it is: those files are upstream's, vendored byte-for-byte so drift.sh can
+# compare them against what starship and mise publish. starship's uses a slashed
+# capital O as a module symbol -- named rather than spelled for the same reason
+# the pattern above is, since writing it here would trip this check. Editing the
+# schema to satisfy the rule would break that comparison and the validation
+# both, to police text nobody here wrote.
 english_only() {
-  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . 2> /dev/null
+  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
 }
 check "english only" english_only
 

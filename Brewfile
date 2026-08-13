@@ -45,6 +45,11 @@ brew "ripgrep"
 brew "shellcheck"
 # Autoformat shell script source code
 brew "shfmt"
+# TOML toolkit. Used for `taplo lint`, which validates the TOML configs in here
+# against the vendored JSON schemas rather than only parsing them: a key that
+# does not exist is caught at commit instead of silently doing nothing at
+# runtime. See .taplo.toml.
+brew "taplo"
 # Community-written examples for a command, which is what you actually want from
 # `man tar` nine times out of ten.
 #

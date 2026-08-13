@@ -1,0 +1,25 @@
+# Which schema validates which config, for both taplo's CLI and the editor
+# extension built on it — one association, read by both, so the check and the
+# autocomplete cannot disagree about what a valid key is.
+#
+# The schemas are vendored under schemas/ and referenced by path rather than by
+# their upstream URL. A gate must not need the network: a check that goes red
+# because DNS blinked teaches you to ignore it, which is worse than not having
+# it. Vendoring also puts a schema change in a diff somebody reads, the same
+# reasoning as the pinned tool hashes in .github/tool-checksums.txt.
+#
+# The cost is that a vendored schema goes stale, and stale here means a key
+# upstream has added is reported as invalid. drift.sh is what notices: it
+# already asks the network the questions this file cannot.
+
+[[rule]]
+include = ["starship.toml"]
+
+[rule.schema]
+path = "schemas/starship.json"
+
+[[rule]]
+include = ["mise/config.toml"]
+
+[rule.schema]
+path = "schemas/mise.json"
