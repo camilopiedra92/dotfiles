@@ -112,7 +112,7 @@ syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*; do bash -
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
-  syntax_zsh() { for f in zsh/.zshenv zsh/.zshrc; do zsh -n "$f" || return 1; done; }
+  syntax_zsh() { for f in zsh/.zshenv zsh/.zprofile zsh/.zshrc; do zsh -n "$f" || return 1; done; }
   check "zsh syntax" syntax_zsh
 else
   skip "zsh syntax" "zsh not installed"

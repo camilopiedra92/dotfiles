@@ -36,8 +36,9 @@ The system Python (`/usr/bin/python3`) is never touched.
 
 ```
 Brewfile               packages, apps and VS Code extensions
-zsh/.zshenv            sets ZDOTDIR; the only file that must live in $HOME
-zsh/.zshrc             PATH, history, fzf, aliases
+zsh/.zshenv            sets ZDOTDIR and builds PATH; the only file that must live in $HOME
+zsh/.zprofile          re-asserts PATH after macOS rewrites it (see below)
+zsh/.zshrc             history, completion, fzf, aliases
 zsh/.zsh_plugins.txt   plugins (antidote)
 starship.toml          prompt
 ghostty/config         terminal
@@ -69,7 +70,7 @@ they are usually installed to:
 | | |
 |---|---|
 | `~/.zshenv` | the single exception. zsh reads it before it can know about `ZDOTDIR`, so it cannot be moved — it exists to point at the directory below |
-| `~/.config/zsh/` | `.zshrc`, `.zsh_plugins.txt`, and the generated `.zsh_plugins.zsh` |
+| `~/.config/zsh/` | `.zprofile`, `.zshrc`, `.zsh_plugins.txt`, and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
 | `~/.local/bin/` | `dev-nuke` |
@@ -77,6 +78,34 @@ they are usually installed to:
 `install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
 so leaving it behind means the linked config is read and then overruled.
+
+## Why there is a .zprofile
+
+Setting `ZDOTDIR` is not free, and this is what it costs. Only `.zshenv` is read
+from `$HOME`; `.zprofile`, `.zshrc` and `.zlogin` follow `ZDOTDIR`. The Homebrew
+installer writes a `~/.zprofile`, and from the moment `.zshenv` exports
+`ZDOTDIR` that file is never read again — which matters here, because it was the
+only thing putting Homebrew ahead of `/usr/bin` on this machine.
+
+The mechanism underneath is macOS-specific and worth stating plainly, because
+every "put it in `.zshenv` so scripts get it too" instinct runs into it. Between
+`.zshenv` and `.zprofile`, `/etc/zprofile` runs `/usr/libexec/path_helper`, and
+path_helper does not append to `PATH` — it **rebuilds** it, `/etc/paths` and
+`/etc/paths.d` first, then whatever `PATH` already held. Everything `.zshenv`
+prepended lands behind `/usr/bin`. Measured in a login shell with a clean
+environment:
+
+| | mise shims | `/opt/homebrew/bin` | `/usr/bin` |
+|---|---|---|---|
+| `.zshenv` alone | 13th | 12th | **3rd** |
+| with `.zprofile` | 1st | 5th | 9th |
+
+So `git` resolved to `/usr/bin/git` — Apple's fork — in exactly the shell you
+type in, which is the failure `.zshenv` was written to prevent. `.zprofile`
+re-sources `.zshenv` once path_helper is done. That is a re-source and not a
+copy: `typeset -U path` in `.zshenv` makes every prepend hoist an entry that is
+already there instead of duplicating it, so the file is idempotent by
+construction and `.zprofile` needs to know nothing about what it contains.
 
 The git identity lives in `~/.config/git/config.local`, **outside the repo**, so
 this can be public and each machine uses its own name/email.
