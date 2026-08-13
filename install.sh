@@ -68,6 +68,9 @@ link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on
 # PATH, which is what lets the alias be `sudo dev-nuke` and not a path.
 link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
+# Same reasoning. This one replaces an `npm link`, which put the command in the
+# npm prefix of a single Node version and left no trace in any repo.
+link "$DOTFILES/bin/aware.sh" "$HOME/.local/bin/aware"
 
 # --- 3b. Claude Code settings ---
 # settings.json is not symlinked: Claude Code rewrites it on its own (the
