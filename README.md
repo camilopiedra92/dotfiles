@@ -47,6 +47,8 @@ git/ignore             global gitignore
 mise/config.toml       global runtime versions
 vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
+bin/aware.sh           runs the aware-connector CLI from anywhere
+bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -75,7 +77,8 @@ they are usually installed to:
 | `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see below — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
-| `~/.local/bin/` | `dev-nuke` |
+| `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
+| `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
 
 `install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
@@ -253,6 +256,34 @@ background, so color keeps working as an alarm. `STYLE` and `LINES`, at the top
 of the script, switch to `minimal` and to a single line. Both require a Nerd
 Font: the Ghostty config already sets one.
 
+## Why the YNAB MCP server runs through a wrapper
+
+Because it writes its log to a relative path. `mcp-framework`, which the server
+is built on, opens `logs` with the directory hardcoded:
+
+```js
+const logDir = "logs";                       // Logger.js
+mkdir(logDir, { recursive: true })
+```
+
+A relative path resolves against the working directory of the process, and an
+MCP server inherits that from the editor that spawned it — so an untracked
+`logs/` appears in whatever repository you happened to open, with one file per
+session inside it. The server is configured globally, so this is every
+repository, not one.
+
+There is no environment variable for it and no `cwd` field for a stdio server in
+Claude Code's configuration, which leaves the working directory itself as the
+only thing that can be changed. `bin/ynab-mcp.sh` sets it to
+`~/.local/state/ynab-mcp` and execs the server; `~/.claude.json` points at the
+wrapper instead of at `npx`.
+
+Not a `.gitignore` entry, which is where this ends up by default. In one
+repository it is a workaround for a bug in another program; in the global ignore
+it would be worse — `logs/` is a name a project may well want to commit, and
+hiding it there is the mistake `git/ignore` had already made with `.vscode/`,
+where `git add` does nothing and prints no reason.
+
 ## Checks
 
 ```bash
@@ -392,6 +423,13 @@ That pull request does not auto-merge, deliberately. The hashes in it are
 whatever upstream is publishing at that moment, which is exactly what
 `tool-checksums.txt` exists not to take on trust. CI proves the new versions
 install and everything still passes; you decide they should be trusted.
+
+Those pins are the CI toolchain, and nothing else here updates on its own.
+`install.sh` passes `--no-upgrade` to `brew bundle`, which otherwise upgrades
+every outdated dependency it finds: running the script after a `git pull` to
+pick up a new symlink would also pull down whatever went stale meanwhile, which
+for the casks means several hundred megabytes of applications that update
+themselves anyway. Upgrading is `brew upgrade`, when you mean it.
 
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot
