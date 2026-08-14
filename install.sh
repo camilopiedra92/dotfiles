@@ -15,8 +15,17 @@ fi
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
 # --- 2. Brewfile packages ---
+# --no-upgrade because this script installs, and upgrading is a different
+# decision. `brew bundle install` upgrades every outdated dependency by default,
+# which makes running this after a `git pull` -- to pick up a new symlink, say --
+# also download whatever grew stale since the last time, apps included.
+#
+# Nothing is lost on the machine this script is written for: a new one has
+# nothing installed to upgrade, so it installs current versions either way. What
+# it costs is that bumping a pinned version in the Brewfile no longer reaches an
+# existing machine through here; `brew upgrade <name>` is where that lives now.
 log "Installing Homebrew packages"
-brew bundle install --file="$DOTFILES/Brewfile"
+brew bundle install --no-upgrade --file="$DOTFILES/Brewfile"
 
 # --- 3. Symlinks ---
 log "Linking dotfiles"
@@ -71,6 +80,10 @@ link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
 # Same reasoning. This one replaces an `npm link`, which put the command in the
 # npm prefix of a single Node version and left no trace in any repo.
 link "$DOTFILES/bin/aware.sh" "$HOME/.local/bin/aware"
+# Not a command you run: it is what ~/.claude.json points the ynab MCP server
+# at, so the server logs into its own directory instead of into whichever
+# repository the editor was started in. See the file.
+link "$DOTFILES/bin/ynab-mcp.sh" "$HOME/.local/bin/ynab-mcp"
 
 # --- 3b. Claude Code settings ---
 # settings.json is not symlinked: Claude Code rewrites it on its own (the
