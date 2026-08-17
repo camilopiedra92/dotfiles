@@ -194,6 +194,29 @@ if ! rustc --version > /dev/null 2>&1; then
   /opt/homebrew/opt/rustup/bin/rustup default stable
 fi
 
+# --- 7. CLI tools from uv ---
+# uv-tools.txt exists because `uv tool` is the one package manager here with no
+# manifest to read; see the header of that file for why these live neither in the
+# Brewfile nor in mise.
+#
+# Unconditional, and unlike step 2 this one does converge the machine on the
+# declared version: `uv tool install` re-run with an identical reference is a
+# cached no-op, and re-run with a reference that moved replaces the tool in place
+# without needing --force. Both verified, the second by installing v0.16.2 and
+# then asking for v0.16.4.
+#
+# That is the opposite choice from --no-upgrade above, for a reason that is not
+# inconsistency. There, the version comes from the internet, so "install" and
+# "upgrade to whatever shipped since" are genuinely different decisions. Here the
+# version is written down in this repo, so converging on it is not an upgrade --
+# it is what applying the file means, and the alternative is a pin that only
+# takes effect on machines that never had the tool.
+log "Installing CLI tools with uv"
+while read -r name ref; do
+  [ -n "$name" ] || continue
+  uv tool install --from "$ref" "$name"
+done < <(sed 's/#.*//' "$DOTFILES/uv-tools.txt")
+
 # VS Code extensions need no step of their own: the Brewfile declares them with
 # `vscode "..."` entries and `brew bundle install` installs them in step 2.
 

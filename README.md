@@ -23,12 +23,18 @@ git clone <this-repo> ~/dotfiles
 |---|---|---|
 | System | Homebrew | CLIs and native apps (`Brewfile`) |
 | Runtimes | mise | node, python, go… per project (`mise/config.toml`) |
-| Python | uv | packages, venvs and projects |
+| Python | uv | packages, venvs and projects, plus CLI tools (`uv-tools.txt`) |
 | Rust | rustup | toolchains |
 
 Rule: **Homebrew installs programs, mise installs runtimes.** Never a runtime
 through Homebrew — it ties you to a single global version and breaks projects
 that need a different one.
+
+A program Homebrew does not carry goes in `uv-tools.txt` if it is a Python
+application, never into a global `pip install`. That file is the third manifest
+here for the same reason the other two exist: `uv tool` installs into
+`~/.local/share/uv/tools` and has nothing to read a list from, so without it a
+rebuilt machine came up missing those commands and nothing said so.
 
 The system Python (`/usr/bin/python3`) is never touched.
 
@@ -45,6 +51,7 @@ ghostty/config         terminal
 git/config             git config (without identity)
 git/ignore             global gitignore
 mise/config.toml       global runtime versions
+uv-tools.txt           CLI tools installed with `uv tool`, each pinned to a reference
 vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
 bin/aware.sh           runs the aware-connector CLI from anywhere
@@ -396,6 +403,20 @@ mise publish today, reporting the exact `curl` to refresh one that has moved.
 That is the other half of the deal made above: vendoring keeps the commit path
 offline, and this keeps the vendored copy honest. Compared as parsed JSON, so an
 upstream reindent is not reported as a change worth acting on.
+
+It asks the same pair of questions about `uv tool`, which has no
+`brew bundle check` of its own. `uv-tools.txt` is compared against the receipts
+uv writes under `uv tool dir` — in both directions, and on the reference rather
+than the version, so a pin that moved is visible and not merely a number that
+happens to match. Then it asks GitHub whether a pinned tag has been superseded,
+which is calendar drift again.
+
+And it asks whether each installed tool still runs, which nothing else here would
+notice. A `uv tool` environment borrows its base interpreter instead of copying
+it, so removing that interpreter leaves the command on `PATH` and dead: still
+installed, still declared, still the right version, `bad interpreter` when you
+type it. It found exactly that on the first run — a tool built against an
+Anaconda python that is no longer on this machine.
 
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,

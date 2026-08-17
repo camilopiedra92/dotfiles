@@ -197,6 +197,222 @@ report "settings.json declares every choice" \
   "add it to claude/settings.json, or drop it with /config" \
   "$(claude_settings_drift)"
 
+printf '\n%suv tools%s\n' "$DIM" "$OFF"
+
+# The same question the Brewfile section asks, for the package manager that has
+# no `brew bundle check` of its own. uv-tools.txt is the declaration; this reads
+# the receipts uv writes under `uv tool dir` and compares them.
+#
+# Receipts rather than `uv tool list`, for two reasons. They carry the reference a
+# tool was installed from, so a pin that moved is visible and not just a version
+# that happens to match; and `uv tool list` mixes warnings about broken tools into
+# the same stream it lists working ones on, which is a parser waiting to be wrong
+# about which is which.
+#
+# It also asks whether each installed tool still runs. A `uv tool` environment
+# borrows its base interpreter rather than copying it, so removing that
+# interpreter leaves the command on PATH and dead -- `bad interpreter` on a tool
+# nothing in this repo touched. Nothing else here would report that: the tool is
+# installed, declared, at the right version, and does not work.
+uv_tools_drift() {
+  python3 - << 'PY'
+import os
+import re
+import subprocess
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    # Never fall through to "no receipts found, so nothing is installed": that
+    # reads exactly like a clean report.
+    print('cannot read uv receipts: tomllib needs python 3.11 or newer')
+    raise SystemExit(0)
+
+problems = []
+
+
+def declared():
+    """name -> (kind, url_or_none, rev_or_none) from uv-tools.txt."""
+    out = {}
+    with open('uv-tools.txt', encoding='utf-8') as handle:
+        for line in handle:
+            fields = line.split('#')[0].split()
+            if not fields:
+                continue
+            name, ref = fields[0], fields[1] if len(fields) > 1 else ''
+            out[name] = parse_ref(ref)
+    return out
+
+
+def parse_ref(ref):
+    if ref.startswith('git+'):
+        url, _, rev = ref[len('git+'):].rpartition('@')
+        return ('git', url, rev)
+    # A bare name resolves to PyPI. `name==1.2.3` pins it there.
+    return ('pypi', None, ref.partition('==')[2] or None)
+
+
+def installed(tool_dir):
+    out = {}
+    for name in sorted(os.listdir(tool_dir)):
+        receipt = os.path.join(tool_dir, name, 'uv-receipt.toml')
+        if not os.path.isfile(receipt):
+            continue
+        with open(receipt, 'rb') as handle:
+            data = tomllib.load(handle)
+        requirements = data.get('tool', {}).get('requirements', [])
+        # The requirement whose name matches the directory is the tool itself;
+        # anything else is a `--with` extra and not what was asked for.
+        for requirement in requirements:
+            if requirement.get('name') != name:
+                continue
+            git = requirement.get('git')
+            if git:
+                # uv rewrites `git+URL@REV` as `URL?rev=REV` in the receipt, so
+                # the two spellings have to be normalised before comparing.
+                url, _, rev = git.partition('?rev=')
+                out[name] = (('git', url, rev), data)
+            else:
+                specifier = requirement.get('specifier') or ''
+                pinned = re.sub(r'^==', '', specifier) or None
+                out[name] = (('pypi', None, pinned), data)
+            break
+    return out
+
+
+def broken_entrypoints(name, data):
+    """Entrypoints that exist but cannot execute."""
+    for entry in data.get('tool', {}).get('entrypoints', []):
+        path = entry.get('install-path')
+        if not path:
+            continue
+        if not os.path.exists(path):
+            problems.append('%s: %s is declared as its command and is missing'
+                            % (name, path))
+            continue
+        try:
+            with open(path, 'rb') as handle:
+                first = handle.readline()
+        except OSError as err:
+            problems.append('%s: cannot read %s (%s)' % (name, path, err))
+            continue
+        if not first.startswith(b'#!'):
+            continue
+        words = first[2:].decode('utf-8', 'replace').split()
+        # `#!/usr/bin/env python` resolves through PATH, so its first word says
+        # nothing about whether the interpreter is there.
+        if not words or os.path.basename(words[0]) == 'env':
+            continue
+        if not os.path.exists(words[0]):
+            problems.append('%s: its interpreter %s is gone, so the command is '
+                            'dead: uv tool install %s --reinstall'
+                            % (name, words[0], name))
+
+
+def show(ref):
+    kind, url, rev = ref
+    if kind == 'git':
+        return 'git+%s@%s' % (url, rev)
+    return rev or 'whatever PyPI serves'
+
+
+try:
+    tool_dir = subprocess.run(
+        ['uv', 'tool', 'dir'],
+        capture_output=True, text=True, check=True).stdout.strip()
+except (OSError, subprocess.CalledProcessError) as err:
+    print('cannot ask uv where its tools live (%s)' % err)
+    raise SystemExit(0)
+
+want = declared()
+have = installed(tool_dir) if os.path.isdir(tool_dir) else {}
+
+for name in sorted(set(want) - set(have)):
+    problems.append('%s: declared and not installed: ./install.sh' % name)
+
+for name in sorted(set(have) - set(want)):
+    problems.append('%s: installed and not declared: add it to uv-tools.txt, '
+                    'or: uv tool uninstall %s' % (name, name))
+
+for name in sorted(set(want) & set(have)):
+    ref, _ = have[name]
+    if ref != want[name]:
+        problems.append(
+            '%s: uv-tools.txt says %s, this machine has %s: ./install.sh'
+            % (name, show(want[name]), show(ref)))
+
+# Every installed tool, declared or not. Whether a command on PATH runs is not a
+# question about this repo's manifest, and scoping it to the declared ones hid
+# the only broken tool on the machine behind the milder complaint that it was
+# undeclared.
+for name in sorted(have):
+    broken_entrypoints(name, have[name][1])
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "uv-tools.txt matches this machine" \
+  "each line above ends in the command that closes it" \
+  "$(uv_tools_drift)"
+
+# Drift against a calendar again, the same shape as the end-of-life check below:
+# a tag pinned in uv-tools.txt was the latest release the day it was written and
+# stops being so without anything in this repo changing.
+#
+# Only the pinned git references can be asked this, and anything else is reported
+# rather than skipped, for the reason the runtime map below states: a tool nobody
+# checks reads exactly like a tool that is up to date.
+#
+# /releases/latest excludes prereleases, so a deliberately pinned alpha reads as
+# behind. Reported as a difference with both values rather than as "upgrade this",
+# because which of the two is right is a judgement this script does not have.
+stale_uv_pins() {
+  python3 - << 'PY'
+import json
+import re
+import urllib.request
+
+problems = []
+
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for line in handle:
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        name = fields[0]
+        ref = fields[1] if len(fields) > 1 else ''
+        match = re.fullmatch(
+            r'git\+https://github\.com/([^/]+)/([^/]+?)(?:\.git)?@(.+)', ref)
+        if not match:
+            problems.append('%s: no upstream release source mapped for %r'
+                            % (name, ref))
+            continue
+        owner, repo, tag = match.groups()
+        url = 'https://api.github.com/repos/%s/%s/releases/latest' % (owner, repo)
+        try:
+            request = urllib.request.Request(
+                url, headers={'Accept': 'application/vnd.github+json'})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                latest = json.load(response)['tag_name']
+        except Exception as err:
+            # Unauthenticated calls are rate limited to 60 an hour, which arrives
+            # here as a 403 and is worth naming rather than reading as an outage.
+            problems.append('%s: could not ask GitHub for the latest release (%s)'
+                            % (name, err))
+            continue
+        if latest != tag:
+            problems.append('%s: pinned to %s, upstream now releases %s'
+                            % (name, tag, latest))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "no pinned uv tool is behind upstream" \
+  "bump the tag in uv-tools.txt, then ./install.sh" \
+  "$(stale_uv_pins)"
+
 printf '\n%sRuntimes%s\n' "$DIM" "$OFF"
 
 # The README states this as a rule -- "Homebrew installs programs, mise installs

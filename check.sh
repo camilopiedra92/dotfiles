@@ -267,6 +267,48 @@ s = re.sub(r',(\s*[}\]])', r'\1', s)
 json.loads(s)
 "
 
+# uv-tools.txt is read by install.sh on a machine that has nothing on it yet,
+# which is the worst possible moment to find a typo in it. Nothing else would
+# reject one earlier: the file is plain text, so it parses no matter what it says,
+# and `uv tool install` only reports the mistake once it is being run for real.
+#
+# The pin rule is the point rather than a formality. A git reference without an
+# `@tag` resolves to the default branch, which installs whatever was merged that
+# morning and reinstalls something different tomorrow -- an unpinned line looks
+# exactly like a pinned one and is the opposite of what this file is for.
+uv_tools_manifest() {
+  python3 - << 'PY'
+import re
+import sys
+
+problems = []
+seen = {}
+
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for number, line in enumerate(handle, 1):
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        if len(fields) != 2:
+            problems.append('line %d: expected "name reference", got %d field(s)'
+                            % (number, len(fields)))
+            continue
+        name, ref = fields
+        if name in seen:
+            problems.append('line %d: %s is already declared on line %d'
+                            % (number, name, seen[name]))
+        seen[name] = number
+        if ref.startswith('git+') and not re.search(r'\.git@[^@/]+$', ref):
+            problems.append('line %d: %s is not pinned -- a git reference needs '
+                            'a trailing @tag' % (number, name))
+
+for problem in problems:
+    print(problem)
+sys.exit(1 if problems else 0)
+PY
+}
+check "uv-tools.txt declares a pinned reference per tool" uv_tools_manifest
+
 # Ghostty validates its own config, so this catches an option renamed between
 # releases and not only a syntax error. It is the one config here with no
 # startup error to read: a bad key is dropped silently and you are left
