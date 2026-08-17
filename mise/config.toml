@@ -28,4 +28,18 @@ node = "26"
 # 3.15 arrives this October and the C-extension packages that matter will take
 # months to publish wheels for it. Bumping this by hand once a year is the
 # deliberate step that "latest" would take for you at the worst moment.
-python = "3.14"
+#
+# Two versions, and the second one is not a preference. The gcloud CLI ships no
+# interpreter: it takes the first python3 it finds, and on this machine that was
+# a python.org 3.13 under /usr/local/bin that nothing here declared. Naming an
+# interpreter for it (CLOUDSDK_PYTHON, in zsh/.zshenv) is what lets that one go,
+# and the version is not free to choose -- gcloud 557 supports 3.10 through 3.14
+# but gsutil refuses anything above 3.13, so 3.13 is the only end of the range
+# that satisfies both. Measured, not assumed: 3.14 makes gsutil exit with
+# "requires Python version 3.9-3.13".
+#
+# First in the list is the default, so `python` and `python3` still resolve to
+# 3.14 everywhere; 3.13 exists to be pointed at by name. It leaves when gsutil
+# does -- `gcloud storage` is its replacement upstream, and once nothing here
+# calls gsutil this drops back to a single version.
+python = ["3.14", "3.13"]
