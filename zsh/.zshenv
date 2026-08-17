@@ -52,3 +52,24 @@ path=(
 # afterwards and takes precedence there, which avoids paying a subprocess hop
 # per command in the shell you actually type in.
 path=("${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims" $path)
+
+# The gcloud CLI ships no interpreter and takes the first python3 it finds. That
+# is not the same question the PATH above answers: gcloud searches on its own
+# terms, and on this machine it settled on a python.org 3.13 under /usr/local/bin
+# that nothing declares and nothing updates -- a second runtime, chosen by
+# accident, exactly what the mise rule exists to prevent.
+#
+# CLOUDSDK_PYTHON is Google's own knob for this, so naming the interpreter is
+# using the tool as designed rather than working around it. gsutil and bq inherit
+# it when their own overrides are unset, which is why one variable covers all
+# three -- and why the version has to satisfy the strictest of them.
+#
+# 3.13 and not the shim, which resolves to the 3.14 that mise defaults to. gcloud
+# 557 takes 3.10 through 3.14, but gsutil stops at 3.13 and says so by refusing to
+# start: "gsutil requires Python version 3.9-3.13". 3.13 is the only end of the
+# range both accept, and mise/config.toml declares it for exactly this reason.
+#
+# The installs path rather than the shim is what makes this a version this repo
+# chose. mise keys that directory by the version string in its config, not by the
+# patch, so 3.13.15 becoming 3.13.16 does not move it.
+export CLOUDSDK_PYTHON="${XDG_DATA_HOME:-$HOME/.local/share}/mise/installs/python/3.13/bin/python3"
