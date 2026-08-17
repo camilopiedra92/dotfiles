@@ -63,6 +63,14 @@ for a library too. What a library publishes are the constraints in its
 `pyproject.toml`; the lock is so its own development is reproducible, and the
 two do not compete. A scratch script is not a project and needs none of this.
 
+For node it is npm, the one that arrives with the node mise installs, because
+nine of the ten node projects here already use it and the tenth is the reason
+to be careful rather than a reason to switch. Do not declare `packageManager`
+in `package.json` on this machine: corepack is what reads that field, and node
+removed corepack from the distribution — 26 ships `node`, `npm` and `npx` and
+nothing else. The lockfile is what says which manager a project uses, and it
+cannot be wrong about it, because the manager is what wrote it.
+
 The version file has to be one mise reads. `.nvmrc` and `.python-version` are
 ignored on this machine — mise leaves `idiomatic_version_file_enable_tools`
 empty by default — so they read like a declaration and do nothing at all. That
