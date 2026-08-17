@@ -388,9 +388,19 @@ or pin your local tool back.
 `brew bundle check` only asks whether everything declared is installed, and a
 subset always answers yes to that. The gap it leaves is everything installed and
 never written down, which is the direction drift actually grows in. `drift.sh`
-reports both, plus VS Code extensions, plus any runtime that came from Homebrew
-instead of mise — the rule stated at the top of this file, which nothing
-enforced until now.
+reports both, plus VS Code extensions, plus any runtime a PATH lookup can reach
+that did not come from mise — the rule stated at the top of this file.
+
+That check used to ask Homebrew for a list of formulae, which was the wrong
+question twice over. Homebrew is one way to acquire a second runtime; a vendor
+`.pkg` is another, and this machine had a python.org framework under
+`/usr/local/bin` for over a year that nothing here ever mentioned. And what
+breaks a script is not that a second runtime exists but that some shell resolves
+it, so the question is which binaries are reachable — every entry on `PATH`, not
+just the winner. mise sits at the front here, so looking only at the winner sees
+nothing while the shadowed copy still wins in any shell that never read
+`.zshenv`. Exemptions are listed in the file, keyed by directory *and* command,
+each with the reason it is exempt and what would end it.
 
 It also asks endoflife.date whether anything mise installed has stopped being
 supported. That is drift against a calendar rather than between two files: a pin
