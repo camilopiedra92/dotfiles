@@ -596,6 +596,63 @@ assert s['subagentStatusLine']['command'], s
 }
 check "install.sh is idempotent" install_is_idempotent
 
+# Step 7 does two things and only one of them needs the network. It turns each
+# line of uv-tools.txt into a `uv tool install`, and the turning is where the
+# bugs are: a comment-only line producing a phantom install, a trailing comment
+# landing inside the reference, a blank line invoking uv with nothing. None of
+# that needs to reach anything to be checked.
+#
+# So it runs against a fixture manifest and a `uv` that records its arguments
+# instead of doing the work. That is the same boundary step 2 draws in the file
+# itself -- whether Homebrew installs correctly is Homebrew's problem -- and it
+# keeps this check meaning the same thing on a runner as on the machine, which
+# is the whole basis for CI's promise here.
+#
+# A fixture rather than the real manifest, because the real one has a single
+# well-formed line and would exercise none of the shapes worth getting wrong.
+uv_tools_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+  } > "$steps"
+
+  # The same guard the check above uses: if that heading is ever renamed the
+  # extraction goes empty, and an empty script passes everything.
+  grep -qF 'uv tool install' "$steps" || {
+    echo "could not extract step 7 from install.sh"
+    return 1
+  }
+
+  cat > "$tmp/uv-tools.txt" << 'FIXTURE'
+# a comment-only line, which must produce no install at all
+
+alpha-cli  git+https://example.invalid/alpha.git@v1.2.3
+beta-cli   beta-cli==2.0  # a trailing comment, which must not reach the reference
+FIXTURE
+
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  : > "$tmp/calls"
+
+  PATH="$tmp/bin:$PATH" DOTFILES="$tmp" bash -euo pipefail "$steps" > /dev/null || return 1
+
+  # Written out rather than derived from the fixture, so a parser that is wrong
+  # cannot agree with itself.
+  cat > "$tmp/want" << 'WANT'
+tool install --from git+https://example.invalid/alpha.git@v1.2.3 alpha-cli
+tool install --from beta-cli==2.0 beta-cli
+WANT
+
+  diff -u "$tmp/want" "$tmp/calls"
+}
+check "install.sh turns the uv manifest into the right installs" uv_tools_step
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
