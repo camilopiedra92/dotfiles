@@ -475,16 +475,6 @@ ACCEPTED = {
     # install.sh runs it. rustup is the manager here, the way mise is elsewhere.
     ('/opt/homebrew/opt/rustup/bin', 'rustc'): 'rustup manages Rust, by design',
     ('/opt/homebrew/opt/rustup/bin', 'cargo'): 'rustup manages Rust, by design',
-    # Eight virtualenvs under ~/Development borrow this as their base interpreter
-    # and every one of them dies the moment it goes -- a venv stores a pointer to
-    # its interpreter, it does not copy it. Four of those projects have no
-    # lockfile, so recreating them means re-resolving dependencies with nothing
-    # recording what used to work. Migrating them to uv is the exit; until then
-    # this is a hold, not an endorsement. gcloud no longer depends on it (see
-    # CLOUDSDK_PYTHON in zsh/.zshenv), which was the last thing outside those
-    # projects that did.
-    ('/usr/local/bin', 'python3'): 'python.org 3.13, held for eight project venvs',
-    ('/usr/local/bin', 'python'): 'python.org 3.13, held for eight project venvs',
 }
 
 problems = []
