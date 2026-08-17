@@ -653,6 +653,73 @@ WANT
 }
 check "install.sh turns the uv manifest into the right installs" uv_tools_step
 
+# The fixture above proves the loop handles the shapes that are easy to get
+# wrong. It says nothing about the file this repo actually ships, which has one
+# well-formed line today and will not always.
+#
+# Writing a second expectation by hand would only restate the manifest. So the
+# real file goes through the same stubbed step, and the result is compared
+# against what an independent parser makes of the same bytes -- python here,
+# `sed` and `read` there. Neither can agree with itself, because they are not
+# the same code.
+#
+# That also pins the two together, which is the point worth more than the
+# coverage. This format is parsed in four places: step 7, the manifest check
+# above, and twice inside drift.sh. Nothing made them agree; they simply did. A
+# column added to the format in one and not the others now turns this red
+# instead of turning drift.sh into a liar.
+uv_tools_real_manifest() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+  } > "$steps"
+  grep -qF 'uv tool install' "$steps" || {
+    echo "could not extract step 7 from install.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  : > "$tmp/calls"
+
+  PATH="$tmp/bin:$PATH" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null || return 1
+
+  python3 - "$tmp/calls" << 'PY'
+import sys
+
+want = []
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for number, line in enumerate(handle, 1):
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        if len(fields) != 2:
+            # The manifest check above is what reports this properly. Bailing
+            # here rather than guessing keeps one failure to one message.
+            print('line %d is not "name reference"; see the manifest check'
+                  % number)
+            raise SystemExit(1)
+        want.append('tool install --from %s %s' % (fields[1], fields[0]))
+
+got = [line.rstrip('\n') for line in open(sys.argv[1], encoding='utf-8')]
+if want != got:
+    print('step 7 would run:')
+    for call in got:
+        print('  %s' % call)
+    print('the manifest asks for:')
+    for call in want:
+        print('  %s' % call)
+    raise SystemExit(1)
+PY
+}
+check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
