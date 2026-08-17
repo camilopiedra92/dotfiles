@@ -120,7 +120,8 @@ wrappers or one-line functions. A test you have not watched fail is not a test:
 write it first, run it, and check it failed for the reason you expected — an
 import or collection error proves the test was collected, not that it exercises
 anything. If the first run errors instead of failing, stub the thing under test
-until it fails from inside.
+until it fails from inside. Then write the simplest thing that makes it pass: a
+design document is not a licence to build past the test in front of you.
 
 When you finish, tell me what actually happened: if a test fails, show me the
 output; if you left something half done, say so. I prefer an uncomfortable
