@@ -575,13 +575,6 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
-            "cosign_extra_args": {
-              "description": "Extra arguments to pass to cosign when verifying aqua tool signatures.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "github_attestations": {
               "default": true,
               "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
@@ -1580,8 +1573,12 @@
               "description": "URL template or GitHub repo for precompiled Ruby binaries.",
               "type": "string"
             },
+            "ruby_build_cli_opts": {
+              "description": "CLI options passed directly to ruby-build before the version and install prefix.",
+              "type": "string"
+            },
             "ruby_build_opts": {
-              "description": "Options to pass to ruby-build.",
+              "description": "Configure arguments passed through ruby-build after `--`.",
               "type": "string"
             },
             "ruby_build_repo": {
@@ -1809,6 +1806,10 @@
               "type": "object",
               "unevaluatedProperties": false,
               "properties": {
+                "audit_report": {
+                  "description": "[experimental] File to write the complete task cache audit report to.",
+                  "type": "string"
+                },
                 "remote_mode": {
                   "default": "read-write",
                   "description": "[experimental] Remote task and action cache access mode.",
@@ -1833,6 +1834,10 @@
                 },
                 "remote_url": {
                   "description": "[experimental] Base URL for the remote build-cache service.",
+                  "type": "string"
+                },
+                "stats_report": {
+                  "description": "[experimental] File to write action-cache session statistics to.",
                   "type": "string"
                 }
               }
@@ -2037,7 +2042,7 @@
         },
         "trusted_config_paths": {
           "default": [],
-          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable (`:` on Unix, `;` on Windows).",
+          "description": "This is a list of config paths that mise will automatically mark as trusted. Any config files under these paths will be trusted without prompting. Set to `[\"/\"]` to trust all config files, effectively disabling the trust mechanism. Paths are separated by the OS path separator when using the environment variable, `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).",
           "type": "array",
           "items": {
             "type": "string"
@@ -4110,6 +4115,20 @@
                         "type": "integer",
                         "minimum": 0,
                         "description": "write StartInterval in seconds"
+                      },
+                      "throttle_interval": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "write ThrottleInterval in seconds"
+                      },
+                      "queue_directories": {
+                        "type": "array",
+                        "description": "write QueueDirectories (absolute paths; `~` and `~/` are expanded)",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "^(/|~$|~/)"
+                        }
                       },
                       "start_calendar_interval": {
                         "description": "write one or more StartCalendarInterval schedules",
