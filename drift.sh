@@ -430,19 +430,90 @@ report "no pinned uv tool is behind upstream" \
 printf '\n%sRuntimes%s\n' "$DIM" "$OFF"
 
 # The README states this as a rule -- "Homebrew installs programs, mise installs
-# runtimes" -- and until now nothing enforced it. A runtime from Homebrew is a
-# single global version: whichever shell has mise activated gets the right one
-# and everything else (scripts, launchd jobs, non-interactive shells) silently
-# gets Homebrew's. The symptom appears far from the cause.
-RUNTIMES="node deno bun go ruby rust php openjdk"
-through_brew=""
-for r in $RUNTIMES; do
-  brew list --formula --versions "$r" > /dev/null 2>&1 &&
-    through_brew+="$r ($(brew list --versions "$r" | awk '{print $2}'))"$'\n'
-done
-report "no runtime comes from Homebrew" \
-  "install it with mise instead: brew uninstall <name> && mise use -g <name>@lts" \
-  "${through_brew%$'\n'}"
+# runtimes" -- and what used to stand here enforced it against Homebrew only, by
+# asking `brew list` about a fixed set of formulae. That is the wrong question in
+# two ways, and both were live on this machine.
+#
+# It named the wrong suspect. Homebrew is one way to end up with a second runtime;
+# a vendor .pkg is another, and so is an Anaconda that somebody installed once and
+# forgot. This machine had a python.org framework under /usr/local/bin for over a
+# year, unreported, because nothing here asked about anything but brew. It also
+# omitted python from the list entirely, so even the narrow check was blind to it.
+#
+# And it asked about installation rather than resolution. What breaks a script is
+# not that a second runtime exists, it is that a shell resolves it -- so the
+# question has to be which binaries a PATH lookup can reach, which is why this
+# walks every entry rather than taking the first hit. mise wins the front of PATH
+# here, so the winner is always mise and looking only there sees nothing: the
+# python.org one sat fourth and still won in any shell that never read .zshenv.
+runtimes_not_from_mise() {
+  python3 - << 'PY'
+import os
+
+# Command names, not formula names: this asks what a shell can resolve.
+RUNTIMES = ['python', 'python3', 'node', 'deno', 'bun', 'go', 'ruby',
+            'rustc', 'cargo', 'php', 'java', 'perl']
+
+mise = os.path.expanduser(
+    os.environ.get('XDG_DATA_HOME', '~/.local/share') + '/mise')
+
+# Apple's own copies, which are not a choice anybody made and cannot be removed.
+# The README already says the system Python is never touched; the same reasoning
+# covers the ruby, java and perl that ship with macOS.
+APPLE = ('/usr/bin/', '/bin/', '/usr/sbin/', '/sbin/', '/System/',
+         '/var/run/com.apple.security.cryptexd/')
+
+# Runtimes this repo deliberately gets from somewhere other than mise. An entry
+# here is a decision recorded in the repo, not a way to quiet the report, so each
+# one says why it is exempt and what would end the exemption.
+#
+# Keyed by directory *and* command, never by directory alone. /usr/local/bin holds
+# a python this machine has agreed to keep; a node appearing next to it tomorrow
+# is a different decision and has to be reported as one.
+ACCEPTED = {
+    # The Architecture table names rustup as what manages Rust toolchains, and
+    # install.sh runs it. rustup is the manager here, the way mise is elsewhere.
+    ('/opt/homebrew/opt/rustup/bin', 'rustc'): 'rustup manages Rust, by design',
+    ('/opt/homebrew/opt/rustup/bin', 'cargo'): 'rustup manages Rust, by design',
+    # Eight virtualenvs under ~/Development borrow this as their base interpreter
+    # and every one of them dies the moment it goes -- a venv stores a pointer to
+    # its interpreter, it does not copy it. Four of those projects have no
+    # lockfile, so recreating them means re-resolving dependencies with nothing
+    # recording what used to work. Migrating them to uv is the exit; until then
+    # this is a hold, not an endorsement. gcloud no longer depends on it (see
+    # CLOUDSDK_PYTHON in zsh/.zshenv), which was the last thing outside those
+    # projects that did.
+    ('/usr/local/bin', 'python3'): 'python.org 3.13, held for eight project venvs',
+    ('/usr/local/bin', 'python'): 'python.org 3.13, held for eight project venvs',
+}
+
+problems = []
+seen = set()
+
+for directory in os.environ.get('PATH', '').split(os.pathsep):
+    if not directory:
+        continue
+    for name in RUNTIMES:
+        path = os.path.join(directory, name)
+        if path in seen or not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        seen.add(path)
+        if path.startswith(mise) or path.startswith(APPLE):
+            continue
+        if (directory.rstrip('/'), name) in ACCEPTED:
+            continue
+        # Where it actually comes from, which is the useful half: the name of the
+        # thing to uninstall is rarely the path a shell resolved.
+        real = os.path.realpath(path)
+        problems.append('%s: %s is not from mise (%s)' % (name, path, real))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "every runtime on PATH comes from mise" \
+  "install it with mise instead, or record why it is exempt in this file" \
+  "$(runtimes_not_from_mise)"
 
 # Running a version nobody patches anymore is not drift between two files: it is
 # drift against a calendar, so no amount of reading this repo can detect it. A
