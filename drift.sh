@@ -632,6 +632,10 @@ PRODUCTS = {
     'php': 'php',
     'bun': 'bun',
     'deno': 'deno',
+    # Not a runtime, but mise installs it and this map is what decides whether
+    # anything mise installs is being watched. endoflife.date tracks it, so the
+    # honest answer is a mapping rather than an exception.
+    'pnpm': 'pnpm',
 }
 
 problems = []

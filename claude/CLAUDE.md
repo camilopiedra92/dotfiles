@@ -63,13 +63,23 @@ for a library too. What a library publishes are the constraints in its
 `pyproject.toml`; the lock is so its own development is reproducible, and the
 two do not compete. A scratch script is not a project and needs none of this.
 
-For node it is npm, the one that arrives with the node mise installs, because
-nine of the ten node projects here already use it and the tenth is the reason
-to be careful rather than a reason to switch. Do not declare `packageManager`
-in `package.json` on this machine: corepack is what reads that field, and node
-removed corepack from the distribution — 26 ships `node`, `npm` and `npx` and
-nothing else. The lockfile is what says which manager a project uses, and it
-cannot be wrong about it, because the manager is what wrote it.
+For node it is pnpm, declared in `mise/config.toml` and never installed with
+`npm i -g`, which writes into a directory named after node's patch version and
+loses everything in it on the next bump. npm's `node_modules` is flat, so a
+package can require something it never declared — a transitive dependency got
+hoisted next to it — and that works until the hoisting changes and then breaks
+somewhere else. pnpm resolves only what a package declares, which is the same
+thing this file asks for everywhere else: that a declaration mean what it says.
+Not yarn, whose Plug'n'Play is stricter still and charges for it continuously,
+a trade that pays off for a monorepo with workspaces and not for ten separate
+projects. Existing npm projects stay on npm; the rule above about respecting a
+project's toolchain outranks this one.
+
+Do not declare `packageManager` in `package.json` on this machine: corepack is
+what reads that field, and node removed corepack from the distribution — 26
+ships `node`, `npm` and `npx` and nothing else. The lockfile is what says which
+manager a project uses, and it cannot be wrong about it, because the manager is
+what wrote it.
 
 The version file has to be one mise reads. `.nvmrc` and `.python-version` are
 ignored on this machine — mise leaves `idiomatic_version_file_enable_tools`

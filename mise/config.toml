@@ -43,3 +43,26 @@ node = "26"
 # does -- `gcloud storage` is its replacement upstream, and once nothing here
 # calls gsutil this drops back to a single version.
 python = ["3.14", "3.13"]
+
+# The package manager for new node projects, and it is here rather than in a
+# global npm install for a reason worth stating. `npm i -g` writes into the
+# prefix npm reports, which is the node install directory down to the patch:
+# .../mise/installs/node/26.7.0. A patch bump moves that directory and the
+# global vanishes without a word. mise owns this the way it owns the runtimes.
+#
+# pnpm rather than npm because npm's node_modules is flat: a package can require
+# something it never declared, because a transitive dependency got hoisted next
+# to it. It works until the hoisting changes, and then it breaks somewhere else.
+# pnpm's layout is symlinked, so a package resolves only what it declares --
+# which makes package.json mean what it says rather than approximately what it
+# says. The disk saving is real too (3.8GB of node_modules across ten projects
+# here, most of it the same packages) but it is the smaller half.
+#
+# Not yarn, whose Plug'n'Play is stricter still -- no node_modules at all, so
+# the phantom dependency is impossible by construction rather than by symlink.
+# It charges for that continuously: anything walking node_modules by hand stops
+# working, and editors need generated SDKs. That trade pays off for a monorepo
+# with workspaces and constraints, which is not what is here.
+#
+# The major is the pin because the lockfile format travels with it.
+pnpm = "11"
