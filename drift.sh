@@ -115,8 +115,22 @@ fi
 
 printf '\n%sDeclared but not installed%s\n' "$DIM" "$OFF"
 
-missing=$(brew bundle check --file=Brewfile --verbose 2>&1 | sed -n 's/^→ //p')
-report "Brewfile is satisfied" "brew bundle install --file=Brewfile" "$missing"
+# --no-upgrade, or this section reports a Brewfile that is satisfied. `brew bundle
+# check` treats "installed" and "up to date" as one question and phrases the
+# failure identically for both -- "needs to be installed or updated" -- so every
+# formula a day behind arrived here indistinguishable from one that is absent,
+# under a heading that says "Declared but not installed". Homebrew moves daily,
+# which made this the one section that was red almost always, and a section that
+# is red almost always is one you stop reading.
+#
+# The same conflation made the hint actively wrong. `brew bundle install` upgrades
+# everything outdated by default: that is the 850MB of applications f215e58 took
+# out of install.sh on purpose, recommended here to fix a problem that was not
+# happening. Being a patch behind on fzf is not drift between this repo and this
+# machine -- nothing here declares a version for it -- and `brew upgrade` is where
+# that decision already lives.
+missing=$(brew bundle check --file=Brewfile --verbose --no-upgrade 2>&1 | sed -n 's/^→ //p')
+report "Brewfile is satisfied" "brew bundle install --no-upgrade --file=Brewfile" "$missing"
 
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
