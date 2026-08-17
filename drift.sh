@@ -132,6 +132,63 @@ printf '\n%sDeclared but not installed%s\n' "$DIM" "$OFF"
 missing=$(brew bundle check --file=Brewfile --verbose --no-upgrade 2>&1 | sed -n 's/^→ //p')
 report "Brewfile is satisfied" "brew bundle install --no-upgrade --file=Brewfile" "$missing"
 
+# The question above is about this repo's list. This one is about Homebrew's own:
+# a formula records what it needs, and `brew missing` says which of those are not
+# there. It covers a failure nothing else here can see -- a library dependency
+# removed out from under a binary, which still exists, has no shebang to inspect,
+# and only fails when something calls into the missing dylib.
+brew_missing_deps() {
+  python3 - << 'PY'
+import subprocess
+
+# Keyed by formula and dependency together, so a second dependency going missing
+# on an already-listed formula is still reported. An entry is a decision recorded
+# in the repo, with the reason it was made and what would end it.
+ACCEPTED = {
+    ('gcloud-cli', 'python@3.13'):
+        # Bookkeeping rather than breakage. The installed cask recorded this when
+        # 557.0.0 was current; the cask Homebrew serves today wants python@3.14
+        # instead. gcloud runs fine either way because CLOUDSDK_PYTHON names
+        # mise's 3.13 (zsh/.zshenv), so nothing has ever called the formula
+        # python.
+        #
+        # Upgrading the cask is what would clear the record, and it is the wrong
+        # trade. python@3.14 is not keg-only: it installs as
+        # /opt/homebrew/bin/python3 and takes bin/pip3 and bin/pydoc3 with it, so
+        # it would be a runtime from Homebrew -- reported by the check further
+        # down, correctly -- installed for nothing, since CLOUDSDK_PYTHON routes
+        # around it.
+        #
+        # Ends when gcloud stops needing an interpreter it does not ship, either
+        # because Homebrew's cask bundles one or because this machine gets gcloud
+        # from somewhere that does.
+        'stale record; gcloud uses the interpreter CLOUDSDK_PYTHON names',
+}
+
+problems = []
+try:
+    out = subprocess.run(['brew', 'missing'], capture_output=True,
+                         text=True).stdout
+except OSError as err:
+    print('cannot run `brew missing` (%s)' % err)
+    raise SystemExit(0)
+
+for line in out.splitlines():
+    formula, _, deps = line.partition(':')
+    formula = formula.strip()
+    for dep in deps.split():
+        if (formula, dep) in ACCEPTED:
+            continue
+        problems.append('%s needs %s, which is not installed' % (formula, dep))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "no formula is missing a dependency" \
+  "brew install <dep>, or reinstall the formula that wants it" \
+  "$(brew_missing_deps)"
+
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
 # settings.json is merged rather than symlinked, because Claude Code rewrites it
