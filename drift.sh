@@ -676,6 +676,92 @@ report "vendored schemas match upstream" \
   "refresh it, then ./check.sh -- a newer schema can reject a config it used to accept" \
   "$(stale_schemas)"
 
+printf '\n%sCommands%s\n' "$DIM" "$OFF"
+
+# A command that is on PATH and cannot run is the quietest kind of breakage:
+# nothing reports it until you type the name, and by then the cause is months
+# old. Two shapes produce it, and both have happened here. A symlink outsurviving
+# its target -- Docker Desktop dropped two binaries in an update and left the
+# links in /usr/local/bin. And a script naming an interpreter that is gone, which
+# is what a `uv tool` becomes when the python it borrowed disappears.
+#
+# Apple's directories are excluded, for the same reason the runtime check
+# excludes them and one specific to this: /usr/sbin/weakpass_edit ships broken in
+# macOS itself. Reporting something no one here can fix is how a section becomes
+# noise.
+broken_commands() {
+  python3 - << 'PY'
+import os
+import subprocess
+
+APPLE = ('/usr/bin/', '/bin/', '/usr/sbin/', '/sbin/', '/System/',
+         '/var/run/com.apple.security.cryptexd/')
+
+# Entrypoints the uv tools section above already reports, and reports better:
+# it knows the tool name, so it can name the `--reinstall` that fixes it. Skipped
+# here rather than reported twice, because one problem printed under two headings
+# reads like two problems.
+uv_entrypoints = set()
+try:
+    tool_dir = subprocess.run(['uv', 'tool', 'dir'], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    import tomllib
+    for name in os.listdir(tool_dir):
+        receipt = os.path.join(tool_dir, name, 'uv-receipt.toml')
+        if not os.path.isfile(receipt):
+            continue
+        with open(receipt, 'rb') as handle:
+            data = tomllib.load(handle)
+        for entry in data.get('tool', {}).get('entrypoints', []):
+            if entry.get('install-path'):
+                uv_entrypoints.add(entry['install-path'])
+except Exception:
+    # Leaving the set empty costs a duplicate line, never a missed one.
+    pass
+
+problems = []
+seen = set()
+
+for directory in os.environ.get('PATH', '').split(os.pathsep):
+    if not directory or not os.path.isdir(directory):
+        continue
+    if directory.rstrip('/').startswith(tuple(a.rstrip('/') for a in APPLE)):
+        continue
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if path in seen or path in uv_entrypoints:
+            continue
+        seen.add(path)
+        if os.path.islink(path) and not os.path.exists(path):
+            problems.append('%s points at nothing: %s'
+                            % (path, os.readlink(path)))
+            continue
+        if not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        try:
+            with open(path, 'rb') as handle:
+                first = handle.readline()
+        except OSError:
+            continue
+        if not first.startswith(b'#!'):
+            continue
+        words = first[2:].decode('utf-8', 'replace').split()
+        # `#!/usr/bin/env python` resolves through PATH at run time, so its first
+        # word says nothing about whether an interpreter is there.
+        if not words or os.path.basename(words[0]) == 'env':
+            continue
+        if not os.path.exists(words[0]):
+            problems.append('%s names a missing interpreter: %s'
+                            % (path, words[0]))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "every command on PATH can run" \
+  "remove the link, or reinstall whatever put it there" \
+  "$(broken_commands)"
+
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
 else
