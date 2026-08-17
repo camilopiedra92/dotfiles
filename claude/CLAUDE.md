@@ -81,11 +81,19 @@ ships `node`, `npm` and `npx` and nothing else. The lockfile is what says which
 manager a project uses, and it cannot be wrong about it, because the manager is
 what wrote it.
 
-The version file has to be one mise reads. `.nvmrc` and `.python-version` are
-ignored on this machine — mise leaves `idiomatic_version_file_enable_tools`
-empty by default — so they read like a declaration and do nothing at all. That
-is worse than declaring nothing: a project here asked for node 22 in `.nvmrc`,
-ran on 26 for months, and published from CI on 22. `mise.toml`, always.
+The version file has to be one something actually reads, and which file that is
+depends on who needs the answer. mise leaves `idiomatic_version_file_enable_tools`
+empty by default, so it reads neither `.nvmrc` nor `.python-version`. For node
+that settles it: corepack is gone, nothing else reads `.nvmrc`, and a project
+here asked for node 22 in one, ran on 26 for months, and published from CI on
+22. A declaration nothing honours is worse than none, because with none you
+look.
+
+`.python-version` is the exception and it matters: uv reads it, and it is what
+decides the interpreter `uv venv` builds on. In a uv project that file is the
+pin, and deleting it because mise ignores it would break the thing it exists
+for. `mise.toml` is for a version something outside a venv has to resolve — a
+node project, or a tool that runs before the venv exists.
 
 Do not create files that are not needed. No READMEs, summaries or
 "implementation notes" documents unless I ask for them.
