@@ -505,6 +505,43 @@ report "every runtime on PATH comes from mise" \
   "install it with mise instead, or record why it is exempt in this file" \
   "$(runtimes_not_from_mise)"
 
+# The check above can only see what a PATH lookup reaches, which leaves a version
+# manager sitting on disk with nothing on PATH pointing at it completely invisible
+# -- and that is the state these arrive in. They install a shell hook you are
+# meant to source, so an inert one is a single line in a dotfile away from taking
+# over `node` or `python`, and editors and task runners probe for these
+# directories on their own.
+#
+# Named rather than searched for. A filesystem scan for "anything that looks like
+# a runtime" has no bottom and no precision; a list of the dozen tools that
+# actually do this is exact, and adding one is a line.
+#
+# This is not hypothetical on this machine. An Anaconda that nobody remembered
+# installing is what left a `uv tool` pointing at a missing interpreter, and an
+# nvm holding node 24 sat here unreferenced while mise served 26. Neither was
+# reachable from PATH, so neither was reportable until now.
+#
+# No exemption list, deliberately. rustup is the one manager this repo endorses
+# and it is not in here, so an entry appearing means something arrived that
+# nothing declared. If that ever stops being true, an exemption is a line -- but
+# writing one before it is needed invents a decision nobody has made.
+dormant_version_managers() {
+  local found="" d
+  for d in "$HOME/.nvm" "$HOME/.fnm" "$HOME/.volta" "$HOME/.n" "$HOME/.nodenv" \
+    "$HOME/.pyenv" "$HOME/.rbenv" "$HOME/.rvm" "$HOME/.jenv" "$HOME/.goenv" \
+    "$HOME/.sdkman" "$HOME/.asdf" "$HOME/anaconda3" "$HOME/miniconda3" \
+    "$HOME/miniforge3" /opt/anaconda3 /opt/miniconda3; do
+    [ -d "$d" ] || continue
+    # The full path rather than a ~-shortened one: the hint below is a command
+    # you finish by pasting this into it.
+    found+="$d ($(du -sh "$d" 2> /dev/null | awk '{print $1}'))"$'\n'
+  done
+  printf '%s' "${found%$'\n'}"
+}
+report "no dormant version manager is installed" \
+  "remove it, or move what it holds to mise: rm -rf <path>" \
+  "$(dormant_version_managers)"
+
 # Running a version nobody patches anymore is not drift between two files: it is
 # drift against a calendar, so no amount of reading this repo can detect it. A
 # pin that was correct when it was written becomes wrong on a date, silently,
