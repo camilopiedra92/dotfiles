@@ -54,6 +54,21 @@ there. If a project needs a native library — the kind uv installs a wrapper fo
 and cannot provide, like the pango behind weasyprint — say so, because that
 dependency is invisible to the lockfile and only surfaces at runtime.
 
+A project I will come back to commits its lockfile — `uv.lock`,
+`package-lock.json`, whatever its manager writes. Without one, the only record
+of which versions worked is the environment itself, and an environment stops
+being able to answer the moment its interpreter goes: eight virtualenvs here
+died that way on 2026-08-17, four of them with nothing written down. Commit it
+for a library too. What a library publishes are the constraints in its
+`pyproject.toml`; the lock is so its own development is reproducible, and the
+two do not compete. A scratch script is not a project and needs none of this.
+
+The version file has to be one mise reads. `.nvmrc` and `.python-version` are
+ignored on this machine — mise leaves `idiomatic_version_file_enable_tools`
+empty by default — so they read like a declaration and do nothing at all. That
+is worse than declaring nothing: a project here asked for node 22 in `.nvmrc`,
+ran on 26 for months, and published from CI on 22. `mise.toml`, always.
+
 Do not create files that are not needed. No READMEs, summaries or
 "implementation notes" documents unless I ask for them.
 
