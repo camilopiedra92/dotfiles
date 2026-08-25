@@ -3,8 +3,7 @@
   "forceLoginMethod": "claudeai",
   "theme": "dark-ansi",
   "tui": "fullscreen",
-  "language": "spanish",
-  "outputStyle": "Explanatory",
+  "outputStyle": "Concise",
   "model": "opus[1m]",
   "fallbackModel": [
     "opus",
@@ -13,7 +12,7 @@
   "teammateMode": "auto",
   "alwaysThinkingEnabled": true,
   "spinnerTipsEnabled": false,
-  "autoUpdatesChannel": "stable",
+  "autoUpdatesChannel": "latest",
   "cleanupPeriodDays": 60,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
@@ -27,7 +26,6 @@
   "enabledPlugins": {
     "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "explanatory-output-style@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true
   },
@@ -57,12 +55,10 @@
       "Read(**/.npmrc)",
       "Read(**/.netrc)",
       "Bash(rm -rf:*)",
-      "Bash(git push --force:*)",
-      "Bash(git push --force-with-lease:*)",
-      "Bash(git push -f:*)",
       "Bash(git filter-branch:*)",
       "Bash(git filter-repo:*)",
-      "Bash(git reset --hard:*)"
+      "Bash(git reflog expire:*)",
+      "Bash(gh repo delete:*)"
     ]
   },
   "statusLine": {
@@ -74,5 +70,19 @@
   "subagentStatusLine": {
     "type": "command",
     "command": "~/.claude/subagent-statusline.sh"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/git-guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
