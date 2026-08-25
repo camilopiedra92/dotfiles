@@ -720,6 +720,174 @@ PY
 }
 check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
 
+# ── Git guard ────────────────────────────────────────────────────────────────
+# The guard exists because permission rules cannot express these decisions. A
+# rule matches a command prefix, so `git push origin main --force` slips past
+# `Bash(git push --force *)` -- git permutes flags and the matcher does not.
+# And a deny rule cannot carry an exception, so blocking `git clean -fdx` would
+# also block `git clean -n`, which destroys nothing and is how you check.
+#
+# Like the statusline, it is a pure function from a JSON payload to a verdict,
+# which is the property that makes it testable rather than merely written.
+printf '\n%sGit guard%s\n' "$DIM" "$OFF"
+
+# Exit 2 is the block. Every other status falls through to the permission
+# rules, which means a crashed guard fails open -- the reason the deny list
+# still carries the operations that have no safe form at all.
+# Absolute, because the reset cases run from a temp repository: a relative
+# path there resolves to nothing, every call returns 127, and the tests pass
+# while exercising the guard not at all. That is not hypothetical -- it is what
+# the first run of these tests did, and only an inverted stub revealed it.
+GUARD=$PWD/claude/git-guard.sh
+
+guard_verdict() {
+  local payload rc
+  payload=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))' "$1")
+  printf '%s' "$payload" | "$GUARD" > /dev/null 2>&1
+  rc=$?
+  if [ "$rc" -eq 2 ]; then printf 'blocked'; else printf 'allowed'; fi
+}
+
+guard_decisions() {
+  local want cmd got fails=0
+  while IFS='|' read -r want cmd; do
+    [ -z "$want" ] && continue
+    got=$(guard_verdict "$cmd")
+    if [ "$got" != "$want" ]; then
+      printf 'want %s, got %s: %s\n' "$want" "$got" "$cmd"
+      fails=1
+    fi
+  done << 'CASES'
+blocked|git clean -fdx
+blocked|git clean -f
+blocked|git clean --force -d
+blocked|mise exec -- git clean -fdx
+blocked|git push --force origin main
+blocked|git push origin main --force
+blocked|git push -f origin main
+blocked|git push --force-with-lease origin main
+blocked|npm test && git clean -fdx
+allowed|git clean -n
+allowed|git clean --dry-run -d
+allowed|git status
+allowed|git push origin main
+allowed|git push --force-with-lease origin feature/x
+allowed|git log --oneline
+allowed|echo git clean -fdx
+allowed|git commit -m "clean -fdx"
+CASES
+  return "$fails"
+}
+check "guard verdicts match the table" guard_decisions
+
+# The reset rule is the one that reads the repository rather than the command:
+# `git reset --hard` with nothing uncommitted is a no-op, and blocking it is
+# friction that buys nothing. These two cases differ only in whether work
+# exists to lose, so a guard that ignored state would fail one of them.
+guard_reset_clean_tree() {
+  local dir out
+  dir=$(mktemp -d)
+  git -C "$dir" init -q
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  out=$(cd "$dir" && guard_verdict 'git reset --hard')
+  rm -r "$dir"
+  [ "$out" = allowed ] || {
+    echo "clean tree should allow reset --hard, got $out"
+    return 1
+  }
+}
+check "reset --hard is allowed when nothing would be lost" guard_reset_clean_tree
+
+guard_reset_dirty_tree() {
+  local dir out
+  dir=$(mktemp -d)
+  git -C "$dir" init -q
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  echo change > "$dir/tracked.txt"
+  git -C "$dir" add tracked.txt
+  out=$(cd "$dir" && guard_verdict 'git reset --hard')
+  rm -r "$dir"
+  [ "$out" = blocked ] || {
+    echo "dirty tree should block reset --hard, got $out"
+    return 1
+  }
+}
+check "reset --hard is blocked when it would discard work" guard_reset_dirty_tree
+
+# A guard that is not wired runs never, and because it fails open that costs
+# nothing visible: no error, no warning, just no guard. The tests above prove
+# the script decides correctly; this one proves the settings ask it to.
+guard_is_declared() {
+  python3 - << 'DECL'
+import json
+import sys
+
+settings = json.load(open('claude/settings.json', encoding='utf-8'))
+entries = settings.get('hooks', {}).get('PreToolUse', [])
+commands = [
+    hook.get('command', '')
+    for entry in entries
+    for hook in entry.get('hooks', [])
+]
+if not any('git-guard.sh' in command for command in commands):
+    print('claude/settings.json declares no PreToolUse hook running git-guard.sh')
+    sys.exit(1)
+DECL
+}
+check "the guard is wired into settings" guard_is_declared
+
+# The settings merge replaces arrays whole, which is deliberate for `deny` and
+# destructive for `hooks`: this machine carries PreToolUse entries from other
+# tools, and a wholesale replace deletes them without saying so. It very
+# nearly did -- a dry run of the merge returned a PreToolUse array holding the
+# guard and nothing else. Twice, because installing must be repeatable: the
+# guard appears once however many times you run it.
+install_preserves_foreign_hooks() {
+  local tmp steps live commands count
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    sed -n '/^# --- 3\. Symlinks/,/^# --- 3c\./p' install.sh
+  } > "$steps"
+
+  live="$tmp/home/.claude/settings.json"
+  mkdir -p "$tmp/home/.claude"
+  cat > "$live" << 'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "/opt/other-tool/hook.sh" }]
+      }
+    ]
+  }
+}
+JSON
+
+  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+
+  commands=$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | join(" ")' "$live")
+  case "$commands" in
+    *other-tool*) ;;
+    *)
+      echo "the merge dropped a PreToolUse hook this repo does not own: $commands"
+      return 1
+      ;;
+  esac
+
+  count=$(jq '[.hooks.PreToolUse[]?.hooks[]? | select(.command | test("git-guard"))] | length' "$live")
+  [ "$count" = 1 ] || {
+    echo "expected the guard exactly once after two installs, found $count"
+    return 1
+  }
+}
+check "installing keeps hooks this repo does not own" install_preserves_foreign_hooks
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"

@@ -268,6 +268,42 @@ report "settings.json declares every choice" \
   "add it to claude/settings.json, or drop it with /config" \
   "$(claude_settings_drift)"
 
+# `hooks` sits in LOCAL_ONLY above because most of it is command strings with
+# absolute paths from another tool, and comparing the whole key would report
+# drift forever. The guard is the exception: it is versioned, its path is
+# portable, and it fails open, so a live file that quietly lost it would look
+# exactly like one that never had it. Checking the one entry keeps the coarse
+# exclusion honest without widening it.
+guard_wired() {
+  python3 - << 'GUARD'
+import json
+import os
+
+live = os.path.expanduser('~/.claude/settings.json')
+try:
+    with open(live, encoding='utf-8') as handle:
+        settings = json.load(handle)
+except (OSError, ValueError) as err:
+    print('cannot read %s (%s)' % (live, err))
+    raise SystemExit(0)
+
+commands = [
+    hook.get('command', '')
+    for entry in settings.get('hooks', {}).get('PreToolUse', [])
+    for hook in entry.get('hooks', [])
+]
+if not any('git-guard.sh' in command for command in commands):
+    print('no PreToolUse hook runs git-guard.sh')
+
+guard = os.path.expanduser('~/.claude/git-guard.sh')
+if not os.access(guard, os.X_OK):
+    print('%s is missing or not executable' % guard)
+GUARD
+}
+report "the git guard is wired on this machine" \
+  "run ./install.sh" \
+  "$(guard_wired)"
+
 printf '\n%suv tools%s\n' "$DIM" "$OFF"
 
 # The same question the Brewfile section asks, for the package manager that has

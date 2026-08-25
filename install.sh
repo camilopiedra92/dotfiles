@@ -73,6 +73,7 @@ link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
 link "$DOTFILES/starship.toml" "$HOME/.config/starship.toml"
 link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
+link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on
 # PATH, which is what lets the alias be `sudo dev-nuke` and not a path.
@@ -94,16 +95,37 @@ link "$DOTFILES/bin/ynab-mcp.sh" "$HOME/.local/bin/ynab-mcp"
 # block is only the merge mechanism, so adding a new setting means editing that
 # JSON and this step is never touched again.
 #
-# `.[0] * .[1]` is jq's recursive merge, with the repo on the right so it wins
+# `$live * $repo` is jq's recursive merge, with the repo on the right so it wins
 # key by key. Two intended consequences: any local key we do not manage is
 # preserved (the ones Claude Code writes by itself), and arrays are replaced
 # whole instead of concatenated, so `deny` ends up being the repo's list and
 # not the historical union of every installation.
+#
+# Hooks are the one place where replacing an array whole is wrong, so they are
+# held out of that merge and spliced afterwards. A machine carries PreToolUse
+# entries this repo does not own -- another tool's integration, installed by
+# that tool -- and the plain merge deletes them without a word. It nearly did:
+# a dry run returned a PreToolUse array holding this repo's guard and nothing
+# else. The splice drops only the entries running a command the repo declares,
+# which is what makes a second run land on the same file as the first.
 log "Applying Claude Code settings"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
-jq -s '.[0] * .[1]' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
+jq -s '
+  .[0] as $live
+  | .[1] as $repo
+  | ([($repo.hooks // {}) | to_entries[] | .value[] | .hooks[]? | .command]) as $owned
+  | ($live * ($repo | del(.hooks)))
+  | reduce (($repo.hooks // {}) | to_entries[]) as $event (
+      .;
+      .hooks[$event.key] = (
+        (((.hooks // {})[$event.key] // [])
+          | map(select(([.hooks[]?.command] - $owned) == [.hooks[]?.command])))
+        + $event.value
+      )
+    )
+' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
   > "$CLAUDE_SETTINGS.tmp" &&
   mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 
