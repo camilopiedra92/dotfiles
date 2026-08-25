@@ -3,7 +3,6 @@
   "forceLoginMethod": "claudeai",
   "theme": "dark-ansi",
   "tui": "fullscreen",
-  "language": "spanish",
   "outputStyle": "Explanatory",
   "model": "opus[1m]",
   "fallbackModel": [

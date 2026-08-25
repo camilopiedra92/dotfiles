@@ -14,10 +14,11 @@ Usual stack: Python, Node/TypeScript/JavaScript, React, shell and infra.
 
 ## Language
 
-Reply to me in Spanish. That is the only thing in Spanish: everything you
-write into a file goes in English — names, comments, commit messages, repo
-documentation, log strings, test fixtures, CLI output. A repo may end up
-public or shared.
+English everywhere: replies to me, and everything that lands in a file —
+names, comments, commit messages, repo documentation, log strings, test
+fixtures, CLI output. A repo may end up public or shared. This holds when
+I write to you in Spanish, which I sometimes will: my language is not the
+file's.
 
 ## How to work
 
