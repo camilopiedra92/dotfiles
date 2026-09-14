@@ -39,6 +39,9 @@ brew "jq"
 brew "mise"
 # Object-relational database system. Keg-only: zsh/.zshrc puts it on PATH.
 brew "postgresql@17"
+# PDF rendering library. Wanted for its CLI tools (pdftotext, pdftoppm, pdfinfo),
+# which is how a PDF gets read from the terminal or by an agent.
+brew "poppler"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
 # Shell script analysis tool
@@ -91,4 +94,5 @@ vscode "ms-python.python"
 vscode "ms-python.vscode-pylance"
 vscode "ms-python.vscode-python-envs"
 vscode "pkief.material-icon-theme"
+vscode "tamasfe.even-better-toml"
 vscode "usernamehw.errorlens"
