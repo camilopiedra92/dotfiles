@@ -144,26 +144,7 @@ import subprocess
 # Keyed by formula and dependency together, so a second dependency going missing
 # on an already-listed formula is still reported. An entry is a decision recorded
 # in the repo, with the reason it was made and what would end it.
-ACCEPTED = {
-    ('gcloud-cli', 'python@3.13'):
-        # Bookkeeping rather than breakage. The installed cask recorded this when
-        # 557.0.0 was current; the cask Homebrew serves today wants python@3.14
-        # instead. gcloud runs fine either way because CLOUDSDK_PYTHON names
-        # mise's 3.13 (zsh/.zshenv), so nothing has ever called the formula
-        # python.
-        #
-        # Upgrading the cask is what would clear the record, and it is the wrong
-        # trade. python@3.14 is not keg-only: it installs as
-        # /opt/homebrew/bin/python3 and takes bin/pip3 and bin/pydoc3 with it, so
-        # it would be a runtime from Homebrew -- reported by the check further
-        # down, correctly -- installed for nothing, since CLOUDSDK_PYTHON routes
-        # around it.
-        #
-        # Ends when gcloud stops needing an interpreter it does not ship, either
-        # because Homebrew's cask bundles one or because this machine gets gcloud
-        # from somewhere that does.
-        'stale record; gcloud uses the interpreter CLOUDSDK_PYTHON names',
-}
+ACCEPTED = {}
 
 problems = []
 try:
