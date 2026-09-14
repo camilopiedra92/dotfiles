@@ -56,6 +56,7 @@ vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
 bin/aware.sh           runs the aware-connector CLI from anywhere
 bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
+claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -86,6 +87,7 @@ they are usually installed to:
 | `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
+| `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
 
 `install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,

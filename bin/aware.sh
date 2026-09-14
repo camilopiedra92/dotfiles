@@ -3,6 +3,7 @@
 # from anywhere, against the checkout in ~/Development/aware-connector.
 #
 # Usage:  aware <login | me | search <query> | people | logout>
+#         aware mcp        the MCP server, for claude/mcp.json — not run by hand
 #
 # `mise x -C "$REPO"` rather than a bare `node`: the CLI is TypeScript executed
 # by Node's type-stripping, so it needs the runtime the repo pins in its own
@@ -25,4 +26,14 @@ fi
 
 # The CLI reads its credential from the keychain and needs no dependencies, so
 # there is nothing to install first — it runs straight from source.
-exec mise x -C "$REPO" -- node "$REPO/src/cli.ts" "$@"
+#
+# The MCP server is a second entry point into the same checkout, so it goes
+# through here rather than through a `node /absolute/path` registration of its
+# own: that registration pinned this machine's home directory into a file that
+# is meant to be reproduced, and spawned a bare `node`, which is the version
+# mismatch the paragraph above describes — only from inside the editor, where
+# it surfaces as a server that fails to connect.
+case "${1:-}" in
+  mcp) exec mise x -C "$REPO" -- node "$REPO/src/mcp.ts" ;;
+  *) exec mise x -C "$REPO" -- node "$REPO/src/cli.ts" "$@" ;;
+esac

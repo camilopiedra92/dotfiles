@@ -285,6 +285,41 @@ report "the git guard is wired on this machine" \
   "run ./install.sh" \
   "$(guard_wired)"
 
+# install.sh converges the user-scope servers on claude/mcp.json and, like the
+# settings merge, never looks back: a server added from the CLI and never
+# declared works on this machine only, and stops existing at the next rebuild.
+# Both directions are reported. Project scope is out of frame: .mcp.json files
+# travel with their repositories, which is the whole point of that scope.
+mcp_servers_drift() {
+  python3 - << 'MCP'
+import json
+import os
+
+live_path = os.path.expanduser('~/.claude.json')
+try:
+    with open(live_path, encoding='utf-8') as handle:
+        live = json.load(handle).get('mcpServers', {})
+except (OSError, ValueError) as err:
+    print('cannot read %s (%s)' % (live_path, err))
+    raise SystemExit(0)
+
+with open('claude/mcp.json', encoding='utf-8') as handle:
+    repo = json.load(handle)['mcpServers']
+
+for name in sorted(set(live) - set(repo)):
+    print('registered but not declared: %s' % name)
+for name in sorted(set(repo) - set(live)):
+    print('declared but not registered: %s' % name)
+for name in sorted(set(repo) & set(live)):
+    if live[name] != repo[name]:
+        print('%s: repo says %s, this machine has %s'
+              % (name, json.dumps(repo[name])[:40], json.dumps(live[name])[:40]))
+MCP
+}
+report "user-scope MCP servers match claude/mcp.json" \
+  "declare it in claude/mcp.json, or drop it with claude mcp remove; run ./install.sh for the rest" \
+  "$(mcp_servers_drift)"
+
 printf '\n%suv tools%s\n' "$DIM" "$OFF"
 
 # The same question the Brewfile section asks, for the package manager that has
