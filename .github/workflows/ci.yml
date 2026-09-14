@@ -35,6 +35,19 @@ jobs:
     # were about a platform nobody here uses. A signal you have to learn to
     # ignore is worse than no signal.
     runs-on: macos-latest
+    # The one place a tool version is written. Job-level so the install step
+    # and the assertion after it read the same value: the first bump PR (#52)
+    # installed shfmt v3.14.0 and then failed asserting a v3.13.1 the
+    # assertion had spelled out on its own. bump-tools.sh rewrites these
+    # lines and check.sh reads them; both match on the key, not the indent.
+    env:
+      SHELLCHECK_VERSION: v0.11.0
+      SHFMT_VERSION: v3.13.1
+      # Bare, no leading v: actionlint's tag carries one but its filenames
+      # do not, and both spellings appear below.
+      ACTIONLINT_VERSION: 1.7.12
+      GHOSTTY_VERSION: 1.3.1
+      TAPLO_VERSION: 0.10.0
     steps:
       # Pinned to a commit SHA rather than a tag: a tag can be moved to point at
       # different code, a SHA cannot.
@@ -50,14 +63,6 @@ jobs:
       # These versions match what the Brewfile installs locally, so CI and your
       # machine run the same binaries. Bump both together.
       - name: Install tools
-        env:
-          SHELLCHECK_VERSION: v0.11.0
-          SHFMT_VERSION: v3.13.1
-          # Bare, no leading v: actionlint's tag carries one but its filenames
-          # do not, and both spellings appear below.
-          ACTIONLINT_VERSION: 1.7.12
-          GHOSTTY_VERSION: 1.3.1
-          TAPLO_VERSION: 0.10.0
         run: |
           [ "$RUNNER_OS" = "macOS" ] || { echo "::error::unsupported runner: $RUNNER_OS"; exit 1; }
           sc_os=darwin; fmt_os=darwin
@@ -143,23 +148,23 @@ jobs:
       # linter that disagrees between machines is worse than no linter.
       - name: Tools are the pinned versions
         run: |
-          shellcheck --version | grep -qx "version: 0.11.0" || {
+          shellcheck --version | grep -qx "version: ${SHELLCHECK_VERSION#v}" || {
             echo "::error::unexpected shellcheck: $(shellcheck --version | tr '\n' ' ')"
             exit 1
           }
-          [ "$(shfmt --version)" = "v3.13.1" ] || {
+          [ "$(shfmt --version)" = "$SHFMT_VERSION" ] || {
             echo "::error::unexpected shfmt: $(shfmt --version)"
             exit 1
           }
-          [ "$(actionlint --version | head -1)" = "1.7.12" ] || {
+          [ "$(actionlint --version | head -1)" = "$ACTIONLINT_VERSION" ] || {
             echo "::error::unexpected actionlint: $(actionlint --version | head -1)"
             exit 1
           }
-          ghostty +version | grep -qx "Ghostty 1.3.1" || {
+          ghostty +version | grep -qx "Ghostty $GHOSTTY_VERSION" || {
             echo "::error::unexpected ghostty: $(ghostty +version | head -1)"
             exit 1
           }
-          [ "$(taplo --version)" = "taplo 0.10.0" ] || {
+          [ "$(taplo --version)" = "taplo $TAPLO_VERSION" ] || {
             echo "::error::unexpected taplo: $(taplo --version)"
             exit 1
           }
