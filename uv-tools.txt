@@ -1,0 +1,33 @@
+# Command-line applications installed with `uv tool`, one per line.
+#
+# This is the third package manager in this repo, and the only one that arrives
+# without a manifest of its own. Homebrew reads the Brewfile and mise reads
+# mise/config.toml; `uv tool` keeps its state under `uv tool dir` and has nothing
+# to read a list from, so a machine rebuilt from this repo used to come up
+# without these. This file is that list: install.sh applies it, drift.sh compares
+# it against what the machine actually has.
+#
+# Not the Brewfile, because Homebrew cannot install these. Not mise either: its
+# pipx backend could hold them, but it would then own the version, and a tool
+# that manages its own upgrades has to keep doing so through the installer it
+# was installed with.
+#
+# Two fields, separated by whitespace: the package name, and the reference to
+# install it from. The reference is not redundant with the name -- a bare name
+# resolves to PyPI at whatever version is current, which is the pin thrown away.
+# `#` starts a comment.
+
+# Spec-Driven Development CLI, part of GitHub Spec Kit.
+#
+# Pinned to a release tag, which is the form upstream's README lists first. It is
+# also the only form where the tool's own `specify self check` and `specify self
+# upgrade` behave as documented: both detect how the CLI was installed and
+# rewrite this same reference, so a pin here is a pin they know how to move.
+# `uv tool upgrade` cannot move it -- a fixed rev gives it nothing to resolve --
+# and that is not a workaround to route around but the reason the self commands
+# exist.
+#
+# Bumping it takes two steps in either order: `specify self upgrade` moves the
+# machine, and this line has to follow. drift.sh reports the gap until it does,
+# and reports the tag going stale against upstream's releases before that.
+specify-cli  git+https://github.com/github/spec-kit.git@v0.16.4

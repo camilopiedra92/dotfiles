@@ -15,8 +15,17 @@ fi
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
 # --- 2. Brewfile packages ---
+# --no-upgrade because this script installs, and upgrading is a different
+# decision. `brew bundle install` upgrades every outdated dependency by default,
+# which makes running this after a `git pull` -- to pick up a new symlink, say --
+# also download whatever grew stale since the last time, apps included.
+#
+# Nothing is lost on the machine this script is written for: a new one has
+# nothing installed to upgrade, so it installs current versions either way. What
+# it costs is that bumping a pinned version in the Brewfile no longer reaches an
+# existing machine through here; `brew upgrade <name>` is where that lives now.
 log "Installing Homebrew packages"
-brew bundle install --file="$DOTFILES/Brewfile"
+brew bundle install --no-upgrade --file="$DOTFILES/Brewfile"
 
 # --- 3. Symlinks ---
 log "Linking dotfiles"
@@ -64,6 +73,7 @@ link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
 link "$DOTFILES/starship.toml" "$HOME/.config/starship.toml"
 link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
+link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on
 # PATH, which is what lets the alias be `sudo dev-nuke` and not a path.
@@ -71,6 +81,10 @@ link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
 # Same reasoning. This one replaces an `npm link`, which put the command in the
 # npm prefix of a single Node version and left no trace in any repo.
 link "$DOTFILES/bin/aware.sh" "$HOME/.local/bin/aware"
+# Not a command you run: it is what ~/.claude.json points the ynab MCP server
+# at, so the server logs into its own directory instead of into whichever
+# repository the editor was started in. See the file.
+link "$DOTFILES/bin/ynab-mcp.sh" "$HOME/.local/bin/ynab-mcp"
 
 # --- 3b. Claude Code settings ---
 # settings.json is not symlinked: Claude Code rewrites it on its own (the
@@ -81,16 +95,37 @@ link "$DOTFILES/bin/aware.sh" "$HOME/.local/bin/aware"
 # block is only the merge mechanism, so adding a new setting means editing that
 # JSON and this step is never touched again.
 #
-# `.[0] * .[1]` is jq's recursive merge, with the repo on the right so it wins
+# `$live * $repo` is jq's recursive merge, with the repo on the right so it wins
 # key by key. Two intended consequences: any local key we do not manage is
 # preserved (the ones Claude Code writes by itself), and arrays are replaced
 # whole instead of concatenated, so `deny` ends up being the repo's list and
 # not the historical union of every installation.
+#
+# Hooks are the one place where replacing an array whole is wrong, so they are
+# held out of that merge and spliced afterwards. A machine carries PreToolUse
+# entries this repo does not own -- another tool's integration, installed by
+# that tool -- and the plain merge deletes them without a word. It nearly did:
+# a dry run returned a PreToolUse array holding this repo's guard and nothing
+# else. The splice drops only the entries running a command the repo declares,
+# which is what makes a second run land on the same file as the first.
 log "Applying Claude Code settings"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
 [ -f "$CLAUDE_SETTINGS" ] || echo '{}' > "$CLAUDE_SETTINGS"
-jq -s '.[0] * .[1]' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
+jq -s '
+  .[0] as $live
+  | .[1] as $repo
+  | ([($repo.hooks // {}) | to_entries[] | .value[] | .hooks[]? | .command]) as $owned
+  | ($live * ($repo | del(.hooks)))
+  | reduce (($repo.hooks // {}) | to_entries[]) as $event (
+      .;
+      .hooks[$event.key] = (
+        (((.hooks // {})[$event.key] // [])
+          | map(select(([.hooks[]?.command] - $owned) == [.hooks[]?.command])))
+        + $event.value
+      )
+    )
+' "$CLAUDE_SETTINGS" "$DOTFILES/claude/settings.json" \
   > "$CLAUDE_SETTINGS.tmp" &&
   mv "$CLAUDE_SETTINGS.tmp" "$CLAUDE_SETTINGS"
 
@@ -180,6 +215,29 @@ if ! rustc --version > /dev/null 2>&1; then
   log "Installing the Rust toolchain"
   /opt/homebrew/opt/rustup/bin/rustup default stable
 fi
+
+# --- 7. CLI tools from uv ---
+# uv-tools.txt exists because `uv tool` is the one package manager here with no
+# manifest to read; see the header of that file for why these live neither in the
+# Brewfile nor in mise.
+#
+# Unconditional, and unlike step 2 this one does converge the machine on the
+# declared version: `uv tool install` re-run with an identical reference is a
+# cached no-op, and re-run with a reference that moved replaces the tool in place
+# without needing --force. Both verified, the second by installing v0.16.2 and
+# then asking for v0.16.4.
+#
+# That is the opposite choice from --no-upgrade above, for a reason that is not
+# inconsistency. There, the version comes from the internet, so "install" and
+# "upgrade to whatever shipped since" are genuinely different decisions. Here the
+# version is written down in this repo, so converging on it is not an upgrade --
+# it is what applying the file means, and the alternative is a pin that only
+# takes effect on machines that never had the tool.
+log "Installing CLI tools with uv"
+while read -r name ref; do
+  [ -n "$name" ] || continue
+  uv tool install --from "$ref" "$name"
+done < <(sed 's/#.*//' "$DOTFILES/uv-tools.txt")
 
 # VS Code extensions need no step of their own: the Brewfile declares them with
 # `vscode "..."` entries and `brew bundle install` installs them in step 2.

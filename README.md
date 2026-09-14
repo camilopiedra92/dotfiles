@@ -23,12 +23,18 @@ git clone <this-repo> ~/dotfiles
 |---|---|---|
 | System | Homebrew | CLIs and native apps (`Brewfile`) |
 | Runtimes | mise | node, python, go… per project (`mise/config.toml`) |
-| Python | uv | packages, venvs and projects |
+| Python | uv | packages, venvs and projects, plus CLI tools (`uv-tools.txt`) |
 | Rust | rustup | toolchains |
 
 Rule: **Homebrew installs programs, mise installs runtimes.** Never a runtime
 through Homebrew — it ties you to a single global version and breaks projects
 that need a different one.
+
+A program Homebrew does not carry goes in `uv-tools.txt` if it is a Python
+application, never into a global `pip install`. That file is the third manifest
+here for the same reason the other two exist: `uv tool` installs into
+`~/.local/share/uv/tools` and has nothing to read a list from, so without it a
+rebuilt machine came up missing those commands and nothing said so.
 
 The system Python (`/usr/bin/python3`) is never touched.
 
@@ -45,8 +51,11 @@ ghostty/config         terminal
 git/config             git config (without identity)
 git/ignore             global gitignore
 mise/config.toml       global runtime versions
+uv-tools.txt           CLI tools installed with `uv tool`, each pinned to a reference
 vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
+bin/aware.sh           runs the aware-connector CLI from anywhere
+bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -75,7 +84,8 @@ they are usually installed to:
 | `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see below — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
-| `~/.local/bin/` | `dev-nuke` |
+| `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
+| `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
 
 `install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
@@ -253,6 +263,34 @@ background, so color keeps working as an alarm. `STYLE` and `LINES`, at the top
 of the script, switch to `minimal` and to a single line. Both require a Nerd
 Font: the Ghostty config already sets one.
 
+## Why the YNAB MCP server runs through a wrapper
+
+Because it writes its log to a relative path. `mcp-framework`, which the server
+is built on, opens `logs` with the directory hardcoded:
+
+```js
+const logDir = "logs";                       // Logger.js
+mkdir(logDir, { recursive: true })
+```
+
+A relative path resolves against the working directory of the process, and an
+MCP server inherits that from the editor that spawned it — so an untracked
+`logs/` appears in whatever repository you happened to open, with one file per
+session inside it. The server is configured globally, so this is every
+repository, not one.
+
+There is no environment variable for it and no `cwd` field for a stdio server in
+Claude Code's configuration, which leaves the working directory itself as the
+only thing that can be changed. `bin/ynab-mcp.sh` sets it to
+`~/.local/state/ynab-mcp` and execs the server; `~/.claude.json` points at the
+wrapper instead of at `npx`.
+
+Not a `.gitignore` entry, which is where this ends up by default. In one
+repository it is a workaround for a bug in another program; in the global ignore
+it would be worse — `logs/` is a name a project may well want to commit, and
+hiding it there is the mistake `git/ignore` had already made with `.vscode/`,
+where `git add` does nothing and prints no reason.
+
 ## Checks
 
 ```bash
@@ -350,9 +388,19 @@ or pin your local tool back.
 `brew bundle check` only asks whether everything declared is installed, and a
 subset always answers yes to that. The gap it leaves is everything installed and
 never written down, which is the direction drift actually grows in. `drift.sh`
-reports both, plus VS Code extensions, plus any runtime that came from Homebrew
-instead of mise — the rule stated at the top of this file, which nothing
-enforced until now.
+reports both, plus VS Code extensions, plus any runtime a PATH lookup can reach
+that did not come from mise — the rule stated at the top of this file.
+
+That check used to ask Homebrew for a list of formulae, which was the wrong
+question twice over. Homebrew is one way to acquire a second runtime; a vendor
+`.pkg` is another, and this machine had a python.org framework under
+`/usr/local/bin` for over a year that nothing here ever mentioned. And what
+breaks a script is not that a second runtime exists but that some shell resolves
+it, so the question is which binaries are reachable — every entry on `PATH`, not
+just the winner. mise sits at the front here, so looking only at the winner sees
+nothing while the shadowed copy still wins in any shell that never read
+`.zshenv`. Exemptions are listed in the file, keyed by directory *and* command,
+each with the reason it is exempt and what would end it.
 
 It also asks endoflife.date whether anything mise installed has stopped being
 supported. That is drift against a calendar rather than between two files: a pin
@@ -365,6 +413,20 @@ mise publish today, reporting the exact `curl` to refresh one that has moved.
 That is the other half of the deal made above: vendoring keeps the commit path
 offline, and this keeps the vendored copy honest. Compared as parsed JSON, so an
 upstream reindent is not reported as a change worth acting on.
+
+It asks the same pair of questions about `uv tool`, which has no
+`brew bundle check` of its own. `uv-tools.txt` is compared against the receipts
+uv writes under `uv tool dir` — in both directions, and on the reference rather
+than the version, so a pin that moved is visible and not merely a number that
+happens to match. Then it asks GitHub whether a pinned tag has been superseded,
+which is calendar drift again.
+
+And it asks whether each installed tool still runs, which nothing else here would
+notice. A `uv tool` environment borrows its base interpreter instead of copying
+it, so removing that interpreter leaves the command on `PATH` and dead: still
+installed, still declared, still the right version, `bad interpreter` when you
+type it. It found exactly that on the first run — a tool built against an
+Anaconda python that is no longer on this machine.
 
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,
@@ -392,6 +454,13 @@ That pull request does not auto-merge, deliberately. The hashes in it are
 whatever upstream is publishing at that moment, which is exactly what
 `tool-checksums.txt` exists not to take on trust. CI proves the new versions
 install and everything still passes; you decide they should be trusted.
+
+Those pins are the CI toolchain, and nothing else here updates on its own.
+`install.sh` passes `--no-upgrade` to `brew bundle`, which otherwise upgrades
+every outdated dependency it finds: running the script after a `git pull` to
+pick up a new symlink would also pull down whatever went stale meanwhile, which
+for the casks means several hundred megabytes of applications that update
+themselves anyway. Upgrading is `brew upgrade`, when you mean it.
 
 Formatting is defined in `.editorconfig`, which shfmt parses natively and the
 EditorConfig extension applies in VS Code, so the editor and the hook cannot

@@ -267,6 +267,48 @@ s = re.sub(r',(\s*[}\]])', r'\1', s)
 json.loads(s)
 "
 
+# uv-tools.txt is read by install.sh on a machine that has nothing on it yet,
+# which is the worst possible moment to find a typo in it. Nothing else would
+# reject one earlier: the file is plain text, so it parses no matter what it says,
+# and `uv tool install` only reports the mistake once it is being run for real.
+#
+# The pin rule is the point rather than a formality. A git reference without an
+# `@tag` resolves to the default branch, which installs whatever was merged that
+# morning and reinstalls something different tomorrow -- an unpinned line looks
+# exactly like a pinned one and is the opposite of what this file is for.
+uv_tools_manifest() {
+  python3 - << 'PY'
+import re
+import sys
+
+problems = []
+seen = {}
+
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for number, line in enumerate(handle, 1):
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        if len(fields) != 2:
+            problems.append('line %d: expected "name reference", got %d field(s)'
+                            % (number, len(fields)))
+            continue
+        name, ref = fields
+        if name in seen:
+            problems.append('line %d: %s is already declared on line %d'
+                            % (number, name, seen[name]))
+        seen[name] = number
+        if ref.startswith('git+') and not re.search(r'\.git@[^@/]+$', ref):
+            problems.append('line %d: %s is not pinned -- a git reference needs '
+                            'a trailing @tag' % (number, name))
+
+for problem in problems:
+    print(problem)
+sys.exit(1 if problems else 0)
+PY
+}
+check "uv-tools.txt declares a pinned reference per tool" uv_tools_manifest
+
 # Ghostty validates its own config, so this catches an option renamed between
 # releases and not only a syntax error. It is the one config here with no
 # startup error to read: a bad key is dropped silently and you are left
@@ -553,6 +595,298 @@ assert s['subagentStatusLine']['command'], s
 
 }
 check "install.sh is idempotent" install_is_idempotent
+
+# Step 7 does two things and only one of them needs the network. It turns each
+# line of uv-tools.txt into a `uv tool install`, and the turning is where the
+# bugs are: a comment-only line producing a phantom install, a trailing comment
+# landing inside the reference, a blank line invoking uv with nothing. None of
+# that needs to reach anything to be checked.
+#
+# So it runs against a fixture manifest and a `uv` that records its arguments
+# instead of doing the work. That is the same boundary step 2 draws in the file
+# itself -- whether Homebrew installs correctly is Homebrew's problem -- and it
+# keeps this check meaning the same thing on a runner as on the machine, which
+# is the whole basis for CI's promise here.
+#
+# A fixture rather than the real manifest, because the real one has a single
+# well-formed line and would exercise none of the shapes worth getting wrong.
+uv_tools_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+  } > "$steps"
+
+  # The same guard the check above uses: if that heading is ever renamed the
+  # extraction goes empty, and an empty script passes everything.
+  grep -qF 'uv tool install' "$steps" || {
+    echo "could not extract step 7 from install.sh"
+    return 1
+  }
+
+  cat > "$tmp/uv-tools.txt" << 'FIXTURE'
+# a comment-only line, which must produce no install at all
+
+alpha-cli  git+https://example.invalid/alpha.git@v1.2.3
+beta-cli   beta-cli==2.0  # a trailing comment, which must not reach the reference
+FIXTURE
+
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  : > "$tmp/calls"
+
+  PATH="$tmp/bin:$PATH" DOTFILES="$tmp" bash -euo pipefail "$steps" > /dev/null || return 1
+
+  # Written out rather than derived from the fixture, so a parser that is wrong
+  # cannot agree with itself.
+  cat > "$tmp/want" << 'WANT'
+tool install --from git+https://example.invalid/alpha.git@v1.2.3 alpha-cli
+tool install --from beta-cli==2.0 beta-cli
+WANT
+
+  diff -u "$tmp/want" "$tmp/calls"
+}
+check "install.sh turns the uv manifest into the right installs" uv_tools_step
+
+# The fixture above proves the loop handles the shapes that are easy to get
+# wrong. It says nothing about the file this repo actually ships, which has one
+# well-formed line today and will not always.
+#
+# Writing a second expectation by hand would only restate the manifest. So the
+# real file goes through the same stubbed step, and the result is compared
+# against what an independent parser makes of the same bytes -- python here,
+# `sed` and `read` there. Neither can agree with itself, because they are not
+# the same code.
+#
+# That also pins the two together, which is the point worth more than the
+# coverage. This format is parsed in four places: step 7, the manifest check
+# above, and twice inside drift.sh. Nothing made them agree; they simply did. A
+# column added to the format in one and not the others now turns this red
+# instead of turning drift.sh into a liar.
+uv_tools_real_manifest() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+  } > "$steps"
+  grep -qF 'uv tool install' "$steps" || {
+    echo "could not extract step 7 from install.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  : > "$tmp/calls"
+
+  PATH="$tmp/bin:$PATH" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null || return 1
+
+  python3 - "$tmp/calls" << 'PY'
+import sys
+
+want = []
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for number, line in enumerate(handle, 1):
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        if len(fields) != 2:
+            # The manifest check above is what reports this properly. Bailing
+            # here rather than guessing keeps one failure to one message.
+            print('line %d is not "name reference"; see the manifest check'
+                  % number)
+            raise SystemExit(1)
+        want.append('tool install --from %s %s' % (fields[1], fields[0]))
+
+got = [line.rstrip('\n') for line in open(sys.argv[1], encoding='utf-8')]
+if want != got:
+    print('step 7 would run:')
+    for call in got:
+        print('  %s' % call)
+    print('the manifest asks for:')
+    for call in want:
+        print('  %s' % call)
+    raise SystemExit(1)
+PY
+}
+check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
+
+# ── Git guard ────────────────────────────────────────────────────────────────
+# The guard exists because permission rules cannot express these decisions. A
+# rule matches a command prefix, so `git push origin main --force` slips past
+# `Bash(git push --force *)` -- git permutes flags and the matcher does not.
+# And a deny rule cannot carry an exception, so blocking `git clean -fdx` would
+# also block `git clean -n`, which destroys nothing and is how you check.
+#
+# Like the statusline, it is a pure function from a JSON payload to a verdict,
+# which is the property that makes it testable rather than merely written.
+printf '\n%sGit guard%s\n' "$DIM" "$OFF"
+
+# Exit 2 is the block. Every other status falls through to the permission
+# rules, which means a crashed guard fails open -- the reason the deny list
+# still carries the operations that have no safe form at all.
+# Absolute, because the reset cases run from a temp repository: a relative
+# path there resolves to nothing, every call returns 127, and the tests pass
+# while exercising the guard not at all. That is not hypothetical -- it is what
+# the first run of these tests did, and only an inverted stub revealed it.
+GUARD=$PWD/claude/git-guard.sh
+
+guard_verdict() {
+  local payload rc
+  payload=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))' "$1")
+  printf '%s' "$payload" | "$GUARD" > /dev/null 2>&1
+  rc=$?
+  if [ "$rc" -eq 2 ]; then printf 'blocked'; else printf 'allowed'; fi
+}
+
+guard_decisions() {
+  local want cmd got fails=0
+  while IFS='|' read -r want cmd; do
+    [ -z "$want" ] && continue
+    got=$(guard_verdict "$cmd")
+    if [ "$got" != "$want" ]; then
+      printf 'want %s, got %s: %s\n' "$want" "$got" "$cmd"
+      fails=1
+    fi
+  done << 'CASES'
+blocked|git clean -fdx
+blocked|git clean -f
+blocked|git clean --force -d
+blocked|mise exec -- git clean -fdx
+blocked|git push --force origin main
+blocked|git push origin main --force
+blocked|git push -f origin main
+blocked|git push --force-with-lease origin main
+blocked|npm test && git clean -fdx
+allowed|git clean -n
+allowed|git clean --dry-run -d
+allowed|git status
+allowed|git push origin main
+allowed|git push --force-with-lease origin feature/x
+allowed|git log --oneline
+allowed|echo git clean -fdx
+allowed|git commit -m "clean -fdx"
+CASES
+  return "$fails"
+}
+check "guard verdicts match the table" guard_decisions
+
+# The reset rule is the one that reads the repository rather than the command:
+# `git reset --hard` with nothing uncommitted is a no-op, and blocking it is
+# friction that buys nothing. These two cases differ only in whether work
+# exists to lose, so a guard that ignored state would fail one of them.
+guard_reset_clean_tree() {
+  local dir out
+  dir=$(mktemp -d)
+  git -C "$dir" init -q
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  out=$(cd "$dir" && guard_verdict 'git reset --hard')
+  rm -r "$dir"
+  [ "$out" = allowed ] || {
+    echo "clean tree should allow reset --hard, got $out"
+    return 1
+  }
+}
+check "reset --hard is allowed when nothing would be lost" guard_reset_clean_tree
+
+guard_reset_dirty_tree() {
+  local dir out
+  dir=$(mktemp -d)
+  git -C "$dir" init -q
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  echo change > "$dir/tracked.txt"
+  git -C "$dir" add tracked.txt
+  out=$(cd "$dir" && guard_verdict 'git reset --hard')
+  rm -r "$dir"
+  [ "$out" = blocked ] || {
+    echo "dirty tree should block reset --hard, got $out"
+    return 1
+  }
+}
+check "reset --hard is blocked when it would discard work" guard_reset_dirty_tree
+
+# A guard that is not wired runs never, and because it fails open that costs
+# nothing visible: no error, no warning, just no guard. The tests above prove
+# the script decides correctly; this one proves the settings ask it to.
+guard_is_declared() {
+  python3 - << 'DECL'
+import json
+import sys
+
+settings = json.load(open('claude/settings.json', encoding='utf-8'))
+entries = settings.get('hooks', {}).get('PreToolUse', [])
+commands = [
+    hook.get('command', '')
+    for entry in entries
+    for hook in entry.get('hooks', [])
+]
+if not any('git-guard.sh' in command for command in commands):
+    print('claude/settings.json declares no PreToolUse hook running git-guard.sh')
+    sys.exit(1)
+DECL
+}
+check "the guard is wired into settings" guard_is_declared
+
+# The settings merge replaces arrays whole, which is deliberate for `deny` and
+# destructive for `hooks`: this machine carries PreToolUse entries from other
+# tools, and a wholesale replace deletes them without saying so. It very
+# nearly did -- a dry run of the merge returned a PreToolUse array holding the
+# guard and nothing else. Twice, because installing must be repeatable: the
+# guard appears once however many times you run it.
+install_preserves_foreign_hooks() {
+  local tmp steps live commands count
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    sed -n '/^# --- 3\. Symlinks/,/^# --- 3c\./p' install.sh
+  } > "$steps"
+
+  live="$tmp/home/.claude/settings.json"
+  mkdir -p "$tmp/home/.claude"
+  cat > "$live" << 'JSON'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [{ "type": "command", "command": "/opt/other-tool/hook.sh" }]
+      }
+    ]
+  }
+}
+JSON
+
+  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+
+  commands=$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | join(" ")' "$live")
+  case "$commands" in
+    *other-tool*) ;;
+    *)
+      echo "the merge dropped a PreToolUse hook this repo does not own: $commands"
+      return 1
+      ;;
+  esac
+
+  count=$(jq '[.hooks.PreToolUse[]?.hooks[]? | select(.command | test("git-guard"))] | length' "$live")
+  [ "$count" = 1 ] || {
+    echo "expected the guard exactly once after two installs, found $count"
+    return 1
+  }
+}
+check "installing keeps hooks this repo does not own" install_preserves_foreign_hooks
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

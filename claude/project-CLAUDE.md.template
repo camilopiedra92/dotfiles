@@ -1,0 +1,49 @@
+# <name>
+
+<One paragraph: what this is and what it is for. If that is all that is true,
+delete everything below it — an empty section is a promise the file does not
+keep, and it teaches that the file can be skimmed.>
+
+## Commands
+
+<The exact invocations, copy-pasteable: test, run, lint, build, and whatever
+this project needs that no one would guess. This is the section that pays for
+the file. Never describe a command; write it.>
+
+## Toolchain
+
+<Only what differs from this machine's defaults, and the traps that cost time
+once. The global rules already cover mise, uv, pnpm and lockfiles — do not
+restate them. Delete if nothing differs.>
+
+## Invariants
+
+<Rules this project can violate silently: exact arithmetic, a contract
+something external consumes, a format another system parses. Each one says
+what breaks if it is broken, so it can be checked rather than agreed with.
+Delete this section — most projects have none, and an invented invariant
+teaches that the file can be ignored.>
+
+## Conventions
+
+<What someone competent could not derive from reading the code: a seam between
+two tools, a deliberate deviation from a default, an ordering that matters.
+Delete anything the code already says, and anything a formatter or a linter
+already enforces — those are decided instantly by a tool and slowly by a model.>
+
+## Where things live
+
+<Only the locations the tree does not make obvious: where design work lands,
+where generated files go, what is deliberately not committed. Delete if the
+tree answers it.>
+
+---
+
+When something here stops being true, correct it in the same commit that made
+it false. A stale line reads as authority: on 2026-08-17 one claimed a tool
+offered a commit around every phase when it had been disabled by config the
+whole time, and three sessions read the claim as fact before anyone ran it.
+
+Keep the whole file under about 150 lines including the global rules it sits on
+top of. Adherence falls off past that, so a rule added after the limit is not a
+rule gained — it is one of the existing rules quietly lost.

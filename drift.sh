@@ -115,8 +115,79 @@ fi
 
 printf '\n%sDeclared but not installed%s\n' "$DIM" "$OFF"
 
-missing=$(brew bundle check --file=Brewfile --verbose 2>&1 | sed -n 's/^→ //p')
-report "Brewfile is satisfied" "brew bundle install --file=Brewfile" "$missing"
+# --no-upgrade, or this section reports a Brewfile that is satisfied. `brew bundle
+# check` treats "installed" and "up to date" as one question and phrases the
+# failure identically for both -- "needs to be installed or updated" -- so every
+# formula a day behind arrived here indistinguishable from one that is absent,
+# under a heading that says "Declared but not installed". Homebrew moves daily,
+# which made this the one section that was red almost always, and a section that
+# is red almost always is one you stop reading.
+#
+# The same conflation made the hint actively wrong. `brew bundle install` upgrades
+# everything outdated by default: that is the 850MB of applications f215e58 took
+# out of install.sh on purpose, recommended here to fix a problem that was not
+# happening. Being a patch behind on fzf is not drift between this repo and this
+# machine -- nothing here declares a version for it -- and `brew upgrade` is where
+# that decision already lives.
+missing=$(brew bundle check --file=Brewfile --verbose --no-upgrade 2>&1 | sed -n 's/^→ //p')
+report "Brewfile is satisfied" "brew bundle install --no-upgrade --file=Brewfile" "$missing"
+
+# The question above is about this repo's list. This one is about Homebrew's own:
+# a formula records what it needs, and `brew missing` says which of those are not
+# there. It covers a failure nothing else here can see -- a library dependency
+# removed out from under a binary, which still exists, has no shebang to inspect,
+# and only fails when something calls into the missing dylib.
+brew_missing_deps() {
+  python3 - << 'PY'
+import subprocess
+
+# Keyed by formula and dependency together, so a second dependency going missing
+# on an already-listed formula is still reported. An entry is a decision recorded
+# in the repo, with the reason it was made and what would end it.
+ACCEPTED = {
+    ('gcloud-cli', 'python@3.13'):
+        # Bookkeeping rather than breakage. The installed cask recorded this when
+        # 557.0.0 was current; the cask Homebrew serves today wants python@3.14
+        # instead. gcloud runs fine either way because CLOUDSDK_PYTHON names
+        # mise's 3.13 (zsh/.zshenv), so nothing has ever called the formula
+        # python.
+        #
+        # Upgrading the cask is what would clear the record, and it is the wrong
+        # trade. python@3.14 is not keg-only: it installs as
+        # /opt/homebrew/bin/python3 and takes bin/pip3 and bin/pydoc3 with it, so
+        # it would be a runtime from Homebrew -- reported by the check further
+        # down, correctly -- installed for nothing, since CLOUDSDK_PYTHON routes
+        # around it.
+        #
+        # Ends when gcloud stops needing an interpreter it does not ship, either
+        # because Homebrew's cask bundles one or because this machine gets gcloud
+        # from somewhere that does.
+        'stale record; gcloud uses the interpreter CLOUDSDK_PYTHON names',
+}
+
+problems = []
+try:
+    out = subprocess.run(['brew', 'missing'], capture_output=True,
+                         text=True).stdout
+except OSError as err:
+    print('cannot run `brew missing` (%s)' % err)
+    raise SystemExit(0)
+
+for line in out.splitlines():
+    formula, _, deps = line.partition(':')
+    formula = formula.strip()
+    for dep in deps.split():
+        if (formula, dep) in ACCEPTED:
+            continue
+        problems.append('%s needs %s, which is not installed' % (formula, dep))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "no formula is missing a dependency" \
+  "brew install <dep>, or reinstall the formula that wants it" \
+  "$(brew_missing_deps)"
 
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
@@ -197,22 +268,372 @@ report "settings.json declares every choice" \
   "add it to claude/settings.json, or drop it with /config" \
   "$(claude_settings_drift)"
 
+# `hooks` sits in LOCAL_ONLY above because most of it is command strings with
+# absolute paths from another tool, and comparing the whole key would report
+# drift forever. The guard is the exception: it is versioned, its path is
+# portable, and it fails open, so a live file that quietly lost it would look
+# exactly like one that never had it. Checking the one entry keeps the coarse
+# exclusion honest without widening it.
+guard_wired() {
+  python3 - << 'GUARD'
+import json
+import os
+
+live = os.path.expanduser('~/.claude/settings.json')
+try:
+    with open(live, encoding='utf-8') as handle:
+        settings = json.load(handle)
+except (OSError, ValueError) as err:
+    print('cannot read %s (%s)' % (live, err))
+    raise SystemExit(0)
+
+commands = [
+    hook.get('command', '')
+    for entry in settings.get('hooks', {}).get('PreToolUse', [])
+    for hook in entry.get('hooks', [])
+]
+if not any('git-guard.sh' in command for command in commands):
+    print('no PreToolUse hook runs git-guard.sh')
+
+guard = os.path.expanduser('~/.claude/git-guard.sh')
+if not os.access(guard, os.X_OK):
+    print('%s is missing or not executable' % guard)
+GUARD
+}
+report "the git guard is wired on this machine" \
+  "run ./install.sh" \
+  "$(guard_wired)"
+
+printf '\n%suv tools%s\n' "$DIM" "$OFF"
+
+# The same question the Brewfile section asks, for the package manager that has
+# no `brew bundle check` of its own. uv-tools.txt is the declaration; this reads
+# the receipts uv writes under `uv tool dir` and compares them.
+#
+# Receipts rather than `uv tool list`, for two reasons. They carry the reference a
+# tool was installed from, so a pin that moved is visible and not just a version
+# that happens to match; and `uv tool list` mixes warnings about broken tools into
+# the same stream it lists working ones on, which is a parser waiting to be wrong
+# about which is which.
+#
+# It also asks whether each installed tool still runs. A `uv tool` environment
+# borrows its base interpreter rather than copying it, so removing that
+# interpreter leaves the command on PATH and dead -- `bad interpreter` on a tool
+# nothing in this repo touched. Nothing else here would report that: the tool is
+# installed, declared, at the right version, and does not work.
+uv_tools_drift() {
+  python3 - << 'PY'
+import os
+import re
+import subprocess
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    # Never fall through to "no receipts found, so nothing is installed": that
+    # reads exactly like a clean report.
+    print('cannot read uv receipts: tomllib needs python 3.11 or newer')
+    raise SystemExit(0)
+
+problems = []
+
+
+def declared():
+    """name -> (kind, url_or_none, rev_or_none) from uv-tools.txt."""
+    out = {}
+    with open('uv-tools.txt', encoding='utf-8') as handle:
+        for line in handle:
+            fields = line.split('#')[0].split()
+            if not fields:
+                continue
+            name, ref = fields[0], fields[1] if len(fields) > 1 else ''
+            out[name] = parse_ref(ref)
+    return out
+
+
+def parse_ref(ref):
+    if ref.startswith('git+'):
+        url, _, rev = ref[len('git+'):].rpartition('@')
+        return ('git', url, rev)
+    # A bare name resolves to PyPI. `name==1.2.3` pins it there.
+    return ('pypi', None, ref.partition('==')[2] or None)
+
+
+def installed(tool_dir):
+    out = {}
+    for name in sorted(os.listdir(tool_dir)):
+        receipt = os.path.join(tool_dir, name, 'uv-receipt.toml')
+        if not os.path.isfile(receipt):
+            continue
+        with open(receipt, 'rb') as handle:
+            data = tomllib.load(handle)
+        requirements = data.get('tool', {}).get('requirements', [])
+        # The requirement whose name matches the directory is the tool itself;
+        # anything else is a `--with` extra and not what was asked for.
+        for requirement in requirements:
+            if requirement.get('name') != name:
+                continue
+            git = requirement.get('git')
+            if git:
+                # uv rewrites `git+URL@REV` as `URL?rev=REV` in the receipt, so
+                # the two spellings have to be normalised before comparing.
+                url, _, rev = git.partition('?rev=')
+                out[name] = (('git', url, rev), data)
+            else:
+                specifier = requirement.get('specifier') or ''
+                pinned = re.sub(r'^==', '', specifier) or None
+                out[name] = (('pypi', None, pinned), data)
+            break
+    return out
+
+
+def broken_entrypoints(name, data):
+    """Entrypoints that exist but cannot execute."""
+    for entry in data.get('tool', {}).get('entrypoints', []):
+        path = entry.get('install-path')
+        if not path:
+            continue
+        if not os.path.exists(path):
+            problems.append('%s: %s is declared as its command and is missing'
+                            % (name, path))
+            continue
+        try:
+            with open(path, 'rb') as handle:
+                first = handle.readline()
+        except OSError as err:
+            problems.append('%s: cannot read %s (%s)' % (name, path, err))
+            continue
+        if not first.startswith(b'#!'):
+            continue
+        words = first[2:].decode('utf-8', 'replace').split()
+        # `#!/usr/bin/env python` resolves through PATH, so its first word says
+        # nothing about whether the interpreter is there.
+        if not words or os.path.basename(words[0]) == 'env':
+            continue
+        if not os.path.exists(words[0]):
+            problems.append('%s: its interpreter %s is gone, so the command is '
+                            'dead: uv tool install %s --reinstall'
+                            % (name, words[0], name))
+
+
+def show(ref):
+    kind, url, rev = ref
+    if kind == 'git':
+        return 'git+%s@%s' % (url, rev)
+    return rev or 'whatever PyPI serves'
+
+
+try:
+    tool_dir = subprocess.run(
+        ['uv', 'tool', 'dir'],
+        capture_output=True, text=True, check=True).stdout.strip()
+except (OSError, subprocess.CalledProcessError) as err:
+    print('cannot ask uv where its tools live (%s)' % err)
+    raise SystemExit(0)
+
+want = declared()
+have = installed(tool_dir) if os.path.isdir(tool_dir) else {}
+
+for name in sorted(set(want) - set(have)):
+    problems.append('%s: declared and not installed: ./install.sh' % name)
+
+for name in sorted(set(have) - set(want)):
+    problems.append('%s: installed and not declared: add it to uv-tools.txt, '
+                    'or: uv tool uninstall %s' % (name, name))
+
+for name in sorted(set(want) & set(have)):
+    ref, _ = have[name]
+    if ref != want[name]:
+        problems.append(
+            '%s: uv-tools.txt says %s, this machine has %s: ./install.sh'
+            % (name, show(want[name]), show(ref)))
+
+# Every installed tool, declared or not. Whether a command on PATH runs is not a
+# question about this repo's manifest, and scoping it to the declared ones hid
+# the only broken tool on the machine behind the milder complaint that it was
+# undeclared.
+for name in sorted(have):
+    broken_entrypoints(name, have[name][1])
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "uv-tools.txt matches this machine" \
+  "each line above ends in the command that closes it" \
+  "$(uv_tools_drift)"
+
+# Drift against a calendar again, the same shape as the end-of-life check below:
+# a tag pinned in uv-tools.txt was the latest release the day it was written and
+# stops being so without anything in this repo changing.
+#
+# Only the pinned git references can be asked this, and anything else is reported
+# rather than skipped, for the reason the runtime map below states: a tool nobody
+# checks reads exactly like a tool that is up to date.
+#
+# /releases/latest excludes prereleases, so a deliberately pinned alpha reads as
+# behind. Reported as a difference with both values rather than as "upgrade this",
+# because which of the two is right is a judgement this script does not have.
+stale_uv_pins() {
+  python3 - << 'PY'
+import json
+import re
+import urllib.request
+
+problems = []
+
+with open('uv-tools.txt', encoding='utf-8') as handle:
+    for line in handle:
+        fields = line.split('#')[0].split()
+        if not fields:
+            continue
+        name = fields[0]
+        ref = fields[1] if len(fields) > 1 else ''
+        match = re.fullmatch(
+            r'git\+https://github\.com/([^/]+)/([^/]+?)(?:\.git)?@(.+)', ref)
+        if not match:
+            problems.append('%s: no upstream release source mapped for %r'
+                            % (name, ref))
+            continue
+        owner, repo, tag = match.groups()
+        url = 'https://api.github.com/repos/%s/%s/releases/latest' % (owner, repo)
+        try:
+            request = urllib.request.Request(
+                url, headers={'Accept': 'application/vnd.github+json'})
+            with urllib.request.urlopen(request, timeout=20) as response:
+                latest = json.load(response)['tag_name']
+        except Exception as err:
+            # Unauthenticated calls are rate limited to 60 an hour, which arrives
+            # here as a 403 and is worth naming rather than reading as an outage.
+            problems.append('%s: could not ask GitHub for the latest release (%s)'
+                            % (name, err))
+            continue
+        if latest != tag:
+            problems.append('%s: pinned to %s, upstream now releases %s'
+                            % (name, tag, latest))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "no pinned uv tool is behind upstream" \
+  "bump the tag in uv-tools.txt, then ./install.sh" \
+  "$(stale_uv_pins)"
+
 printf '\n%sRuntimes%s\n' "$DIM" "$OFF"
 
 # The README states this as a rule -- "Homebrew installs programs, mise installs
-# runtimes" -- and until now nothing enforced it. A runtime from Homebrew is a
-# single global version: whichever shell has mise activated gets the right one
-# and everything else (scripts, launchd jobs, non-interactive shells) silently
-# gets Homebrew's. The symptom appears far from the cause.
-RUNTIMES="node deno bun go ruby rust php openjdk"
-through_brew=""
-for r in $RUNTIMES; do
-  brew list --formula --versions "$r" > /dev/null 2>&1 &&
-    through_brew+="$r ($(brew list --versions "$r" | awk '{print $2}'))"$'\n'
-done
-report "no runtime comes from Homebrew" \
-  "install it with mise instead: brew uninstall <name> && mise use -g <name>@lts" \
-  "${through_brew%$'\n'}"
+# runtimes" -- and what used to stand here enforced it against Homebrew only, by
+# asking `brew list` about a fixed set of formulae. That is the wrong question in
+# two ways, and both were live on this machine.
+#
+# It named the wrong suspect. Homebrew is one way to end up with a second runtime;
+# a vendor .pkg is another, and so is an Anaconda that somebody installed once and
+# forgot. This machine had a python.org framework under /usr/local/bin for over a
+# year, unreported, because nothing here asked about anything but brew. It also
+# omitted python from the list entirely, so even the narrow check was blind to it.
+#
+# And it asked about installation rather than resolution. What breaks a script is
+# not that a second runtime exists, it is that a shell resolves it -- so the
+# question has to be which binaries a PATH lookup can reach, which is why this
+# walks every entry rather than taking the first hit. mise wins the front of PATH
+# here, so the winner is always mise and looking only there sees nothing: the
+# python.org one sat fourth and still won in any shell that never read .zshenv.
+runtimes_not_from_mise() {
+  python3 - << 'PY'
+import os
+
+# Command names, not formula names: this asks what a shell can resolve.
+RUNTIMES = ['python', 'python3', 'node', 'deno', 'bun', 'go', 'ruby',
+            'rustc', 'cargo', 'php', 'java', 'perl']
+
+mise = os.path.expanduser(
+    os.environ.get('XDG_DATA_HOME', '~/.local/share') + '/mise')
+
+# Apple's own copies, which are not a choice anybody made and cannot be removed.
+# The README already says the system Python is never touched; the same reasoning
+# covers the ruby, java and perl that ship with macOS.
+APPLE = ('/usr/bin/', '/bin/', '/usr/sbin/', '/sbin/', '/System/',
+         '/var/run/com.apple.security.cryptexd/')
+
+# Runtimes this repo deliberately gets from somewhere other than mise. An entry
+# here is a decision recorded in the repo, not a way to quiet the report, so each
+# one says why it is exempt and what would end the exemption.
+#
+# Keyed by directory *and* command, never by directory alone. /usr/local/bin holds
+# a python this machine has agreed to keep; a node appearing next to it tomorrow
+# is a different decision and has to be reported as one.
+ACCEPTED = {
+    # The Architecture table names rustup as what manages Rust toolchains, and
+    # install.sh runs it. rustup is the manager here, the way mise is elsewhere.
+    ('/opt/homebrew/opt/rustup/bin', 'rustc'): 'rustup manages Rust, by design',
+    ('/opt/homebrew/opt/rustup/bin', 'cargo'): 'rustup manages Rust, by design',
+}
+
+problems = []
+seen = set()
+
+for directory in os.environ.get('PATH', '').split(os.pathsep):
+    if not directory:
+        continue
+    for name in RUNTIMES:
+        path = os.path.join(directory, name)
+        if path in seen or not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        seen.add(path)
+        if path.startswith(mise) or path.startswith(APPLE):
+            continue
+        if (directory.rstrip('/'), name) in ACCEPTED:
+            continue
+        # Where it actually comes from, which is the useful half: the name of the
+        # thing to uninstall is rarely the path a shell resolved.
+        real = os.path.realpath(path)
+        problems.append('%s: %s is not from mise (%s)' % (name, path, real))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "every runtime on PATH comes from mise" \
+  "install it with mise instead, or record why it is exempt in this file" \
+  "$(runtimes_not_from_mise)"
+
+# The check above can only see what a PATH lookup reaches, which leaves a version
+# manager sitting on disk with nothing on PATH pointing at it completely invisible
+# -- and that is the state these arrive in. They install a shell hook you are
+# meant to source, so an inert one is a single line in a dotfile away from taking
+# over `node` or `python`, and editors and task runners probe for these
+# directories on their own.
+#
+# Named rather than searched for. A filesystem scan for "anything that looks like
+# a runtime" has no bottom and no precision; a list of the dozen tools that
+# actually do this is exact, and adding one is a line.
+#
+# This is not hypothetical on this machine. An Anaconda that nobody remembered
+# installing is what left a `uv tool` pointing at a missing interpreter, and an
+# nvm holding node 24 sat here unreferenced while mise served 26. Neither was
+# reachable from PATH, so neither was reportable until now.
+#
+# No exemption list, deliberately. rustup is the one manager this repo endorses
+# and it is not in here, so an entry appearing means something arrived that
+# nothing declared. If that ever stops being true, an exemption is a line -- but
+# writing one before it is needed invents a decision nobody has made.
+dormant_version_managers() {
+  local found="" d
+  for d in "$HOME/.nvm" "$HOME/.fnm" "$HOME/.volta" "$HOME/.n" "$HOME/.nodenv" \
+    "$HOME/.pyenv" "$HOME/.rbenv" "$HOME/.rvm" "$HOME/.jenv" "$HOME/.goenv" \
+    "$HOME/.sdkman" "$HOME/.asdf" "$HOME/anaconda3" "$HOME/miniconda3" \
+    "$HOME/miniforge3" /opt/anaconda3 /opt/miniconda3; do
+    [ -d "$d" ] || continue
+    # The full path rather than a ~-shortened one: the hint below is a command
+    # you finish by pasting this into it.
+    found+="$d ($(du -sh "$d" 2> /dev/null | awk '{print $1}'))"$'\n'
+  done
+  printf '%s' "${found%$'\n'}"
+}
+report "no dormant version manager is installed" \
+  "remove it, or move what it holds to mise: rm -rf <path>" \
+  "$(dormant_version_managers)"
 
 # Running a version nobody patches anymore is not drift between two files: it is
 # drift against a calendar, so no amount of reading this repo can detect it. A
@@ -247,6 +668,10 @@ PRODUCTS = {
     'php': 'php',
     'bun': 'bun',
     'deno': 'deno',
+    # Not a runtime, but mise installs it and this map is what decides whether
+    # anything mise installs is being watched. endoflife.date tracks it, so the
+    # honest answer is a mapping rather than an exception.
+    'pnpm': 'pnpm',
 }
 
 problems = []
@@ -347,6 +772,92 @@ PY
 report "vendored schemas match upstream" \
   "refresh it, then ./check.sh -- a newer schema can reject a config it used to accept" \
   "$(stale_schemas)"
+
+printf '\n%sCommands%s\n' "$DIM" "$OFF"
+
+# A command that is on PATH and cannot run is the quietest kind of breakage:
+# nothing reports it until you type the name, and by then the cause is months
+# old. Two shapes produce it, and both have happened here. A symlink outsurviving
+# its target -- Docker Desktop dropped two binaries in an update and left the
+# links in /usr/local/bin. And a script naming an interpreter that is gone, which
+# is what a `uv tool` becomes when the python it borrowed disappears.
+#
+# Apple's directories are excluded, for the same reason the runtime check
+# excludes them and one specific to this: /usr/sbin/weakpass_edit ships broken in
+# macOS itself. Reporting something no one here can fix is how a section becomes
+# noise.
+broken_commands() {
+  python3 - << 'PY'
+import os
+import subprocess
+
+APPLE = ('/usr/bin/', '/bin/', '/usr/sbin/', '/sbin/', '/System/',
+         '/var/run/com.apple.security.cryptexd/')
+
+# Entrypoints the uv tools section above already reports, and reports better:
+# it knows the tool name, so it can name the `--reinstall` that fixes it. Skipped
+# here rather than reported twice, because one problem printed under two headings
+# reads like two problems.
+uv_entrypoints = set()
+try:
+    tool_dir = subprocess.run(['uv', 'tool', 'dir'], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    import tomllib
+    for name in os.listdir(tool_dir):
+        receipt = os.path.join(tool_dir, name, 'uv-receipt.toml')
+        if not os.path.isfile(receipt):
+            continue
+        with open(receipt, 'rb') as handle:
+            data = tomllib.load(handle)
+        for entry in data.get('tool', {}).get('entrypoints', []):
+            if entry.get('install-path'):
+                uv_entrypoints.add(entry['install-path'])
+except Exception:
+    # Leaving the set empty costs a duplicate line, never a missed one.
+    pass
+
+problems = []
+seen = set()
+
+for directory in os.environ.get('PATH', '').split(os.pathsep):
+    if not directory or not os.path.isdir(directory):
+        continue
+    if directory.rstrip('/').startswith(tuple(a.rstrip('/') for a in APPLE)):
+        continue
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if path in seen or path in uv_entrypoints:
+            continue
+        seen.add(path)
+        if os.path.islink(path) and not os.path.exists(path):
+            problems.append('%s points at nothing: %s'
+                            % (path, os.readlink(path)))
+            continue
+        if not os.path.isfile(path) or not os.access(path, os.X_OK):
+            continue
+        try:
+            with open(path, 'rb') as handle:
+                first = handle.readline()
+        except OSError:
+            continue
+        if not first.startswith(b'#!'):
+            continue
+        words = first[2:].decode('utf-8', 'replace').split()
+        # `#!/usr/bin/env python` resolves through PATH at run time, so its first
+        # word says nothing about whether an interpreter is there.
+        if not words or os.path.basename(words[0]) == 'env':
+            continue
+        if not os.path.exists(words[0]):
+            problems.append('%s names a missing interpreter: %s'
+                            % (path, words[0]))
+
+for problem in problems:
+    print(problem)
+PY
+}
+report "every command on PATH can run" \
+  "remove the link, or reinstall whatever put it there" \
+  "$(broken_commands)"
 
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
