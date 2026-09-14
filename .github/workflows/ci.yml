@@ -42,7 +42,7 @@ jobs:
     # lines and check.sh reads them; both match on the key, not the indent.
     env:
       SHELLCHECK_VERSION: v0.11.0
-      SHFMT_VERSION: v3.13.1
+      SHFMT_VERSION: v3.14.1
       # Bare, no leading v: actionlint's tag carries one but its filenames
       # do not, and both spellings appear below.
       ACTIONLINT_VERSION: 1.7.12
