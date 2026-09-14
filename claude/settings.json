@@ -4,7 +4,7 @@
   "theme": "dark-ansi",
   "tui": "fullscreen",
   "language": "spanish",
-  "outputStyle": "Explanatory",
+  "outputStyle": "Concise",
   "model": "opus[1m]",
   "fallbackModel": [
     "opus",
@@ -13,7 +13,7 @@
   "teammateMode": "auto",
   "alwaysThinkingEnabled": true,
   "spinnerTipsEnabled": false,
-  "autoUpdatesChannel": "stable",
+  "autoUpdatesChannel": "latest",
   "cleanupPeriodDays": 60,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
@@ -28,10 +28,11 @@
     "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "explanatory-output-style@claude-plugins-official": true,
+    "explanatory-output-style@claude-plugins-official": false,
     "feature-dev@claude-plugins-official": true,
     "ralph-loop@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true
   },
   "permissions": {
