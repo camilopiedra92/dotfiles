@@ -242,4 +242,35 @@ done < <(sed 's/#.*//' "$DOTFILES/uv-tools.txt")
 # VS Code extensions need no step of their own: the Brewfile declares them with
 # `vscode "..."` entries and `brew bundle install` installs them in step 2.
 
+# --- 8. Claude Code MCP servers ---
+# User-scope servers live in ~/.claude.json, a file Claude Code owns and rewrites
+# freely, so they are neither symlinked nor merged in: the CLI is the interface
+# that file is meant to be changed through, and claude/mcp.json is what the CLI
+# is told. The file uses the same shape as a project's .mcp.json, so an entry
+# moves between the two without translation.
+#
+# Converges on the manifest the way step 7 does. A server already registered
+# with the same definition is left alone; one that differs is removed and added
+# back, because `claude mcp add-json` refuses to overwrite and that pair is the
+# only edit the CLI offers. Servers the manifest does not name are not touched:
+# drift.sh is what reports those.
+#
+# The comparison reads ~/.claude.json directly rather than parsing `claude mcp
+# get`, whose output is prose for a person. Reading is safe where writing would
+# not be: Claude Code rewrites this file underneath anything that edits it.
+log "Registering Claude Code MCP servers"
+CLAUDE_STATE="$HOME/.claude.json"
+[ -f "$CLAUDE_STATE" ] || echo '{}' > "$CLAUDE_STATE"
+for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES/claude/mcp.json"); do
+  want=$(jq -c --arg n "$name" '.mcpServers[$n]' "$DOTFILES/claude/mcp.json")
+  if jq -e --arg n "$name" --argjson want "$want" '.mcpServers[$n] == $want' \
+    "$CLAUDE_STATE" > /dev/null; then
+    continue
+  fi
+  if jq -e --arg n "$name" '.mcpServers[$n] != null' "$CLAUDE_STATE" > /dev/null; then
+    claude mcp remove "$name" --scope user
+  fi
+  claude mcp add-json "$name" "$want" --scope user
+done
+
 log "Done. Open Ghostty."

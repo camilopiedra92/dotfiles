@@ -257,6 +257,20 @@ check "gitconfig" git config --file git/config --list
 
 check "claude settings" python3 -c "import json; json.load(open('claude/settings.json'))"
 
+# The same shape as a project's .mcp.json, checked for the two things install.sh
+# relies on: a `mcpServers` object, and a `type` on every entry, because
+# `claude mcp add-json` infers nothing and stores what it is given.
+check "claude mcp manifest" python3 -c "
+import json
+m = json.load(open('claude/mcp.json'))
+servers = m['mcpServers']
+assert isinstance(servers, dict) and servers, 'mcpServers must be a non-empty object'
+for name, server in servers.items():
+    assert server.get('type') in ('http', 'sse', 'stdio', 'ws'), f'{name}: type missing or unknown'
+    assert ('url' in server) == (server['type'] != 'stdio'), f'{name}: url and type disagree'
+    assert ('command' in server) == (server['type'] == 'stdio'), f'{name}: command and type disagree'
+"
+
 # VS Code settings are JSONC: comments and trailing commas are legal there and
 # rejected by json.loads, so strip both before parsing.
 check "vscode settings (jsonc)" python3 -c "
@@ -610,6 +624,22 @@ check "install.sh is idempotent" install_is_idempotent
 #
 # A fixture rather than the real manifest, because the real one has a single
 # well-formed line and would exercise none of the shapes worth getting wrong.
+# Every extraction below ends at the header of the next step, and this is the
+# check that it took exactly one. A step extracted up to a prose comment once
+# swallowed the step added after it: that step ran for real, against this
+# machine's HOME and the real CLI, inside a test that had stubbed only `uv`.
+one_step_only() {
+  local steps=$1 n
+  # The range is inclusive, so its last line is the next step's header (or the
+  # closing log line): that one is the boundary, not a step that was taken.
+  n=$(sed '$d' "$steps" | grep -c '^# --- [0-9]')
+  [ "$n" -eq 1 ] || {
+    echo "extraction took $n steps from install.sh, not one:"
+    sed '$d' "$steps" | grep '^# --- [0-9]'
+    return 1
+  }
+}
+
 uv_tools_step() {
   local tmp steps
   tmp=$(mktemp -d) || return 1
@@ -618,7 +648,7 @@ uv_tools_step() {
 
   {
     echo 'log() { :; }'
-    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# --- 8\./p' install.sh
   } > "$steps"
 
   # The same guard the check above uses: if that heading is ever renamed the
@@ -627,6 +657,7 @@ uv_tools_step() {
     echo "could not extract step 7 from install.sh"
     return 1
   }
+  one_step_only "$steps" || return 1
 
   cat > "$tmp/uv-tools.txt" << 'FIXTURE'
 # a comment-only line, which must produce no install at all
@@ -676,12 +707,13 @@ uv_tools_real_manifest() {
 
   {
     echo 'log() { :; }'
-    sed -n '/^# --- 7\. CLI tools from uv/,/^# VS Code extensions need no step/p' install.sh
+    sed -n '/^# --- 7\. CLI tools from uv/,/^# --- 8\./p' install.sh
   } > "$steps"
   grep -qF 'uv tool install' "$steps" || {
     echo "could not extract step 7 from install.sh"
     return 1
   }
+  one_step_only "$steps" || return 1
 
   mkdir -p "$tmp/bin"
   printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/uv"
@@ -719,6 +751,83 @@ if want != got:
 PY
 }
 check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
+
+# Step 8 has the same split as step 7: whether `claude mcp` registers a server
+# is Claude Code's problem, but which servers it is asked to add, remove, or
+# leave alone is decided here, from a comparison against ~/.claude.json. So it
+# runs with HOME pointed at a fixture state file and a `claude` that records
+# its arguments, and the fixture covers each branch of that decision once: a
+# server already registered as declared, one registered differently, one not
+# registered at all, and one registered that the manifest does not name.
+mcp_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 8\. Claude Code MCP servers/,/^log "Done\./p' install.sh
+  } > "$steps"
+  grep -qF 'claude mcp add-json' "$steps" || {
+    echo "could not extract step 8 from install.sh"
+    return 1
+  }
+  one_step_only "$steps" || return 1
+
+  mkdir -p "$tmp/claude" "$tmp/home" "$tmp/bin"
+  cat > "$tmp/claude/mcp.json" << 'FIXTURE'
+{
+  "mcpServers": {
+    "same":    { "type": "http",  "url": "https://same.invalid/mcp" },
+    "changed": { "type": "http",  "url": "https://changed.invalid/v2" },
+    "missing": { "type": "stdio", "command": "missing-mcp", "args": [] }
+  }
+}
+FIXTURE
+  cat > "$tmp/home/.claude.json" << 'FIXTURE'
+{
+  "mcpServers": {
+    "same":    { "type": "http", "url": "https://same.invalid/mcp" },
+    "changed": { "type": "http", "url": "https://changed.invalid/v1" },
+    "extra":   { "type": "http", "url": "https://extra.invalid/mcp" }
+  },
+  "somethingClaudeWrote": true
+}
+FIXTURE
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/claude"
+  chmod +x "$tmp/bin/claude"
+  : > "$tmp/calls"
+
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+    bash -euo pipefail "$steps" > /dev/null || return 1
+
+  # Order is by name, which is what `jq keys` yields, so the expectation is
+  # stable. `same` and `extra` must produce no call at all.
+  cat > "$tmp/want" << 'WANT'
+mcp remove changed --scope user
+mcp add-json changed {"type":"http","url":"https://changed.invalid/v2"} --scope user
+mcp add-json missing {"type":"stdio","command":"missing-mcp","args":[]} --scope user
+WANT
+  diff -u "$tmp/want" "$tmp/calls" || return 1
+
+  # A state file that does not exist yet -- a machine on its first run -- must
+  # be created rather than tripped over, and every server then added.
+  rm "$tmp/home/.claude.json"
+  : > "$tmp/calls"
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+    bash -euo pipefail "$steps" > /dev/null || return 1
+  [ "$(grep -c 'mcp add-json' "$tmp/calls")" -eq 3 ] || {
+    echo "first run did not add every declared server:"
+    cat "$tmp/calls"
+    return 1
+  }
+  ! grep -q 'mcp remove' "$tmp/calls" || {
+    echo "first run tried to remove from an empty state file"
+    return 1
+  }
+}
+check "install.sh registers the MCP servers the manifest declares" mcp_step
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A
