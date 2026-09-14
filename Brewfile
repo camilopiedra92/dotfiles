@@ -76,8 +76,6 @@ brew "zoxide"
 # Credentials, and the SSH agent behind them
 cask "1password"
 cask "claude"
-# Reaches the private networks the work is on
-cask "cloudflare-warp"
 cask "cursor"
 # Ships the CLI too, symlinked into /usr/local/bin. The `docker` formula is
 # deliberately not here: it is the same client binary from a second source, and
