@@ -73,16 +73,8 @@ brew "zoxide"
 # apps stay off this list on purpose -- reproducing them costs install time and
 # inherits choices made once and never revisited.
 #
-# Credentials, and the SSH agent behind them
-cask "1password"
 cask "claude"
-cask "cursor"
-# Ships the CLI too, symlinked into /usr/local/bin. The `docker` formula is
-# deliberately not here: it is the same client binary from a second source, and
-# both want that path.
-cask "docker-desktop"
 cask "font-jetbrains-mono-nerd-font"
-cask "gcloud-cli"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
 # Not the daily browser but the one with the devtools everything is debugged in
