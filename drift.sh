@@ -963,6 +963,24 @@ report "macos/defaults.txt matches this machine" \
   "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
   "$(macos_drift)"
 
+printf '\n%sBackups%s\n' "$DIM" "$OFF"
+
+# Time Machine is disabled by policy on this machine, so the only copy of a
+# project is its remote. A repository under ~/Development with no remote
+# exists on this disk and nowhere else. Only the top level: a project is a
+# directory here with a .git in it, and nested repositories are that
+# project's business.
+repos_without_remote() {
+  local dir
+  for dir in "$HOME"/Development/*/; do
+    [ -d "$dir/.git" ] || continue
+    [ -n "$(git -C "$dir" remote)" ] || echo "${dir%/}"
+  done
+}
+report "every repository under ~/Development has a remote" \
+  "git remote add origin <url>, or delete it if it was a scratch clone" \
+  "$(repos_without_remote)"
+
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
 else
