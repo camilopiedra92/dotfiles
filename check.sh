@@ -590,8 +590,9 @@ install_is_idempotent() {
     echo "statusline was not symlinked"
     return 1
   }
-  # ssh ignores a config it or anyone else could tamper with, so the link is
-  # only useful inside a directory nobody but the owner can enter.
+  # ssh checks the config file's own owner and mode, not the directory's; the
+  # 700 is for the private key step 4b will put next to it, and asserting it
+  # here is what proves an inherited looser mode gets converged.
   [ -L "$tmp/home/.ssh/config" ] || {
     echo "ssh config was not symlinked"
     return 1
@@ -1060,27 +1061,31 @@ check "install.sh registers the MCP servers the manifest declares" mcp_step
 # run takes every one of them: a key regenerated is a key GitHub no longer
 # knows, and a signingkey appended twice is a config git refuses to read.
 #
-# The stub `gh` mirrors the shape that made the step's first draft wrong. The
-# login token does not carry the scopes that manage keys, and without them
-# `gh ssh-key list` prints a 404 to stderr and an empty list to stdout, exit 0
-# -- which a plain grep reads as "not registered" -- while `add` fails. So the
-# stub answers `auth status` from a scope fixture that starts without them,
-# lists nothing and refuses to add until `auth refresh` has appended them,
-# and the check asks that the refresh happened exactly once across two runs.
+# The stub `gh` mirrors the two shapes that made the step's first drafts
+# wrong. Logged out, `auth status` exits 1 and the step has to log in, not
+# die with the message captured in a variable. Logged in, the token does not
+# carry the scopes that manage keys, and without them `ssh-key list` prints a
+# 404 to stderr and an empty list to stdout, exit 0 -- which a plain grep
+# reads as "not registered" -- while `add` fails. So the stub is logged in
+# only once `auth login` has been recorded, answers `auth status` from a
+# scope fixture, lists nothing and refuses to add until login or refresh has
+# added the scopes. Both starting points are run twice: logged out must log
+# in exactly once and never refresh (login asks for the scopes); logged in
+# without the scopes must refresh exactly once and never log in.
 signing_step() {
   local tmp steps
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   steps="$tmp/steps.sh"
-  # What steps 3 and 4 leave behind: ~/.ssh exists and the identity is written.
-  mkdir -p "$tmp/bin" "$tmp/home/.ssh" "$tmp/home/.config/git"
-  printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$tmp/home/.config/git/config.local"
-  # ssh-keygen: create the two files it would, record the call.
+  mkdir -p "$tmp/bin"
+  # ssh-keygen: create the two files it would, record the call. The key
+  # holds a `++`, which as a regex never matches: the listing lookup has to
+  # be a substring test, and a key like this is one in a hundred real ones.
   cat > "$tmp/bin/ssh-keygen" << 'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$CALLS"
 for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); f=${!j}; }; done
-echo private > "$f"; echo "ssh-ed25519 AAAA t@example.com" > "$f.pub"
+echo private > "$f"; echo "ssh-ed25519 AAAAC3++NzaC1 t@example.com" > "$f.pub"
 STUB
   # gh: `ssh-key list` answers from $KNOWN in the real CLI's tab-separated
   # columns (TITLE, KEY, ADDED, ID, TYPE), `ssh-key add` appends to it, both
@@ -1090,13 +1095,16 @@ STUB
   cat > "$tmp/bin/gh" << 'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$CALLS"
+scoped() { grep -qF admin:ssh_signing_key "$SCOPES"; }
 case "$1 $2" in
-  "auth status") printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
+  "auth status")
+    [ -f "$LOGIN" ] || { echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1; }
+    printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
+  "auth login") touch "$LOGIN"; case "$*" in *admin:ssh_signing_key*) printf "'repo', 'admin:public_key', 'admin:ssh_signing_key'" > "$SCOPES" ;; *) printf "'repo'" > "$SCOPES" ;; esac ;;
   "auth refresh") printf ", 'admin:public_key', 'admin:ssh_signing_key'" >> "$SCOPES" ;;
-  "ssh-key list")
-    if grep -qF admin:ssh_signing_key "$SCOPES"; then cat "$KNOWN"; else echo "HTTP 404" >&2; fi ;;
+  "ssh-key list") if scoped; then cat "$KNOWN"; else echo "HTTP 404" >&2; fi ;;
   "ssh-key add")
-    grep -qF admin:ssh_signing_key "$SCOPES" || { echo "HTTP 404" >&2; exit 1; }
+    scoped || { echo "HTTP 404" >&2; exit 1; }
     type=authentication
     for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
     [ "$type" = signing ] && title="authentication key of mac" || title="signing key of mac"
@@ -1104,9 +1112,6 @@ case "$1 $2" in
 esac
 STUB
   chmod +x "$tmp/bin/ssh-keygen" "$tmp/bin/gh"
-  : > "$tmp/calls"
-  : > "$tmp/known"
-  printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
@@ -1120,56 +1125,84 @@ STUB
   }
   one_step_only "$steps" || return 1
 
-  for run in 1 2; do
-    HOME="$tmp/home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
-      PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > /dev/null 2>&1 || {
-      echo "run $run failed"
+  local start home run key
+  for start in logged-out logged-in; do
+    # A fresh HOME per starting point, holding what steps 3 and 4 leave
+    # behind: ~/.ssh exists and the identity is written.
+    home="$tmp/$start/home"
+    mkdir -p "$home/.ssh" "$home/.config/git"
+    printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
+    : > "$tmp/calls"
+    : > "$tmp/known"
+    rm -f "$tmp/login"
+    if [ "$start" = logged-in ]; then
+      touch "$tmp/login"
+      printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
+    else
+      : > "$tmp/scopes"
+    fi
+    for run in 1 2; do
+      HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
+        LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1 || {
+        echo "$start: run $run failed"
+        cat "$tmp/out"
+        return 1
+      }
+    done
+    local logins refreshes
+    logins=$(grep -c '^auth login' "$tmp/calls")
+    refreshes=$(grep -c '^auth refresh' "$tmp/calls")
+    if [ "$start" = logged-out ]; then
+      [ "$logins" -eq 1 ] && [ "$refreshes" -eq 0 ] || {
+        echo "$start: expected one login, asking for the scopes, and no refresh"
+        cat "$tmp/calls"
+        return 1
+      }
+    else
+      [ "$logins" -eq 0 ] && [ "$refreshes" -eq 1 ] || {
+        echo "$start: expected the scopes refreshed once, when missing, and no login"
+        cat "$tmp/calls"
+        return 1
+      }
+    fi
+    [ "$(grep -c '^-t ed25519' "$tmp/calls")" -eq 1 ] || {
+      echo "$start: key generated more than once"
+      cat "$tmp/calls"
+      return 1
+    }
+    grep -q '^ssh-key add .*--type authentication' "$tmp/calls" &&
+      grep -q '^ssh-key add .*--type signing' "$tmp/calls" &&
+      [ "$(grep -c '^ssh-key add' "$tmp/calls")" -eq 2 ] || {
+      echo "$start: expected one add per type (authentication + signing), once"
+      cat "$tmp/calls"
+      return 1
+    }
+    [ "$(grep -c signingkey "$home/.config/git/config.local")" -eq 1 ] || {
+      echo "$start: signingkey missing or duplicated"
+      return 1
+    }
+    git config --file "$home/.config/git/config.local" user.signingkey > /dev/null || {
+      echo "$start: config.local no longer parses"
+      return 1
+    }
+    # The switch travels with the key (git/config explains why), so it has to
+    # come out of the same file, once, and read true.
+    [ "$(grep -c gpgsign "$home/.config/git/config.local")" -eq 2 ] || {
+      echo "$start: expected exactly one gpgsign line per section in config.local"
+      cat "$home/.config/git/config.local"
+      return 1
+    }
+    for key in commit.gpgsign tag.gpgsign; do
+      [ "$(git config --file "$home/.config/git/config.local" "$key")" = true ] || {
+        echo "$start: $key is not true in config.local"
+        return 1
+      }
+    done
+    [ "$(wc -l < "$home/.config/git/allowed_signers")" -eq 1 ] || {
+      echo "$start: allowed_signers has $(wc -l < "$home/.config/git/allowed_signers") lines"
       return 1
     }
   done
-  [ "$(grep -c '^-t ed25519' "$tmp/calls")" -eq 1 ] || {
-    echo "key generated more than once"
-    cat "$tmp/calls"
-    return 1
-  }
-  [ "$(grep -c '^auth refresh' "$tmp/calls")" -eq 1 ] || {
-    echo "expected the scopes to be refreshed once, when missing, and never again"
-    cat "$tmp/calls"
-    return 1
-  }
-  grep -q '^ssh-key add .*--type authentication' "$tmp/calls" &&
-    grep -q '^ssh-key add .*--type signing' "$tmp/calls" &&
-    [ "$(grep -c '^ssh-key add' "$tmp/calls")" -eq 2 ] || {
-    echo "expected one add per type (authentication + signing), once"
-    cat "$tmp/calls"
-    return 1
-  }
-  [ "$(grep -c signingkey "$tmp/home/.config/git/config.local")" -eq 1 ] || {
-    echo "signingkey missing or duplicated"
-    return 1
-  }
-  git config --file "$tmp/home/.config/git/config.local" user.signingkey > /dev/null || {
-    echo "config.local no longer parses"
-    return 1
-  }
-  # The switch travels with the key (git/config explains why), so it has to
-  # come out of the same file, once, and read true.
-  [ "$(grep -c gpgsign "$tmp/home/.config/git/config.local")" -eq 2 ] || {
-    echo "expected exactly one gpgsign line per section in config.local"
-    cat "$tmp/home/.config/git/config.local"
-    return 1
-  }
-  local key
-  for key in commit.gpgsign tag.gpgsign; do
-    [ "$(git config --file "$tmp/home/.config/git/config.local" "$key")" = true ] || {
-      echo "$key is not true in config.local"
-      return 1
-    }
-  done
-  [ "$(wc -l < "$tmp/home/.config/git/allowed_signers")" -eq 1 ] || {
-    echo "allowed_signers has $(wc -l < "$tmp/home/.config/git/allowed_signers") lines"
-    return 1
-  }
 }
 check "install.sh sets up the signing key once and only once" signing_step
 

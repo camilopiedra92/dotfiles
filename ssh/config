@@ -1,7 +1,10 @@
 # Linked to ~/.ssh/config by install.sh. Only what every host needs; a host
-# with its own key or user gets its own block below this one, on the
-# machine, in ~/.ssh/config.local -- which is why the Include comes first:
-# ssh takes the first value it finds for an option.
+# with its own key or user gets its own block, on the machine, in
+# ~/.ssh/config.local -- which is why the Include comes first: ssh takes the
+# first value it finds for an option, so that block's User wins. IdentityFile
+# is the exception: it accumulates, so the host's own key is tried first and
+# the one below is still offered after it. A host that must never see the
+# shared key adds IdentitiesOnly yes to its block.
 Include config.local
 
 Host *

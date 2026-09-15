@@ -196,20 +196,27 @@ signing_key_known() {
     echo "user.signingkey points at a missing file: $key"
     return 0
   }
-  # Without this scope `gh ssh-key list` answers a 404 on stderr and an empty
-  # list on stdout, exit 0, and empty would read as "forgotten". Reported as
-  # the cause rather than as the symptom it would otherwise show up as.
-  gh auth status 2>&1 | grep -qF "'admin:ssh_signing_key'" || {
+  # Logged out, or logged in without this scope, `gh ssh-key list` answers
+  # an error on stderr and an empty list on stdout, and empty would read as
+  # "forgotten". Each is reported as the cause rather than as that symptom,
+  # and told apart because the fixes differ.
+  local status
+  status=$(gh auth status 2>&1) || {
+    echo "gh is not logged in, so GitHub cannot be asked: gh auth login"
+    return 0
+  }
+  grep -qF "'admin:ssh_signing_key'" <<< "$status" || {
     echo "the gh token cannot list signing keys (no admin:ssh_signing_key scope)"
     return 0
   }
   pub=$(awk '{ print $2 }' "$file")
-  # The listing is tab-separated: TITLE, KEY, ADDED, ID, TYPE. The type is
+  # The listing is tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key is a
+  # substring test and not a regex, because base64 holds `+`; the type is
   # compared in its own column, as install.sh does, so a key registered for
   # authentication only is reported and a title containing "signing" is not
   # mistaken for one.
   gh ssh-key list 2> /dev/null |
-    awk -F'\t' -v k="$pub" '$2 ~ k && $5 == "signing" { found = 1 } END { exit !found }' ||
+    awk -F'\t' -v k="$pub" 'index($2, k) > 0 && $5 == "signing" { found = 1 } END { exit !found }' ||
     echo "GitHub has no signing key matching $key"
 }
 report "the signing key is registered with GitHub" \

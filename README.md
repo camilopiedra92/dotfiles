@@ -254,20 +254,25 @@ The pieces are split by what they are, not by tool:
   it into the agent on first use and `UseKeychain` stores the passphrase in the
   Keychain, so it is typed once per machine and never per push or per commit.
   Its `Include config.local` comes *first* because ssh takes the first value it
-  finds for an option: a host that needs its own key or user gets a block in
-  `~/.ssh/config.local`, on the machine, and wins over `Host *` only because
-  it is read before it.
+  finds for an option: a host that needs its own user gets a block in
+  `~/.ssh/config.local`, on the machine, and its `User` wins over `Host *`
+  only because it is read before it. `IdentityFile` is the exception — it
+  accumulates rather than overrides — so a host block's own key is tried first
+  and the shared one is still offered after it; a host that must never see the
+  shared key says `IdentitiesOnly yes` in its block.
 
 `install.sh` does the rest, once, and does nothing the second time. It generates
-`~/.ssh/id_ed25519` if there is none — the passphrase prompt is one of the two
-things this step asks of you — registers the public key with GitHub as both an
+`~/.ssh/id_ed25519` if there is none — the passphrase prompt is the first of
+the three things this step can ask of you — logs `gh` in if nothing has yet,
+asking for the key scopes at the same time, registers the public key with
+GitHub as both an
 authentication key and a signing key, because GitHub keeps those in two lists
 and a key in one is not in the other, and writes `user.signingkey`, the two
 `gpgsign` switches and `allowed_signers`. Before it can register anything it
 checks that `gh` holds
 the two scopes that manage keys, `admin:public_key` and `admin:ssh_signing_key`,
-and refreshes the login in the browser if not, which is the other thing it
-asks of you, and only the first time: the token `gh auth login`
+and refreshes the login in the browser if not, which is the third thing it
+can ask of you, and only the first time: a token from an earlier `gh auth login`
 issues does not carry them, and without them `gh ssh-key list` reports a 404
 on stderr and an empty list on stdout, exit 0 — which a script reads as "not
 registered" right before its `add` fails.

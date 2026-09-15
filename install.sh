@@ -67,11 +67,14 @@ link "$DOTFILES/zsh/.zsh_plugins.txt" "$HOME/.config/zsh/.zsh_plugins.txt"
 # but the legacy one wins, so the two cannot coexist: step 4 below deletes them.
 link "$DOTFILES/git/config" "$HOME/.config/git/config"
 link "$DOTFILES/git/ignore" "$HOME/.config/git/ignore"
-# ssh refuses a config it can write to, so the directory is 700 -- set on
-# every run and not only at creation, because a ~/.ssh that already existed
-# arrives with whatever mode it had -- and the link is to a file in a repo you
-# own. config.local next to it is per machine and never versioned.
-mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+# 700 is for the private key step 4b puts beside this link, and it is set on
+# every run, not only at creation, because a ~/.ssh that already existed
+# arrives with whatever mode it had. The config itself ssh checks on its own:
+# it refuses one that is group- or world-writable or not owned by you, which
+# a link into a repo you own satisfies. config.local next to it is per
+# machine and never versioned.
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
 link "$DOTFILES/ssh/config" "$HOME/.ssh/config"
 link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
@@ -223,12 +226,24 @@ if [ ! -f "$SSH_KEY" ]; then
   ssh-keygen -t ed25519 -C "$(git config --file "$GIT_IDENTITY" user.email)" -f "$SSH_KEY"
 fi
 PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
-# The token `gh auth login` issues cannot manage keys. Without these two
-# scopes `gh ssh-key list` prints a 404 to stderr and nothing to stdout, exit
-# 0 -- an empty list that reads as "not registered" -- and `add` fails. So
-# they are asked for first, in the browser, and only while missing: the
-# second interactive moment of this step, and one a second run never sees.
-GH_SCOPES=$(gh auth status 2>&1)
+# Nothing above logs gh in, and a new machine is not: `gh auth status` then
+# exits 1, and under set -e that would end the script here with its message
+# captured in a variable and never shown. So the login is done here, the
+# second thing this step asks of you (a browser round trip), asking for the
+# key scopes at the same time so the refresh below has nothing to do.
+if ! gh auth status > /dev/null 2>&1; then
+  log "Logging gh into GitHub (opens a browser)"
+  gh auth login -h github.com -s admin:public_key -s admin:ssh_signing_key
+fi
+# A token from an earlier login cannot manage keys. Without these two scopes
+# `gh ssh-key list` prints a 404 to stderr and nothing to stdout, exit 0 --
+# an empty list that reads as "not registered" -- and `add` fails. So they
+# are asked for first, in the browser, and only while missing: the third
+# interactive moment of this step, and one a second run never sees.
+GH_SCOPES=$(gh auth status 2>&1) || {
+  printf '%s\n' "$GH_SCOPES"
+  exit 1
+}
 if ! grep -qF "'admin:public_key'" <<< "$GH_SCOPES" ||
   ! grep -qF "'admin:ssh_signing_key'" <<< "$GH_SCOPES"; then
   log "Granting gh the scopes that manage SSH keys (opens a browser)"
@@ -237,12 +252,14 @@ fi
 # GitHub keeps authentication and signing keys in separate lists, and a key
 # in one is not in the other. Both are added, each only if missing. One
 # listing covers both, tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key
-# column holds `ssh-ed25519 <base64> [comment]`, so the base64 is matched
-# inside it, and the type is compared whole in its own column rather than
+# column holds `ssh-ed25519 <base64> [comment]`, so the base64 is looked for
+# inside it -- with index() and not ~, because base64 contains `+` and as a
+# regex a `++` never matches, which would re-add one key in a hundred on
+# every run -- and the type is compared whole in its own column rather than
 # searched for on the row, where a title like "signing key" would match too.
 registered() {
   gh ssh-key list 2> /dev/null |
-    awk -F'\t' -v k="$PUBKEY" -v t="$1" '$2 ~ k && $5 == t { found = 1 } END { exit !found }'
+    awk -F'\t' -v k="$PUBKEY" -v t="$1" 'index($2, k) > 0 && $5 == t { found = 1 } END { exit !found }'
 }
 for type in authentication signing; do
   if ! registered "$type"; then
