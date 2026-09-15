@@ -170,6 +170,68 @@ report "no formula is missing a dependency" \
   "brew install <dep>, or reinstall the formula that wants it" \
   "$(brew_missing_deps)"
 
+printf '\n%sGit%s\n' "$DIM" "$OFF"
+
+# A signing key GitHub has forgotten -- revoked, or the machine re-enrolled
+# under a new title -- signs every commit with a signature the web UI marks
+# Unverified, and nothing local notices. Asks GitHub, so it lives here and
+# not in check.sh.
+#
+# The switch is checked first. commit.gpgsign lives in config.local with the
+# key rather than in git/config (that file says why), which means the
+# versioned config no longer states "commits are signed" on its face -- this
+# line is where that statement now lives, together with the README.
+signing_key_known() {
+  local key file pub
+  [ "$(git config commit.gpgsign 2> /dev/null)" = true ] ||
+    echo "commits are not signed here: commit.gpgsign is not true"
+  [ "$(git config tag.gpgsign 2> /dev/null)" = true ] ||
+    echo "tags are not signed here: tag.gpgsign is not true"
+  key=$(git config user.signingkey 2> /dev/null) || {
+    echo "no user.signingkey in the git config"
+    return 0
+  }
+  file=${key/#\~/$HOME}
+  [ -f "$file" ] || {
+    echo "user.signingkey points at a missing file: $key"
+    return 0
+  }
+  # Logged out, or logged in without this scope, `gh ssh-key list` prints a
+  # 404 to stderr and nothing to stdout, and an empty listing would read as
+  # "forgotten". Each is reported as the cause rather than as that symptom,
+  # and told apart because the fixes differ.
+  local status
+  status=$(gh auth status 2>&1) || {
+    echo "gh is not logged in, so GitHub cannot be asked: gh auth login"
+    return 0
+  }
+  grep -qF "'admin:ssh_signing_key'" <<< "$status" || {
+    echo "the gh token cannot list signing keys (no admin:ssh_signing_key scope)"
+    return 0
+  }
+  pub=$(awk '{ print $2 }' "$file")
+  # The lookup below is a substring test and an empty needle matches every
+  # row, so a .pub that is empty or truncated would read as registered.
+  case "$pub" in
+    AAAA*) ;;
+    *)
+      echo "$key does not look like a public key"
+      return 0
+      ;;
+  esac
+  # The listing is tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key is a
+  # substring test and not a regex, because base64 holds `+`; the type is
+  # compared in its own column, as install.sh does, so a key registered for
+  # authentication only is reported and a title containing "signing" is not
+  # mistaken for one.
+  gh ssh-key list 2> /dev/null |
+    awk -F'\t' -v k="$pub" 'index($2, k) > 0 && $5 == "signing" { found = 1 } END { exit !found }' ||
+    echo "GitHub has no signing key matching $key"
+}
+report "commits here are signed with a key GitHub knows" \
+  "./install.sh writes the switch and the key, and registers it" \
+  "$(signing_key_known)"
+
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
 # settings.json is merged rather than symlinked, because Claude Code rewrites it
@@ -874,6 +936,52 @@ PY
 report "every command on PATH can run" \
   "remove the link, or reinstall whatever put it there" \
   "$(broken_commands)"
+
+printf '\n%smacOS%s\n' "$DIM" "$OFF"
+
+# The manifest is applied by install.sh and drifts the same way the Brewfile
+# does: System Settings is a UI that writes the same keys, and an OS upgrade
+# occasionally resets one. Same script, other verb, so the comparison cannot
+# disagree with the application.
+#
+# `check`'s own contract is 0 (matches) or 1 (differences, printed to stdout).
+# Anything else -- a bad MANIFEST override, a missing file, a future usage
+# error -- is a broken checker, not a clean machine, and its message goes to
+# stderr where a bare `$(...)` would drop it. Surfaced as drift rather than
+# read as "ok", the same way a missing `code` binary is reported above rather
+# than skipped.
+macos_drift() {
+  local out rc
+  out=$(./macos/defaults.sh check 2>&1)
+  rc=$?
+  case "$rc" in
+    0 | 1) printf '%s\n' "$out" ;;
+    *) printf 'macos/defaults.sh check failed (exit %s): %s\n' "$rc" "$out" ;;
+  esac
+}
+report "macos/defaults.txt matches this machine" \
+  "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
+  "$(macos_drift)"
+
+printf '\n%sBackups%s\n' "$DIM" "$OFF"
+
+# Time Machine is disabled by policy on this machine, so the only copy of a
+# project is its remote. A repository under ~/Development with no remote
+# exists on this disk and nowhere else. Only the top level: a project is a
+# directory here with a .git in it, and nested repositories are that
+# project's business.
+repos_without_remote() {
+  local dir
+  for dir in "$HOME"/Development/*/; do
+    # A linked worktree's .git is a file pointing at the primary checkout,
+    # not a directory, and its remotes are the primary's -- -e catches both.
+    [ -e "$dir/.git" ] || continue
+    [ -n "$(git -C "$dir" remote)" ] || echo "${dir%/}"
+  done
+}
+report "every repository under ~/Development has a remote" \
+  "git remote add origin <url>, or delete it if it was a scratch clone" \
+  "$(repos_without_remote)"
 
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"

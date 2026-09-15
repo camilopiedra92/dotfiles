@@ -67,6 +67,20 @@ link "$DOTFILES/zsh/.zsh_plugins.txt" "$HOME/.config/zsh/.zsh_plugins.txt"
 # but the legacy one wins, so the two cannot coexist: step 4 below deletes them.
 link "$DOTFILES/git/config" "$HOME/.config/git/config"
 link "$DOTFILES/git/ignore" "$HOME/.config/git/ignore"
+# 700 is for the private key step 4b puts beside this link, and it is set on
+# every run, not only at creation, because a ~/.ssh that already existed
+# arrives with whatever mode it had. The config itself ssh checks on its own:
+# it refuses one that is group- or world-writable or not owned by you, which
+# a link into a repo you own satisfies. config.local next to it is per
+# machine and never versioned.
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+link "$DOTFILES/ssh/config" "$HOME/.ssh/config"
+# Linked here, loaded in 4c. launchd only reads this directory, and the
+# file is versioned in the repo: a copy would drift from it on the first
+# edit, with nothing to report the gap. launchd reads the target through
+# the link.
+link "$DOTFILES/launchd/com.piedrac.ssh-add-keychain.plist" "$HOME/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist"
 link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
 link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
@@ -206,6 +220,132 @@ if [ ! -f "$GIT_IDENTITY" ]; then
 EOF
 fi
 
+# --- 4b. Signing key ---
+# One ed25519 key for both authentication and signing. Generated here, on
+# the machine, with a passphrase you type now and the Keychain remembers;
+# the private half never leaves ~/.ssh and never enters this repo. Each
+# piece checks for itself before acting, so a second run does nothing.
+SSH_KEY="$HOME/.ssh/id_ed25519"
+if [ ! -f "$SSH_KEY" ]; then
+  log "Generating your SSH key (choose a passphrase; the Keychain will remember it)"
+  ssh-keygen -t ed25519 -C "$(git config --file "$GIT_IDENTITY" user.email)" -f "$SSH_KEY"
+fi
+# ssh-keygen stores nothing in the Keychain; ssh does, through UseKeychain,
+# the first time it loads the key -- and with HTTPS remotes ssh is never
+# run, so nothing would ever store it and the login agent of 4c would have
+# nothing to load. This is the one call that does both: the key goes into
+# the agent now and the passphrase into the Keychain, asked for once and
+# only while the Keychain does not have it. It still prints "Identity
+# added" on every run, but prompts for nothing once the Keychain holds the
+# passphrase, which is what lets it run every time rather than only next
+# to a fresh key. It needs an agent socket, so this step is written for a
+# login session on the Mac itself, not an ssh session into it.
+ssh-add --apple-use-keychain "$SSH_KEY"
+PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
+# An empty or truncated .pub -- a copy that went wrong -- must stop here: the
+# lookup below is a substring test, an empty needle is found in every row,
+# and the identity would end up pointing at nothing. Every OpenSSH public
+# key's base64 starts with AAAA (the encoded length of its type string).
+case "$PUBKEY" in
+  AAAA*) ;;
+  *)
+    echo "$SSH_KEY.pub does not look like a public key" >&2
+    exit 1
+    ;;
+esac
+# Nothing above logs gh in, and a new machine is not: `gh auth status` then
+# exits 1, and under set -e that would end the script here with its message
+# captured in a variable and never shown. So the login is done here, the
+# second thing this step asks of you (a browser round trip), asking for the
+# key scopes at the same time so the refresh below has nothing to do.
+#
+# Every flag answers a prompt the interactive flow would otherwise ask.
+# -p https keeps the protocol this machine already uses; -w is the browser
+# round trip rather than a pasted token; --skip-ssh-key because registering
+# the key is this step's job, a few lines down. The remaining prompt, to set
+# gh up as git's credential helper, gh skips on its own when it already is
+# the helper (its Prompt returns early on IsOurs), which git/config declares
+# for github.com. That is the reason it must stay declared there: answered
+# yes, gh writes the helper with `git config --global` -- into the versioned
+# file, since that is what ~/.config/git/config links to.
+if ! gh auth status > /dev/null 2>&1; then
+  log "Logging gh into GitHub (opens a browser)"
+  gh auth login -h github.com -p https -w --skip-ssh-key \
+    -s admin:public_key -s admin:ssh_signing_key
+fi
+# A token from an earlier login cannot manage keys. Without these two scopes
+# `gh ssh-key list` prints a 404 per list to stderr and nothing to stdout,
+# so the key looks unregistered, and `add` fails. So they are checked for
+# first, before anything is listed, and asked for in the browser only while
+# missing: the third interactive moment of this step, and one a second run
+# never sees.
+GH_SCOPES=$(gh auth status 2>&1) || {
+  printf '%s\n' "$GH_SCOPES"
+  exit 1
+}
+if ! grep -qF "'admin:public_key'" <<< "$GH_SCOPES" ||
+  ! grep -qF "'admin:ssh_signing_key'" <<< "$GH_SCOPES"; then
+  log "Granting gh the scopes that manage SSH keys (opens a browser)"
+  gh auth refresh -h github.com -s admin:public_key -s admin:ssh_signing_key
+fi
+# GitHub keeps authentication and signing keys in separate lists, and a key
+# in one is not in the other. Both are added, each only if missing. One
+# listing covers both, tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key
+# column holds `ssh-ed25519 <base64> [comment]`, so the base64 is looked for
+# inside it -- with index() and not ~, because base64 contains `+` and as a
+# regex a `++` never matches, which would re-add one key in a hundred on
+# every run -- and the type is compared whole in its own column rather than
+# searched for on the row, where a title like "signing key" would match too.
+registered() {
+  gh ssh-key list 2> /dev/null |
+    awk -F'\t' -v k="$PUBKEY" -v t="$1" 'index($2, k) > 0 && $5 == t { found = 1 } END { exit !found }'
+}
+for type in authentication signing; do
+  if ! registered "$type"; then
+    log "Registering the key with GitHub for $type"
+    gh ssh-key add "$SSH_KEY.pub" --type "$type" --title "$(scutil --get LocalHostName)"
+  fi
+done
+# The signing key is identity, so it lives with the identity and not in the
+# versioned config. `git config --file` is what makes the write idempotent:
+# it replaces the value instead of appending a second [user] section.
+git config --file "$GIT_IDENTITY" user.signingkey "$SSH_KEY.pub"
+# The switch goes next to the key, not into git/config: that file is live from
+# the first clone, and gpgsign without a key refuses every commit on the
+# machine. Written here, the two cannot disagree.
+git config --file "$GIT_IDENTITY" commit.gpgsign true
+git config --file "$GIT_IDENTITY" tag.gpgsign true
+# What local verification checks against. Rewritten whole from the current
+# identity and key so it can never hold a stale line.
+printf '%s %s\n' "$(git config --file "$GIT_IDENTITY" user.email)" "$(cat "$SSH_KEY.pub")" \
+  > "$HOME/.config/git/allowed_signers"
+
+# --- 4c. Load the signing key at login ---
+# After a reboot the agent is empty, and nothing here refills it: git talks
+# to GitHub over HTTPS, so ssh -- the only thing AddKeysToAgent and
+# UseKeychain act through -- is never run, and `ssh-keygen -Y sign` reads no
+# ssh_config. The first commit of the day would fail. The agent linked in
+# step 3 runs `ssh-add --apple-load-keychain` at every login; see the plist
+# for why launchd and not a shell profile.
+#
+# `bootstrap` and not `load`: load is the legacy verb, picks the domain by
+# who runs it, and reports nothing useful when it fails; bootstrap takes the
+# domain by name -- gui/<uid> is this login session -- and its error names
+# the cause. But it is not idempotent: bootstrapping a service that is
+# already loaded is an error, and under set -e that would end the script
+# here on every run after the first. `print` is how launchd itself says
+# whether the service is loaded, exit 0 only when it is, so it is the test.
+# The label is what launchd knows the service by, hence the plist's Label
+# has to be its filename without .plist; check.sh holds the two together.
+#
+# kickstart runs it now, so this session gets the key without a reboot; -k
+# because a plist edited since the last login is only read again by a
+# service that is restarted, not one already running.
+log "Loading the signing key into the agent at login"
+launchctl print "gui/$(id -u)/com.piedrac.ssh-add-keychain" > /dev/null 2>&1 ||
+  launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist"
+launchctl kickstart -k "gui/$(id -u)/com.piedrac.ssh-add-keychain"
+
 # --- 5. Runtimes ---
 log "Installing runtimes with mise"
 mise install
@@ -272,5 +412,14 @@ for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES/claude/mcp.json"); do
   fi
   claude mcp add-json "$name" "$want" --scope user
 done
+
+# --- 9. macOS defaults ---
+# The system layer this repo used to leave to hand: Finder, Dock, keyboard,
+# trackpad, screenshots. Declared in macos/defaults.txt, applied only where
+# the machine differs, so a second run writes nothing and restarts nothing.
+# Last because a Finder restart in the middle of a run is a surprise, and
+# because nothing above depends on it.
+log "Applying macOS defaults"
+"$DOTFILES/macos/defaults.sh" apply
 
 log "Done. Open Ghostty."

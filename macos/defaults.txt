@@ -1,0 +1,129 @@
+# macOS settings this machine is expected to have, one per line.
+#
+# Four whitespace-separated fields: domain, key, type, value. `#` starts a
+# comment. macos/defaults.sh applies the file from install.sh and checks it
+# from drift.sh, and is the only thing that reads it.
+#
+# Only values that differ from Apple's default are here. A default written
+# down is frozen: the day Apple ships a better one this file would put the
+# old one back, and nobody would know why. Same argument as node = "lts"
+# rather than a number.
+#
+# No key here is one a Jamf profile sets on this machine. The rule is per
+# key and not per domain: management is by key, and com.apple.controlcenter
+# below is a domain a profile does touch (its Bluetooth and Wi-Fi menu
+# items) while BatteryShowPercentage in the same domain is not. To check,
+# `ls "/Library/Managed Preferences/$USER"` lists the managed domains and
+# `plutil -p` on one of those plists lists its keys. Screen lock, updates,
+# firewall, FileVault and Siri are policy there. A managed key written here
+# would be silently overruled while reading as if it applied: `defaults`
+# reads and writes only the user layer, and the managed one sits above it,
+# invisible to `defaults read` and consulted first by the app. Checked on
+# this machine: the managed Bluetooth key reads as "does not exist".
+#
+# Verified by read-back only, so far: on macOS 26.6.2 on 2026-09-15,
+# `defaults.sh check` reports every key at its declared value. The pass
+# that proves behaviour -- the System Settings toggle showing the value,
+# tap-to-click and three-finger drag working after a log out -- is still
+# pending. A key that turns out not to take effect is to be removed and
+# named here, not patched with a second key copied from a "macos.sh"
+# template; those carry keys that stopped doing anything releases ago, and
+# a line that reads back correctly while changing nothing is what this
+# file exists to not have.
+
+# ── Finder ──────────────────────────────────────────────────────────────────
+
+# Extensions are how you tell a script from a directory; hiding them is for
+# people who never see either.
+NSGlobalDomain          AppleShowAllExtensions          bool    true
+# Where you are and how much is there, at the bottom of every window.
+com.apple.finder        ShowPathbar                     bool    true
+com.apple.finder        ShowStatusBar                   bool    true
+# List view: dates, sizes and sorting, which icons cannot show.
+com.apple.finder        FXPreferredViewStyle            string  Nlsv
+# Search the folder you are in, not the whole disk. SCcf = current folder.
+com.apple.finder        FXDefaultSearchScope            string  SCcf
+# Renaming a.txt to a.md is a rename, not a mistake worth a dialog.
+com.apple.finder        FXEnableExtensionChangeWarning  bool    false
+# In list view, a folder sorted between files by name is invisible until you
+# scroll to where its name would put it.
+com.apple.finder        _FXSortFoldersFirst             bool    true
+# New windows open at home, not at Recents. PfHm = home directory.
+com.apple.finder        NewWindowTarget                 string  PfHm
+# .DS_Store on network and USB volumes litters every repo shared that way
+# and every colleague's machine that mounts it.
+com.apple.desktopservices  DSDontWriteNetworkStores     bool    true
+com.apple.desktopservices  DSDontWriteUSBStores         bool    true
+
+# ── Dock and Mission Control ────────────────────────────────────────────────
+
+# Already the state of this machine; declared so a rebuild reproduces it.
+com.apple.dock          autohide                        bool    true
+com.apple.dock          minimize-to-application         bool    true
+# The hidden Dock appears the moment the cursor reaches the edge, not after
+# the half-second Apple adds.
+com.apple.dock          autohide-delay                  float   0
+# Recents in the Dock is a second, unsorted app switcher.
+com.apple.dock          show-recents                    bool    false
+# Spaces stay where you put them. With this on, the one you used last moves
+# to the front and Ctrl+number stops meaning anything.
+com.apple.dock          mru-spaces                      bool    false
+
+# ── Keyboard and text ───────────────────────────────────────────────────────
+
+# Repeat fast enough that holding a key in an editor is a way of moving.
+# Apple's slider bottoms out at 2 / 15; these are that setting.
+NSGlobalDomain          KeyRepeat                       int     2
+NSGlobalDomain          InitialKeyRepeat                int     15
+# Press-and-hold stays ON globally: the layout here is ABC and Spanish
+# accents are typed through it. It is turned off per app, below, for the two
+# where holding a key has to repeat it.
+com.microsoft.VSCode    ApplePressAndHoldEnabled        bool    false
+com.mitchellh.ghostty   ApplePressAndHoldEnabled        bool    false
+# Every automatic substitution rewrites code and shell text pasted into a
+# chat, a ticket or a form: a straight quote becomes a curly one, two dashes
+# an em dash, a lowercase identifier a Capitalised one. Off everywhere; the
+# apps where prose is written have their own switches.
+NSGlobalDomain          NSAutomaticCapitalizationEnabled        bool    false
+NSGlobalDomain          NSAutomaticPeriodSubstitutionEnabled    bool    false
+NSGlobalDomain          NSAutomaticQuoteSubstitutionEnabled     bool    false
+NSGlobalDomain          NSAutomaticDashSubstitutionEnabled      bool    false
+NSGlobalDomain          NSAutomaticSpellingCorrectionEnabled    bool    false
+NSGlobalDomain          NSAutomaticInlinePredictionEnabled      bool    false
+# Tab moves between every control in a dialog, buttons included, so a save
+# prompt can be answered without reaching for the trackpad.
+NSGlobalDomain          AppleKeyboardUIMode             int     2
+
+# ── Trackpad ────────────────────────────────────────────────────────────────
+
+# Tap to click and three-finger drag. Both domains are needed: the first is
+# the built-in trackpad, the second an external one.
+com.apple.AppleMultitouchTrackpad                     Clicking                bool  true
+com.apple.driver.AppleBluetoothMultitouch.trackpad    Clicking                bool  true
+com.apple.AppleMultitouchTrackpad                     TrackpadThreeFingerDrag bool  true
+com.apple.driver.AppleBluetoothMultitouch.trackpad    TrackpadThreeFingerDrag bool  true
+
+# ── Dialogs and documents ───────────────────────────────────────────────────
+
+# Save and print dialogs open expanded: the collapsed form hides the folder.
+NSGlobalDomain          NSNavPanelExpandedStateForSaveMode      bool    true
+NSGlobalDomain          NSNavPanelExpandedStateForSaveMode2     bool    true
+NSGlobalDomain          PMPrintingExpandedStateForPrint         bool    true
+NSGlobalDomain          PMPrintingExpandedStateForPrint2        bool    true
+# New documents default to disk, not iCloud Drive. An iCloud account is
+# signed in on this machine, which is what makes the default the other way.
+NSGlobalDomain          NSDocumentSaveNewDocumentsToCloud       bool    false
+
+# ── Screenshots ─────────────────────────────────────────────────────────────
+
+# Their own folder, not the Desktop. defaults.sh creates it.
+com.apple.screencapture location                        string  ~/Screenshots
+# A window screenshot without the drop shadow, which is 40px of transparent
+# padding on every side that every image viewer renders as grey.
+com.apple.screencapture disable-shadow                  bool    true
+
+# ── Menu bar ────────────────────────────────────────────────────────────────
+
+# The icon alone shows quarters. A laptop that ends a meeting at 20% versus
+# 5% is the difference the number makes.
+com.apple.controlcenter BatteryShowPercentage           bool    true

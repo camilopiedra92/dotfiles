@@ -75,6 +75,26 @@
 	# Sorts v1.10.0 after v1.9.0. A plain string sort puts it before.
 	sort = -version:refname
 
+[gpg]
+	# SSH rather than GPG. Same key that authenticates to GitHub signs the
+	# commits, lives in the agent, is unlocked by the Keychain, and GitHub
+	# shows the commit as Verified. GPG buys nothing here and costs a second
+	# key, a second agent and an expiry to remember.
+	#
+	# commit.gpgsign and tag.gpgsign are not here. This file is linked on
+	# every machine the moment it is cloned, and a signing policy switched on
+	# before its key exists fails every commit on that machine -- including
+	# the one that would fix it. So the switch travels with the key: step 4b
+	# of install.sh writes both into config.local, and signing is on exactly
+	# when there is something to sign with.
+	format = ssh
+
+[gpg "ssh"]
+	# What `git log --show-signature` and `git verify-commit` check against
+	# locally. GitHub has its own copy of the key; this file is for this
+	# machine. Written by install.sh, one line per identity.
+	allowedSignersFile = ~/.config/git/allowed_signers
+
 [column]
 	ui = auto
 

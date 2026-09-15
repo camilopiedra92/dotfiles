@@ -50,12 +50,16 @@ starship.toml          prompt
 ghostty/config         terminal
 git/config             git config (without identity)
 git/ignore             global gitignore
+ssh/config             ssh client config: agent + Keychain, and where the per-machine hosts go
+launchd/               login agent that loads the signing key into ssh-agent (see Commit signing)
 mise/config.toml       global runtime versions
 uv-tools.txt           CLI tools installed with `uv tool`, each pinned to a reference
 vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
 bin/aware.sh           runs the aware-connector CLI from anywhere
 bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
+macos/defaults.txt     macOS settings, one `defaults` key per line
+macos/defaults.sh      applies the manifest (install.sh) or reports where the machine differs (drift.sh)
 claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
@@ -84,7 +88,9 @@ they are usually installed to:
 | `~/.zshenv` | cannot be moved: zsh reads it before it can know about `ZDOTDIR`, and it is what points at the directory below |
 | `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see below — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
-| `~/.config/git/` | `config`, `ignore`, and the unversioned `config.local` |
+| `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against) |
+| `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
+| `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
 | `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
@@ -217,6 +223,88 @@ at anything that opens a file itself. A one-line Python or Node script reads a
 denied path without touching any of it; that was checked here with a decoy, and
 both read it.
 
+## Commit signing
+
+Every commit and tag is signed, and the signature comes from the SSH key
+rather than from GPG. The same key that authenticates to GitHub signs the
+commits: it lives in the agent, the Keychain unlocks it, and GitHub shows the
+commit as Verified. GPG would buy nothing here and cost a second key, a second
+agent, and an expiry date to remember. The one thing SSH signatures do not
+carry is a web of trust, and nothing here ever used one.
+
+The pieces are split by what they are, not by tool:
+
+- **`git/config` holds what is safe without a key** — `gpg.format = ssh` and
+  the `allowed_signers` path — because that file is live on every machine from
+  the first clone, and nothing in it may break a machine that has not run
+  `install.sh` yet.
+- **`~/.config/git/config.local` holds the key and the switch**:
+  `user.signingkey` next to the name and email, and `commit.gpgsign` and
+  `tag.gpgsign` next to that. The key names a file on one machine and is
+  identity in the same sense the email is, which is why the repo can be public.
+  The switch is there for a less obvious reason: a signing policy that depends
+  on a per-machine secret lives with the secret. Versioned, `gpgsign = true`
+  would be read the moment the repo is linked and fail every commit on a
+  machine whose key does not exist yet — including the commit that would fix
+  it. Written by the same step that writes the key, the two cannot disagree.
+- **`~/.config/git/allowed_signers` is for local verification.** GitHub keeps
+  its own copy of the public key and checks against that; `git log
+  --show-signature` and `git verify-commit` on this machine check against this
+  file, one `email key` line per identity. `install.sh` rewrites it whole from
+  the current identity and key, so it can never hold a stale line.
+- **`ssh/config` makes the key usable without typing.** `AddKeysToAgent` loads
+  it into the agent on first use and `UseKeychain` stores the passphrase in the
+  Keychain, so it is typed once per machine and never per push — and never
+  per commit either, once the login agent below has run.
+  Its `Include config.local` comes *first* because ssh takes the first value it
+  finds for an option: a host that needs its own user gets a block in
+  `~/.ssh/config.local`, on the machine, and its `User` wins over `Host *`
+  only because it is read before it. `IdentityFile` is the exception — it
+  accumulates rather than overrides — so a host block's own key is tried first
+  and the shared one is still offered after it. Nothing in `config.local` can
+  remove it, because `Host *` matches every host; a host that must never see
+  the shared key needs the versioned pattern to exclude it (`Host * !name`).
+- **`launchd/com.piedrac.ssh-add-keychain.plist` refills the agent at login.**
+  The two options above act only when `ssh` runs, and here it never does: git
+  talks to GitHub over HTTPS, and signing goes through `ssh-keygen -Y sign`,
+  which reads no `ssh_config` and asks only the agent. After a reboot the agent
+  is empty, and without this the first commit of the day would fail until
+  something loaded the key. The agent runs `ssh-add --apple-load-keychain` once
+  per login, which reads the passphrase from the Keychain; `install.sh` links
+  it into `~/Library/LaunchAgents/`, bootstraps it once, and kickstarts it so
+  the current session gets the key without a reboot. It is a launchd agent and
+  not a line in a shell profile because a profile runs per shell and only for
+  shells. `check.sh` lints the plist and holds its `Label` to its filename,
+  the mismatch that makes an agent silently never load.
+
+`install.sh` does the rest, once, and does nothing the second time. It
+generates `~/.ssh/id_ed25519` if there is none — the passphrase is the first
+of the three things this step can ask of you: `ssh-keygen` asks it to set it,
+and `ssh-add --apple-use-keychain` asks it once more to store it in the
+Keychain, which is the step `ssh-keygen` does not do and `ssh` would only do
+on a connection that never happens. It logs `gh` in if nothing has yet, asking
+for the key scopes at the same time — the browser round trip, the second thing
+it can ask. It registers the public key with GitHub as both an authentication
+key and a signing key, because GitHub keeps those in two lists and a key in one
+is not in the other, and writes `user.signingkey`, the two `gpgsign` switches
+and `allowed_signers`.
+Before it can register anything it checks that `gh` holds the two scopes that
+manage keys, `admin:public_key` and `admin:ssh_signing_key`, and refreshes the
+login in the browser if not, which is the third thing it can ask of you, and
+only the first time: a token from an earlier `gh auth login` does not carry
+them, and without them `gh ssh-key list` reports a 404 on stderr and nothing
+on stdout, so the key looks unregistered right before `add` fails — which is
+why the scope check comes before the listing.
+
+Because the switch is not in the versioned file, the repo no longer says
+"commits are signed" on its face; this section and `drift.sh` say it instead.
+`drift.sh` reports a machine where `commit.gpgsign` is not `true`, and closes
+the loop from the other side: it asks GitHub whether the key `user.signingkey`
+names is still registered for signing. A key GitHub has
+forgotten — revoked, or the machine re-enrolled under a new title — signs every
+commit with a signature the web UI marks Unverified, and nothing on the machine
+notices on its own.
+
 ## Why the sandbox is not enabled
 
 `sandbox` is the OS-level layer that does cover Bash subprocesses, so it is the
@@ -300,9 +388,15 @@ where `git add` does nothing and prints no reason.
 ```
 
 Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint),
-syntax for every config format here, the statuslines' behaviour, that the tools
-you have installed are the versions `ci.yml` pins, and that `install.sh` is
-still idempotent.
+syntax for every config format here, that the login agent plist parses and its
+`Label` matches its filename, the statuslines' behaviour, that the tools you
+have installed are the versions `ci.yml` pins, that `install.sh` is still
+idempotent, that its signing step generates and registers the key once and
+only once (against a stub `ssh-keygen`, `ssh-add` and `gh`), that its login
+agent step bootstraps once and kickstarts every run (against a stub
+`launchctl`), that `macos/defaults.txt` is well-formed, and that
+`macos/defaults.sh` writes exactly the differing keys and nothing when the
+machine already matches (against a stub `defaults`).
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
@@ -381,6 +475,61 @@ here rather than turning into a CI failure nobody can explain later. When it
 does fail, either upgrade the pin and its hash in `.github/tool-checksums.txt`,
 or pin your local tool back.
 
+## macOS defaults
+
+```bash
+macos/defaults.sh apply|check
+```
+
+One parser reads `macos/defaults.txt` for both verbs. `install.sh` calls
+`apply`, `drift.sh` calls `check`, and if each had its own copy of the parsing
+the two would eventually disagree about what a line means the first time one
+of them was edited without the other.
+
+Two other shapes were considered and rejected. The one every `macos.sh`
+template on the internet uses — a script of bare `defaults write` lines — was
+rejected because it cannot be verified: nothing can read it back without
+parsing shell, which is exactly the job `check` has to do. `defaults import`
+of a plist per domain was the other candidate, rejected because it replaces
+the whole domain, taking with it every key the owning app wrote for itself —
+Finder's window positions and VS Code's own settings alongside the handful of
+keys this repo actually wants to declare.
+
+The manifest keeps to **only non-defaults**: only values that differ from
+Apple's own. Same argument as `node = "lts"` rather than a number — a default
+written down is frozen, and the day Apple ships a better one this file would
+put the old one back, with nobody knowing why.
+
+Deliberately absent, and why:
+
+- **Any key a Jamf profile sets on this machine** — screen lock, updates,
+  firewall, FileVault, Siri. The rule is per key, not per domain: a profile
+  can manage two keys of a domain and leave the rest alone, and it does —
+  `com.apple.controlcenter` is managed for its Bluetooth and Wi-Fi menu items
+  while `BatteryShowPercentage`, declared here in the same domain, is not.
+  `ls "/Library/Managed Preferences/$USER"` lists the managed domains and
+  `plutil -p` on one of them lists the keys. A managed key written here would
+  be silently overruled while reading as if it applied: `defaults` reads and
+  writes only the user layer, and the managed one sits above it, invisible to
+  `defaults read` and consulted first by the app.
+- **`sudo`.** Nothing this manifest touches needs it.
+- **Killing `cfprefsd`.** `defaults` already goes through it; killing it is
+  the folk remedy that produces the stale-preferences bug it is supposed to
+  cure.
+- **`LSQuarantine`.** Turning it off system-wide silences the "downloaded from
+  the internet, are you sure?" prompt for every app forever — a security
+  trade this repo does not make on your behalf.
+- **Press-and-hold, globally.** The keyboard layout here is ABC and Spanish
+  accents are typed through press-and-hold; turning it off everywhere to fix
+  key repeat would break accents to get there. It is turned off per app
+  instead, for VS Code and Ghostty, where holding a key is meant to repeat it
+  — see the manifest.
+
+`~/Library` is unhidden on every `apply` (`chflags nohidden ~/Library`) but
+has no line in the manifest: it is a Finder flag, not a `defaults` key, so the
+parser has no field that could hold it. It runs unconditionally, the same way
+`mkdir -p ~/Screenshots` does — both are no-ops once already done.
+
 ## Finding drift
 
 ```bash
@@ -429,6 +578,19 @@ it, so removing that interpreter leaves the command on `PATH` and dead: still
 installed, still declared, still the right version, `bad interpreter` when you
 type it. It found exactly that on the first run — a tool built against an
 Anaconda python that is no longer on this machine.
+
+It also asks `macos/defaults.sh check` whether `macos/defaults.txt` matches
+this machine — the same parser `install.sh` applies with, so the comparison
+cannot disagree with what applying it would do.
+
+And it asks whether every repository under `~/Development` has a remote.
+Time Machine is banned by policy on this machine, so a remote is not a
+convenience but the only backup a repository has — a repository with no
+remote at all exists on this disk and nowhere else. Only the top level of
+`~/Development` is checked: a project is a directory directly under it with
+a `.git` (or, for a worktree, a file pointing at one), and whatever
+repositories that project nests inside itself are its own business, not
+this script's.
 
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,
