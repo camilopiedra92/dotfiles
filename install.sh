@@ -236,10 +236,16 @@ if ! grep -qF "'admin:public_key'" <<< "$GH_SCOPES" ||
 fi
 # GitHub keeps authentication and signing keys in separate lists, and a key
 # in one is not in the other. Both are added, each only if missing. One
-# listing covers both: each row carries the key and its type, so matching
-# on the pair is what tells "registered as the other kind" from "registered".
+# listing covers both, tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key
+# column holds `ssh-ed25519 <base64> [comment]`, so the base64 is matched
+# inside it, and the type is compared whole in its own column rather than
+# searched for on the row, where a title like "signing key" would match too.
+registered() {
+  gh ssh-key list 2> /dev/null |
+    awk -F'\t' -v k="$PUBKEY" -v t="$1" '$2 ~ k && $5 == t { found = 1 } END { exit !found }'
+}
 for type in authentication signing; do
-  if ! gh ssh-key list 2> /dev/null | grep -F "$PUBKEY" | grep -qw "$type"; then
+  if ! registered "$type"; then
     log "Registering the key with GitHub for $type"
     gh ssh-key add "$SSH_KEY.pub" --type "$type" --title "$(scutil --get LocalHostName)"
   fi

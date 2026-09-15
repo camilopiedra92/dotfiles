@@ -1082,9 +1082,11 @@ echo "$*" >> "$CALLS"
 for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); f=${!j}; }; done
 echo private > "$f"; echo "ssh-ed25519 AAAA t@example.com" > "$f.pub"
 STUB
-  # gh: `ssh-key list` answers from $KNOWN in the real CLI's columns (title,
-  # key, type, added, id), `ssh-key add` appends to it, both only once the
-  # scopes in $SCOPES allow it.
+  # gh: `ssh-key list` answers from $KNOWN in the real CLI's tab-separated
+  # columns (TITLE, KEY, ADDED, ID, TYPE), `ssh-key add` appends to it, both
+  # only once the scopes in $SCOPES allow it. The title carries the other
+  # type's name on purpose: a match that searches the row instead of the
+  # type column would find it and never register the second type.
   cat > "$tmp/bin/gh" << 'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$CALLS"
@@ -1097,7 +1099,8 @@ case "$1 $2" in
     grep -qF admin:ssh_signing_key "$SCOPES" || { echo "HTTP 404" >&2; exit 1; }
     type=authentication
     for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
-    printf 'mac\t%s\t%s\t2026-09-15T00:00:00Z\t1\n' "$(cat "$3")" "$type" >> "$KNOWN" ;;
+    [ "$type" = signing ] && title="authentication key of mac" || title="signing key of mac"
+    printf '%s\t%s\t2026-09-15T00:00:00Z\t1\t%s\n' "$title" "$(cat "$3")" "$type" >> "$KNOWN" ;;
 esac
 STUB
   chmod +x "$tmp/bin/ssh-keygen" "$tmp/bin/gh"

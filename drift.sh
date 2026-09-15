@@ -204,9 +204,12 @@ signing_key_known() {
     return 0
   }
   pub=$(awk '{ print $2 }' "$file")
-  # Each row of the listing carries the key and its type. Matching the pair
-  # is what tells "registered, but only for authentication" from registered.
-  gh ssh-key list 2> /dev/null | grep -F "$pub" | grep -qw signing ||
+  # The listing is tab-separated: TITLE, KEY, ADDED, ID, TYPE. The type is
+  # compared in its own column, as install.sh does, so a key registered for
+  # authentication only is reported and a title containing "signing" is not
+  # mistaken for one.
+  gh ssh-key list 2> /dev/null |
+    awk -F'\t' -v k="$pub" '$2 ~ k && $5 == "signing" { found = 1 } END { exit !found }' ||
     echo "GitHub has no signing key matching $key"
 }
 report "the signing key is registered with GitHub" \
