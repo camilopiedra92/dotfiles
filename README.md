@@ -394,7 +394,7 @@ One parser reads `macos/defaults.txt` for both verbs. `install.sh` calls
 the two would eventually disagree about what a line means the first time one
 of them was edited without the other.
 
-Two other shapes were considered and rejected. The one every "macos.sh"
+Two other shapes were considered and rejected. The one every `macos.sh`
 template on the internet uses — a script of bare `defaults write` lines — was
 rejected because it cannot be verified: nothing can read it back without
 parsing shell, which is exactly the job `check` has to do. `defaults import`
@@ -404,7 +404,7 @@ Finder's window positions and VS Code's own settings alongside the handful of
 keys this repo actually wants to declare.
 
 The manifest keeps to **only non-defaults**: only values that differ from
-Apple's own. Same argument as `node = "lts"` in `mise/config.toml` — a default
+Apple's own. Same argument as `node = "lts"` rather than a number — a default
 written down is frozen, and the day Apple ships a better one this file would
 put the old one back, with nobody knowing why.
 

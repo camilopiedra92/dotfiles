@@ -881,9 +881,25 @@ printf '\n%smacOS%s\n' "$DIM" "$OFF"
 # does: System Settings is a UI that writes the same keys, and an OS upgrade
 # occasionally resets one. Same script, other verb, so the comparison cannot
 # disagree with the application.
+#
+# `check`'s own contract is 0 (matches) or 1 (differences, printed to stdout).
+# Anything else -- a bad MANIFEST override, a missing file, a future usage
+# error -- is a broken checker, not a clean machine, and its message goes to
+# stderr where a bare `$(...)` would drop it. Surfaced as drift rather than
+# read as "ok", the same way a missing `code` binary is reported above rather
+# than skipped.
+macos_drift() {
+  local out rc
+  out=$(./macos/defaults.sh check 2>&1)
+  rc=$?
+  case "$rc" in
+    0 | 1) printf '%s\n' "$out" ;;
+    *) printf 'macos/defaults.sh check failed (exit %s): %s\n' "$rc" "$out" ;;
+  esac
+}
 report "macos/defaults.txt matches this machine" \
   "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
-  "$(./macos/defaults.sh check)"
+  "$(macos_drift)"
 
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
