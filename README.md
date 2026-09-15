@@ -534,14 +534,16 @@ A domain written `host:NSGlobalDomain` instead of `NSGlobalDomain` is read
 and written through `defaults -currentHost`, which reaches
 `~/Library/Preferences/ByHost/.GlobalPreferences.<uuid>.plist` instead of the
 domain's usual plist — macOS keeps some preferences, trackpad and mouse among
-them, per host rather than per user. The manifest's trackpad keys were wrong
-for a while because of this: every `macos.sh` template on the internet writes
-`com.apple.AppleMultitouchTrackpad` and
+them, per host rather than per user. The manifest's trackpad keys told only
+part of the story for a while: every `macos.sh` template on the internet
+writes `com.apple.AppleMultitouchTrackpad` and
 `com.apple.driver.AppleBluetoothMultitouch.trackpad`, `check` reported those
-as applied, and tap-to-click still did not work — nothing on this machine
-reads them. The way to find the key that actually does something is to
-toggle the setting in System Settings and diff what changed under
-`~/Library/Preferences`, not to trust a template.
+as applied, and tap-to-click still did not work. Toggling the setting in
+System Settings and diffing every plist under `~/Library/Preferences` —
+`ByHost/` included, not only the domain a template writes — showed System
+Settings writes to more than one place, so read-back on a single domain
+cannot say by itself which one the driver actually consults; see the
+Trackpad section of the manifest for where that stands.
 
 ## Finding drift
 

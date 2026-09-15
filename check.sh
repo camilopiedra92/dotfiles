@@ -1172,9 +1172,14 @@ macos_manifest() {
     echo "macos/defaults.txt missing"
     return 1
   }
+  # `host:` is the one prefix defaults.sh interprets (it strips it and adds
+  # `-currentHost`), so it is the one place a typo'd or unknown prefix has to
+  # be refused here -- otherwise `hots:NSGlobalDomain` reads as a plain
+  # domain and `defaults` would happily create a plist literally named that.
   bad=$(sed 's/#.*//' macos/defaults.txt | awk '
     NF == 0 { next }
     NF < 4 { print NR": fewer than four fields"; next }
+    $1 ~ /:/ && $1 !~ /^host:./ { print NR": unknown domain prefix "$1; next }
     NF > 4 && $3 != "string" { print NR": extra fields"; next }
     $3 !~ /^(bool|int|float|string)$/ { print NR": unknown type "$3; next }
     $3 == "bool" && $4 !~ /^(true|false)$/ { print NR": bool must be true or false" }
