@@ -47,6 +47,12 @@ instead of picking the likely answer. When you add a check, break it on purpose
 before trusting it: a check nobody has watched fail is a check nobody should
 rely on.
 
+That applies to comments and documentation, not only to code. A comment or a
+README line that describes behaviour is a claim: write what was observed, when
+and how it was observed, and say "not tested" or "pending" when it was not —
+those are valid states, and a plan's expectation written as a finding is not.
+The reader cannot tell the two apart, and will build on either.
+
 The one who reviews cannot be the one who wrote. Re-reading your own diff in the
 context that produced it finds the typos and none of the assumptions; what is
 needed is a different context, not a particular tool.
