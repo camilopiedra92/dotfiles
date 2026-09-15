@@ -1453,10 +1453,24 @@ printf '\n%sGit guard%s\n' "$DIM" "$OFF"
 # the first run of these tests did, and only an inverted stub revealed it.
 GUARD=$PWD/claude/git-guard.sh
 
+# Runs a command without the variables git exports to a hook. The guard tests
+# build a throwaway repository and ask git about it, and this script is run by
+# the pre-commit hook: git hands that hook GIT_INDEX_FILE, and for `git commit
+# -a` it is an absolute path to this repository's index lock. Inherited, it
+# wins over the temp directory's own .git, so a clean temp tree reads as dirty
+# and the guard blocks. Plain `git commit` passes a relative `.git/index`,
+# which resolves inside the temp directory by accident -- which is how twenty
+# commits went through before the first `-a` failed. The checks must mean the
+# same thing run by hand, by the hook and in CI, so every git call that is
+# about the throwaway repository goes through here.
+hookless() {
+  env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_PREFIX "$@"
+}
+
 guard_verdict() {
   local payload rc
   payload=$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))' "$1")
-  printf '%s' "$payload" | "$GUARD" > /dev/null 2>&1
+  printf '%s' "$payload" | hookless "$GUARD" > /dev/null 2>&1
   rc=$?
   if [ "$rc" -eq 2 ]; then printf 'blocked'; else printf 'allowed'; fi
 }
@@ -1500,8 +1514,8 @@ check "guard verdicts match the table" guard_decisions
 guard_reset_clean_tree() {
   local dir out
   dir=$(mktemp -d)
-  git -C "$dir" init -q
-  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  hookless git -C "$dir" init -q
+  hookless git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
   out=$(cd "$dir" && guard_verdict 'git reset --hard')
   rm -r "$dir"
   [ "$out" = allowed ] || {
@@ -1511,13 +1525,26 @@ guard_reset_clean_tree() {
 }
 check "reset --hard is allowed when nothing would be lost" guard_reset_clean_tree
 
+# The same verdict with the `git commit -a` hook environment in place. Set at
+# the call, which is what the hook does to this whole script: without hookless
+# the temp repository is judged through this repository's index, and a clean
+# tree reads as dirty.
+guard_reset_clean_tree_under_hook() {
+  local out
+  out=$(GIT_INDEX_FILE="$PWD/.git/index" GIT_DIR="$PWD/.git" guard_reset_clean_tree 2>&1) || {
+    echo "under a hook's git environment: $out"
+    return 1
+  }
+}
+check "the guard tests ignore the git environment a hook exports" guard_reset_clean_tree_under_hook
+
 guard_reset_dirty_tree() {
   local dir out
   dir=$(mktemp -d)
-  git -C "$dir" init -q
-  git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
+  hookless git -C "$dir" init -q
+  hookless git -C "$dir" -c user.email=t@t -c user.name=t commit -q --allow-empty -m init
   echo change > "$dir/tracked.txt"
-  git -C "$dir" add tracked.txt
+  hookless git -C "$dir" add tracked.txt
   out=$(cd "$dir" && guard_verdict 'git reset --hard')
   rm -r "$dir"
   [ "$out" = blocked ] || {
