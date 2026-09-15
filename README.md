@@ -542,8 +542,12 @@ as applied, and tap-to-click still did not work. Toggling the setting in
 System Settings and diffing every plist under `~/Library/Preferences` —
 `ByHost/` included, not only the domain a template writes — showed System
 Settings writes to more than one place, so read-back on a single domain
-cannot say by itself which one the driver actually consults; see the
-Trackpad section of the manifest for where that stands.
+could not say by itself which one the driver actually consults. A
+behavioural test settled it: with the template domains' `Clicking` keys
+forced to 0 and the per-host key left at 1, tapping still clicked and
+System Settings still showed tap-to-click on — the driver reads the
+per-host key, and the template keys were dead. See the Trackpad section of
+the manifest.
 
 ## Finding drift
 
