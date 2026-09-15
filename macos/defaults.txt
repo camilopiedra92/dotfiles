@@ -25,17 +25,16 @@
 # invisible to `defaults read` and consulted first by the app. Checked on
 # this machine: the managed Bluetooth key reads as "does not exist".
 #
-# Verified by read-back only, except tap-to-click: on macOS 26.6.2 on
+# Verified by read-back only, except the trackpad: on macOS 26.6.2 on
 # 2026-09-15, `defaults.sh check` reports every key at its declared value,
-# and tap-to-click is also UI-verified -- toggling it in System Settings and
-# diffing preference files showed it lands in the per-host global domain
-# below, not the two Trackpad domains every "macos.sh" template writes. The
-# same pass for three-finger drag -- toggling it in System Settings to find
-# its real key -- is still pending; see the Trackpad section. A key that
-# turns out not to take effect is to be removed and named here, not patched
-# with a second key copied from a template; those carry keys that stopped
-# doing anything releases ago, and a line that reads back correctly while
-# changing nothing is what this file exists to not have.
+# and tap-to-click and three-finger drag are also UI-verified -- toggling
+# each in System Settings and diffing preference files showed both land in
+# the per-host global domain below, not the two Trackpad domains every
+# "macos.sh" template writes; see the Trackpad section. A key that turns out
+# not to take effect is to be removed and named here, not patched with a
+# second key copied from a template; those carry keys that stopped doing
+# anything releases ago, and a line that reads back correctly while changing
+# nothing is what this file exists to not have.
 
 # ── Finder ──────────────────────────────────────────────────────────────────
 
@@ -115,10 +114,18 @@ NSGlobalDomain          AppleKeyboardUIMode             int     2
 # machine, which is also why the key lives in the ByHost file rather than in
 # NSGlobalDomain's own plist.
 host:NSGlobalDomain    com.apple.mouse.tapBehavior    int    1
-# Three-finger drag: pending the same proof. Toggling it in System Settings
-# and diffing ByHost would be expected to show com.apple.trackpad.three-
-# FingerDragGesture (currently 0 on this machine), but that toggle has not
-# been done yet, so the key is not declared here without it.
+# Three-finger drag. UI-verified 2026-09-15: toggled on in System Settings ->
+# Accessibility -> Pointer Control -> Trackpad Options, then read back from
+# ByHost .GlobalPreferences (its mtime moved). The UI writes all three keys
+# below, not just the drag one -- once three fingers mean drag, the
+# three-finger swipe gestures move to four fingers, so it turns the swipe
+# keys off rather than leaving them pointing at a gesture that no longer
+# exists. com.apple.trackpad.fourFinger{Horiz,Vert}SwipeGesture were already
+# 2, Apple's own default, before and after the toggle, so they are not
+# declared here.
+host:NSGlobalDomain    com.apple.trackpad.threeFingerDragGesture        int   1
+host:NSGlobalDomain    com.apple.trackpad.threeFingerHorizSwipeGesture  int   0
+host:NSGlobalDomain    com.apple.trackpad.threeFingerVertSwipeGesture   int   0
 
 # ── Dialogs and documents ───────────────────────────────────────────────────
 
