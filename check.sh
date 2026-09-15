@@ -1525,13 +1525,28 @@ guard_reset_clean_tree() {
 }
 check "reset --hard is allowed when nothing would be lost" guard_reset_clean_tree
 
-# The same verdict with the `git commit -a` hook environment in place. Set at
-# the call, which is what the hook does to this whole script: without hookless
-# the temp repository is judged through this repository's index, and a clean
-# tree reads as dirty.
+# The same verdict with the `git commit -a` hook environment in place: an
+# absolute GIT_INDEX_FILE set at the call, which is what the hook does to this
+# whole script. Only that variable -- git does not export GIT_DIR to a hook,
+# measured with a hook that printed its environment -- and the index belongs
+# to a decoy repository built here, never to this one. The first version of
+# this check set GIT_DIR to this repository's own .git, and while it was red
+# the fixture's `commit --allow-empty -m init` landed three empty commits on
+# two real branches. A test that mutates the thing it checks when it fails is
+# worse than no test. The decoy tracks one file so that, judged through its
+# index, the temp repository's empty tree reads as a deletion: without
+# hookless the guard sees that and blocks.
 guard_reset_clean_tree_under_hook() {
-  local out
-  out=$(GIT_INDEX_FILE="$PWD/.git/index" GIT_DIR="$PWD/.git" guard_reset_clean_tree 2>&1) || {
+  local decoy out rc
+  decoy=$(mktemp -d)
+  hookless git -C "$decoy" init -q
+  echo x > "$decoy/tracked.txt"
+  hookless git -C "$decoy" add tracked.txt
+  hookless git -C "$decoy" -c user.email=t@t -c user.name=t commit -q -m init
+  out=$(GIT_INDEX_FILE="$decoy/.git/index" guard_reset_clean_tree 2>&1)
+  rc=$?
+  rm -r "$decoy"
+  [ "$rc" -eq 0 ] || {
     echo "under a hook's git environment: $out"
     return 1
   }
