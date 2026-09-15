@@ -10,7 +10,9 @@ Include config.local
 
 Host *
   # Load keys into the agent on first use and remember the passphrase in
-  # the Keychain, so it is typed once per machine and never per push.
+  # the Keychain, so it is typed once per machine and never per push. Both
+  # act only when ssh runs, and git here goes over HTTPS, so for signing
+  # the agent is filled at login instead: see launchd/ and install.sh 4c.
   AddKeysToAgent yes
   UseKeychain yes
   IdentityFile ~/.ssh/id_ed25519

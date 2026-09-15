@@ -51,6 +51,7 @@ ghostty/config         terminal
 git/config             git config (without identity)
 git/ignore             global gitignore
 ssh/config             ssh client config: agent + Keychain, and where the per-machine hosts go
+launchd/               login agent that loads the signing key into ssh-agent (see Commit signing)
 mise/config.toml       global runtime versions
 uv-tools.txt           CLI tools installed with `uv tool`, each pinned to a reference
 vscode/settings.json   editor settings
@@ -89,6 +90,7 @@ they are usually installed to:
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against) |
 | `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
+| `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
 | `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
@@ -252,7 +254,8 @@ The pieces are split by what they are, not by tool:
   the current identity and key, so it can never hold a stale line.
 - **`ssh/config` makes the key usable without typing.** `AddKeysToAgent` loads
   it into the agent on first use and `UseKeychain` stores the passphrase in the
-  Keychain, so it is typed once per machine and never per push or per commit.
+  Keychain, so it is typed once per machine and never per push — and never
+  per commit either, once the login agent below has run.
   Its `Include config.local` comes *first* because ssh takes the first value it
   finds for an option: a host that needs its own user gets a block in
   `~/.ssh/config.local`, on the machine, and its `User` wins over `Host *`
@@ -261,22 +264,37 @@ The pieces are split by what they are, not by tool:
   and the shared one is still offered after it. Nothing in `config.local` can
   remove it, because `Host *` matches every host; a host that must never see
   the shared key needs the versioned pattern to exclude it (`Host * !name`).
+- **`launchd/com.piedrac.ssh-add-keychain.plist` refills the agent at login.**
+  The two options above act only when `ssh` runs, and here it never does: git
+  talks to GitHub over HTTPS, and signing goes through `ssh-keygen -Y sign`,
+  which reads no `ssh_config` and asks only the agent. After a reboot the agent
+  is empty, and without this the first commit of the day would fail until
+  something loaded the key. The agent runs `ssh-add --apple-load-keychain` once
+  per login, which reads the passphrase from the Keychain; `install.sh` links
+  it into `~/Library/LaunchAgents/`, bootstraps it once, and kickstarts it so
+  the current session gets the key without a reboot. It is a launchd agent and
+  not a line in a shell profile because a profile runs per shell and only for
+  shells. `check.sh` lints the plist and holds its `Label` to its filename,
+  the mismatch that makes an agent silently never load.
 
-`install.sh` does the rest, once, and does nothing the second time. It generates
-`~/.ssh/id_ed25519` if there is none — the passphrase prompt is the first of
-the three things this step can ask of you — logs `gh` in if nothing has yet,
-asking for the key scopes at the same time, registers the public key with
-GitHub as both an
-authentication key and a signing key, because GitHub keeps those in two lists
-and a key in one is not in the other, and writes `user.signingkey`, the two
-`gpgsign` switches and `allowed_signers`. Before it can register anything it
-checks that `gh` holds
-the two scopes that manage keys, `admin:public_key` and `admin:ssh_signing_key`,
-and refreshes the login in the browser if not, which is the third thing it
-can ask of you, and only the first time: a token from an earlier `gh auth login`
-issues does not carry them, and without them `gh ssh-key list` reports a 404
-on stderr and an empty list on stdout, exit 0 — which a script reads as "not
-registered" right before its `add` fails.
+`install.sh` does the rest, once, and does nothing the second time. It
+generates `~/.ssh/id_ed25519` if there is none — the passphrase is the first
+of the three things this step can ask of you: `ssh-keygen` asks it to set it,
+and `ssh-add --apple-use-keychain` asks it once more to store it in the
+Keychain, which is the step `ssh-keygen` does not do and `ssh` would only do
+on a connection that never happens. It logs `gh` in if nothing has yet, asking
+for the key scopes at the same time — the browser round trip, the second thing
+it can ask. It registers the public key with GitHub as both an authentication
+key and a signing key, because GitHub keeps those in two lists and a key in one
+is not in the other, and writes `user.signingkey`, the two `gpgsign` switches
+and `allowed_signers`.
+Before it can register anything it checks that `gh` holds the two scopes that
+manage keys, `admin:public_key` and `admin:ssh_signing_key`, and refreshes the
+login in the browser if not, which is the third thing it can ask of you, and
+only the first time: a token from an earlier `gh auth login` does not carry
+them, and without them `gh ssh-key list` reports a 404 on stderr and nothing
+on stdout, so the key looks unregistered right before `add` fails — which is
+why the scope check comes before the listing.
 
 Because the switch is not in the versioned file, the repo no longer says
 "commits are signed" on its face; this section and `drift.sh` say it instead.
@@ -370,9 +388,15 @@ where `git add` does nothing and prints no reason.
 ```
 
 Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint),
-syntax for every config format here, the statuslines' behaviour, that the tools
-you have installed are the versions `ci.yml` pins, and that `install.sh` is
-still idempotent.
+syntax for every config format here, that the login agent plist parses and its
+`Label` matches its filename, the statuslines' behaviour, that the tools you
+have installed are the versions `ci.yml` pins, that `install.sh` is still
+idempotent, that its signing step generates and registers the key once and
+only once (against a stub `ssh-keygen`, `ssh-add` and `gh`), that its login
+agent step bootstraps once and kickstarts every run (against a stub
+`launchctl`), that `macos/defaults.txt` is well-formed, and that
+`macos/defaults.sh` writes exactly the differing keys and nothing when the
+machine already matches (against a stub `defaults`).
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
@@ -478,9 +502,16 @@ put the old one back, with nobody knowing why.
 
 Deliberately absent, and why:
 
-- **Anything in a domain Jamf manages on this machine** — screen lock,
-  updates, firewall, FileVault, Siri. A line here for any of them would be
-  silently overruled while reading as if it applied.
+- **Any key a Jamf profile sets on this machine** — screen lock, updates,
+  firewall, FileVault, Siri. The rule is per key, not per domain: a profile
+  can manage two keys of a domain and leave the rest alone, and it does —
+  `com.apple.controlcenter` is managed for its Bluetooth and Wi-Fi menu items
+  while `BatteryShowPercentage`, declared here in the same domain, is not.
+  `ls "/Library/Managed Preferences/$USER"` lists the managed domains and
+  `plutil -p` on one of them lists the keys. A managed key written here would
+  be silently overruled while reading as if it applied: `defaults` reads and
+  writes only the user layer, and the managed one sits above it, invisible to
+  `defaults read` and consulted first by the app.
 - **`sudo`.** Nothing this manifest touches needs it.
 - **Killing `cfprefsd`.** `defaults` already goes through it; killing it is
   the folk remedy that produces the stale-preferences bug it is supposed to

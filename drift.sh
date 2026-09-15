@@ -196,8 +196,8 @@ signing_key_known() {
     echo "user.signingkey points at a missing file: $key"
     return 0
   }
-  # Logged out, or logged in without this scope, `gh ssh-key list` answers
-  # an error on stderr and an empty list on stdout, and empty would read as
+  # Logged out, or logged in without this scope, `gh ssh-key list` prints a
+  # 404 to stderr and nothing to stdout, and an empty listing would read as
   # "forgotten". Each is reported as the cause rather than as that symptom,
   # and told apart because the fixes differ.
   local status
@@ -228,8 +228,8 @@ signing_key_known() {
     awk -F'\t' -v k="$pub" 'index($2, k) > 0 && $5 == "signing" { found = 1 } END { exit !found }' ||
     echo "GitHub has no signing key matching $key"
 }
-report "the signing key is registered with GitHub" \
-  "./install.sh" \
+report "commits here are signed with a key GitHub knows" \
+  "./install.sh writes the switch and the key, and registers it" \
   "$(signing_key_known)"
 
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"

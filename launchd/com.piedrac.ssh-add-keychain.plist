@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Linked to ~/Library/LaunchAgents by install.sh, which also bootstraps it
+(step 4c). Loads the SSH key into the agent once per login, with the
+passphrase the Keychain holds.
+
+Why it exists: git here talks to GitHub over HTTPS, so ssh itself is never
+run, and it is ssh that AddKeysToAgent/UseKeychain in ssh/config act
+through. Signing goes through `ssh-keygen -Y sign`, which reads no
+ssh_config and asks only the agent -- and after a reboot the agent holds
+nothing, so the first commit of the day fails until something loads the
+key. This is that something, run by launchd at login rather than from a
+shell profile: a profile runs once per shell and only for shells, and would
+put the key back on every new tab.
+
+RunAtLoad and nothing else: no KeepAlive, because the program exits the
+moment the key is in the agent and launchd would otherwise restart it
+forever; no StartInterval, because the agent forgets the key only at
+logout, and a login is exactly when launchd runs this. Nothing is logged:
+`launchctl print gui/$(id -u)/com.piedrac.ssh-add-keychain` shows the last
+exit status, and a non-zero one has a single cause worth knowing -- the
+passphrase is not in the Keychain, which the next `ssh` fixes.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.piedrac.ssh-add-keychain</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/ssh-add</string>
+		<string>--apple-load-keychain</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+</dict>
+</plist>

@@ -76,6 +76,11 @@ link "$DOTFILES/git/ignore" "$HOME/.config/git/ignore"
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 link "$DOTFILES/ssh/config" "$HOME/.ssh/config"
+# Linked here, loaded in 4c. launchd only reads this directory, and a link
+# is what keeps the file's edits reaching it without a second copy to
+# forget. A symlink is what `brew services` puts here too, so launchd
+# following one is not something this repo is first to rely on.
+link "$DOTFILES/launchd/com.piedrac.ssh-add-keychain.plist" "$HOME/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist"
 link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
 link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
@@ -225,6 +230,14 @@ if [ ! -f "$SSH_KEY" ]; then
   log "Generating your SSH key (choose a passphrase; the Keychain will remember it)"
   ssh-keygen -t ed25519 -C "$(git config --file "$GIT_IDENTITY" user.email)" -f "$SSH_KEY"
 fi
+# ssh-keygen stores nothing in the Keychain; ssh does, through UseKeychain,
+# the first time it loads the key -- and with HTTPS remotes ssh is never
+# run, so nothing would ever store it and the login agent of 4c would have
+# nothing to load. This is the one call that does both: the key goes into
+# the agent now and the passphrase into the Keychain, asked for once and
+# only while the Keychain does not have it. Silent otherwise, which is what
+# lets it run every time rather than only next to a fresh key.
+ssh-add --apple-use-keychain "$SSH_KEY"
 PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
 # An empty or truncated .pub -- a copy that went wrong -- must stop here: the
 # lookup below is a substring test, an empty needle is found in every row,
@@ -258,10 +271,11 @@ if ! gh auth status > /dev/null 2>&1; then
     -s admin:public_key -s admin:ssh_signing_key
 fi
 # A token from an earlier login cannot manage keys. Without these two scopes
-# `gh ssh-key list` prints a 404 to stderr and nothing to stdout, exit 0 --
-# an empty list that reads as "not registered" -- and `add` fails. So they
-# are asked for first, in the browser, and only while missing: the third
-# interactive moment of this step, and one a second run never sees.
+# `gh ssh-key list` prints a 404 per list to stderr and nothing to stdout,
+# so the key looks unregistered, and `add` fails. So they are checked for
+# first, before anything is listed, and asked for in the browser only while
+# missing: the third interactive moment of this step, and one a second run
+# never sees.
 GH_SCOPES=$(gh auth status 2>&1) || {
   printf '%s\n' "$GH_SCOPES"
   exit 1
@@ -302,6 +316,32 @@ git config --file "$GIT_IDENTITY" tag.gpgsign true
 # identity and key so it can never hold a stale line.
 printf '%s %s\n' "$(git config --file "$GIT_IDENTITY" user.email)" "$(cat "$SSH_KEY.pub")" \
   > "$HOME/.config/git/allowed_signers"
+
+# --- 4c. Load the signing key at login ---
+# After a reboot the agent is empty, and nothing here refills it: git talks
+# to GitHub over HTTPS, so ssh -- the only thing AddKeysToAgent and
+# UseKeychain act through -- is never run, and `ssh-keygen -Y sign` reads no
+# ssh_config. The first commit of the day would fail. The agent linked in
+# step 3 runs `ssh-add --apple-load-keychain` at every login; see the plist
+# for why launchd and not a shell profile.
+#
+# `bootstrap` and not `load`: load is the legacy verb, picks the domain by
+# who runs it, and reports nothing useful when it fails; bootstrap takes the
+# domain by name -- gui/<uid> is this login session -- and its error names
+# the cause. But it is not idempotent: bootstrapping a service that is
+# already loaded is an error, and under set -e that would end the script
+# here on every run after the first. `print` is how launchd itself says
+# whether the service is loaded, exit 0 only when it is, so it is the test.
+# The label is what launchd knows the service by, hence the plist's Label
+# has to be its filename without .plist; check.sh holds the two together.
+#
+# kickstart runs it now, so this session gets the key without a reboot; -k
+# because a plist edited since the last login is only read again by a
+# service that is restarted, not one already running.
+log "Loading the signing key into the agent at login"
+launchctl print "gui/$(id -u)/com.piedrac.ssh-add-keychain" > /dev/null 2>&1 ||
+  launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist"
+launchctl kickstart -k "gui/$(id -u)/com.piedrac.ssh-add-keychain"
 
 # --- 5. Runtimes ---
 log "Installing runtimes with mise"

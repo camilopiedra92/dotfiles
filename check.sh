@@ -334,6 +334,27 @@ else
   skip "ghostty" "brew install --cask ghostty"
 fi
 
+# launchd reads the agent plist at login and reports nothing to anyone: a
+# file it cannot parse is skipped, and one whose Label does not match its
+# filename loads under one name and is looked up under the other, so
+# install.sh's `launchctl print` never finds it and re-bootstraps on every
+# run. Both are silent on the machine and loud here.
+launchd_plist() {
+  local plist=launchd/com.piedrac.ssh-add-keychain.plist label want
+  [ -f "$plist" ] || {
+    echo "$plist is missing"
+    return 1
+  }
+  plutil -lint -s "$plist" || return 1
+  label=$(plutil -extract Label raw "$plist") || return 1
+  want=$(basename "$plist" .plist)
+  [ "$label" = "$want" ] || {
+    echo "$plist: Label is $label, the filename says $want"
+    return 1
+  }
+}
+check "launchd agent plist parses and its label matches its filename" launchd_plist
+
 # Nerd Font glyphs need three files to agree: the Brewfile installs the font,
 # ghostty/config asks for it, and vscode/settings.json asks for the same one in
 # two separate keys. Every one of them is valid in isolation -- VS Code
@@ -533,6 +554,11 @@ install_is_idempotent() {
       return 1
     }
 
+  # A ~/.ssh that already exists, at the mode a plain mkdir gives it, is the
+  # case the chmod in step 3 is there for; without this the fixture would
+  # only ever prove the mode of a directory the step created itself.
+  mkdir -p "$tmp/home"
+  mkdir -m 755 "$tmp/home/.ssh"
   HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
   HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
 
@@ -598,7 +624,13 @@ install_is_idempotent() {
     return 1
   }
   [ "$(stat -f %Lp "$tmp/home/.ssh")" = 700 ] || {
-    echo ".ssh was created with mode $(stat -f %Lp "$tmp/home/.ssh"), not 700"
+    echo ".ssh is mode $(stat -f %Lp "$tmp/home/.ssh") after install, not 700"
+    return 1
+  }
+  # launchd reads only this directory, so a plist linked anywhere else is a
+  # plist that never runs.
+  [ -L "$tmp/home/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist" ] || {
+    echo "the login agent plist was not linked into ~/Library/LaunchAgents"
     return 1
   }
 
@@ -762,6 +794,367 @@ if want != got:
 PY
 }
 check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
+
+# Step 8 has the same split as step 7: whether `claude mcp` registers a server
+# is Claude Code's problem, but which servers it is asked to add, remove, or
+# leave alone is decided here, from a comparison against ~/.claude.json. So it
+# runs with HOME pointed at a fixture state file and a `claude` that records
+# its arguments, and the fixture covers each branch of that decision once: a
+# server already registered as declared, one registered differently, one not
+# registered at all, and one registered that the manifest does not name.
+mcp_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 9\./p' install.sh
+  } > "$steps"
+  grep -qF 'claude mcp add-json' "$steps" || {
+    echo "could not extract step 8 from install.sh"
+    return 1
+  }
+  one_step_only "$steps" || return 1
+
+  mkdir -p "$tmp/claude" "$tmp/home" "$tmp/bin"
+  cat > "$tmp/claude/mcp.json" << 'FIXTURE'
+{
+  "mcpServers": {
+    "same":    { "type": "http",  "url": "https://same.invalid/mcp" },
+    "changed": { "type": "http",  "url": "https://changed.invalid/v2" },
+    "missing": { "type": "stdio", "command": "missing-mcp", "args": [] }
+  }
+}
+FIXTURE
+  cat > "$tmp/home/.claude.json" << 'FIXTURE'
+{
+  "mcpServers": {
+    "same":    { "type": "http", "url": "https://same.invalid/mcp" },
+    "changed": { "type": "http", "url": "https://changed.invalid/v1" },
+    "extra":   { "type": "http", "url": "https://extra.invalid/mcp" }
+  },
+  "somethingClaudeWrote": true
+}
+FIXTURE
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/claude"
+  chmod +x "$tmp/bin/claude"
+  : > "$tmp/calls"
+
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+    bash -euo pipefail "$steps" > /dev/null || return 1
+
+  # Order is by name, which is what `jq keys` yields, so the expectation is
+  # stable. `same` and `extra` must produce no call at all.
+  cat > "$tmp/want" << 'WANT'
+mcp remove changed --scope user
+mcp add-json changed {"type":"http","url":"https://changed.invalid/v2"} --scope user
+mcp add-json missing {"type":"stdio","command":"missing-mcp","args":[]} --scope user
+WANT
+  diff -u "$tmp/want" "$tmp/calls" || return 1
+
+  # A state file that does not exist yet -- a machine on its first run -- must
+  # be created rather than tripped over, and every server then added.
+  rm "$tmp/home/.claude.json"
+  : > "$tmp/calls"
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+    bash -euo pipefail "$steps" > /dev/null || return 1
+  [ "$(grep -c 'mcp add-json' "$tmp/calls")" -eq 3 ] || {
+    echo "first run did not add every declared server:"
+    cat "$tmp/calls"
+    return 1
+  }
+  ! grep -q 'mcp remove' "$tmp/calls" || {
+    echo "first run tried to remove from an empty state file"
+    return 1
+  }
+}
+check "install.sh registers the MCP servers the manifest declares" mcp_step
+
+# Step 4b generates a key, registers it with gh and points config.local at it.
+# Each of those has an "already done" branch, and the test is that a second
+# run takes every one of them: a key regenerated is a key GitHub no longer
+# knows, and a signingkey appended twice is a config git refuses to read.
+#
+# The stub `gh` mirrors the two shapes that made the step's first drafts
+# wrong. Logged out, `auth status` exits 1 and the step has to log in, not
+# die with the message captured in a variable. Logged in, the token does not
+# carry the scopes that manage keys, and without them `ssh-key list` prints a
+# 404 to stderr and an empty list to stdout -- which a plain grep reads as
+# "not registered" -- while `add` fails. So the stub is logged in
+# only once `auth login` has been recorded, answers `auth status` from a
+# scope fixture, lists nothing and refuses to add until login or refresh has
+# added the scopes. Both starting points are run twice: logged out must log
+# in exactly once and never refresh (login asks for the scopes); logged in
+# without the scopes must refresh exactly once and never log in.
+signing_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+  mkdir -p "$tmp/bin"
+  # ssh-keygen: create the two files it would, record the call. The key
+  # holds a `++`, which as a regex never matches: the listing lookup has to
+  # be a substring test, and a key like this is one in a hundred real ones.
+  cat > "$tmp/bin/ssh-keygen" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS"
+for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); f=${!j}; }; done
+echo private > "$f"; echo "ssh-ed25519 AAAAC3++NzaC1 t@example.com" > "$f.pub"
+STUB
+  # ssh-add: recorded only. The real one would load the fixture key into
+  # this machine's agent and ask the Keychain for its passphrase.
+  # shellcheck disable=SC2016  # written verbatim, expanded when it runs
+  printf '#!/bin/sh\necho "$*" >> "$CALLS"\n' > "$tmp/bin/ssh-add"
+  # gh: `ssh-key list` answers from $KNOWN in the real CLI's tab-separated
+  # columns (TITLE, KEY, ADDED, ID, TYPE), `ssh-key add` appends to it, both
+  # only once the scopes in $SCOPES allow it. The title carries the other
+  # type's name on purpose: a match that searches the row instead of the
+  # type column would find it and never register the second type.
+  cat > "$tmp/bin/gh" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS"
+# Grants exactly the -s values it was given, so a scope dropped from the
+# step is a scope the stub does not have either. Each key type needs its
+# own: authentication keys admin:public_key, signing keys
+# admin:ssh_signing_key, and a listing shows only the half its scope allows.
+asked() { for ((i = 1; i <= $#; i++)); do [ "${!i}" = -s ] && { j=$((i + 1)); printf ", '%s'" "${!j}"; }; done; true; }
+scoped() { grep -qF "'$1'" "$SCOPES"; }
+scope_for() { [ "$1" = signing ] && echo admin:ssh_signing_key || echo admin:public_key; }
+type=authentication
+for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
+case "$1 $2" in
+  "auth status")
+    [ -f "$LOGIN" ] || { echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1; }
+    printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
+  "auth login") touch "$LOGIN"; { printf "'repo'"; asked "$@"; } > "$SCOPES" ;;
+  "auth refresh") asked "$@" >> "$SCOPES" ;;
+  "ssh-key list")
+    for t in authentication signing; do
+      if scoped "$(scope_for "$t")"; then awk -F'\t' -v t="$t" '$5 == t' "$KNOWN"; else echo "HTTP 404" >&2; fi
+    done ;;
+  "ssh-key add")
+    scoped "$(scope_for "$type")" || { echo "HTTP 404" >&2; exit 1; }
+    [ "$type" = signing ] && title="authentication key of mac" || title="signing key of mac"
+    printf '%s\t%s\t2026-09-15T00:00:00Z\t1\t%s\n' "$title" "$(cat "$3")" "$type" >> "$KNOWN" ;;
+esac
+STUB
+  chmod +x "$tmp/bin/ssh-keygen" "$tmp/bin/gh" "$tmp/bin/ssh-add"
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    # shellcheck disable=SC2016  # same: step 4 defines this and the range starts after it
+    echo 'GIT_IDENTITY="$HOME/.config/git/config.local"'
+    sed -n '/^# --- 4b\. Signing key ---/,/^# --- 4c\./p' install.sh
+  } > "$steps"
+  grep -qF 'ssh-keygen -t ed25519' "$steps" || {
+    echo "could not extract step 4b from install.sh"
+    return 1
+  }
+  one_step_only "$steps" || return 1
+
+  local start home run key
+  for start in logged-out logged-in; do
+    # A fresh HOME per starting point, holding what steps 3 and 4 leave
+    # behind: ~/.ssh exists and the identity is written.
+    home="$tmp/$start/home"
+    mkdir -p "$home/.ssh" "$home/.config/git"
+    printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
+    : > "$tmp/calls"
+    : > "$tmp/known"
+    rm -f "$tmp/login"
+    if [ "$start" = logged-in ]; then
+      touch "$tmp/login"
+      printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
+    else
+      : > "$tmp/scopes"
+    fi
+    for run in 1 2; do
+      HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
+        LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1 || {
+        echo "$start: run $run failed"
+        cat "$tmp/out"
+        return 1
+      }
+    done
+    local logins refreshes
+    logins=$(grep -c '^auth login' "$tmp/calls")
+    refreshes=$(grep -c '^auth refresh' "$tmp/calls")
+    if [ "$start" = logged-out ]; then
+      [ "$logins" -eq 1 ] && [ "$refreshes" -eq 0 ] || {
+        echo "$start: expected one login, asking for the scopes, and no refresh"
+        cat "$tmp/calls"
+        return 1
+      }
+    else
+      [ "$logins" -eq 0 ] && [ "$refreshes" -eq 1 ] || {
+        echo "$start: expected the scopes refreshed once, when missing, and no login"
+        cat "$tmp/calls"
+        return 1
+      }
+    fi
+    [ "$(grep -c '^-t ed25519' "$tmp/calls")" -eq 1 ] || {
+      echo "$start: key generated more than once"
+      cat "$tmp/calls"
+      return 1
+    }
+    # Every run, not only the one that generated the key: the Keychain is
+    # what this call fills, and a key that arrived from elsewhere has the
+    # same empty Keychain behind it.
+    [ "$(grep -c '^--apple-use-keychain ' "$tmp/calls")" -eq 2 ] || {
+      echo "$start: expected the key stored in the Keychain on each run"
+      cat "$tmp/calls"
+      return 1
+    }
+    grep -q '^ssh-key add .*--type authentication' "$tmp/calls" &&
+      grep -q '^ssh-key add .*--type signing' "$tmp/calls" &&
+      [ "$(grep -c '^ssh-key add' "$tmp/calls")" -eq 2 ] || {
+      echo "$start: expected one add per type (authentication + signing), once"
+      cat "$tmp/calls"
+      return 1
+    }
+    [ "$(grep -c signingkey "$home/.config/git/config.local")" -eq 1 ] || {
+      echo "$start: signingkey missing or duplicated"
+      return 1
+    }
+    git config --file "$home/.config/git/config.local" user.signingkey > /dev/null || {
+      echo "$start: config.local no longer parses"
+      return 1
+    }
+    # The switch travels with the key (git/config explains why), so it has to
+    # come out of the same file, once, and read true.
+    [ "$(grep -c gpgsign "$home/.config/git/config.local")" -eq 2 ] || {
+      echo "$start: expected exactly one gpgsign line per section in config.local"
+      cat "$home/.config/git/config.local"
+      return 1
+    }
+    for key in commit.gpgsign tag.gpgsign; do
+      [ "$(git config --file "$home/.config/git/config.local" "$key")" = true ] || {
+        echo "$start: $key is not true in config.local"
+        return 1
+      }
+    done
+    [ "$(wc -l < "$home/.config/git/allowed_signers")" -eq 1 ] || {
+      echo "$start: allowed_signers has $(wc -l < "$home/.config/git/allowed_signers") lines"
+      return 1
+    }
+  done
+
+  # A key file that exists but is empty -- a copy that went wrong -- yields an
+  # empty PUBKEY, and an empty needle is found in every row (macOS awk's
+  # index() returns 1 for one; gawk's would return 0): every type reads as
+  # registered, nothing is added, and the identity ends up pointing at
+  # nothing. The step has to stop instead. GitHub is seeded with another
+  # machine's key under both types, so that the rows are there to be
+  # matched: against an empty listing the same bug would surface as an add
+  # of an empty key, which is a different failure from the one named here.
+  home="$tmp/empty/home"
+  mkdir -p "$home/.ssh" "$home/.config/git"
+  printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
+  : > "$home/.ssh/id_ed25519"
+  : > "$home/.ssh/id_ed25519.pub"
+  : > "$tmp/calls"
+  printf 'other mac\tssh-ed25519 AAAAC3other u@example.com\t2026-09-15T00:00:00Z\t2\t%s\n' \
+    authentication signing > "$tmp/known"
+  touch "$tmp/login"
+  printf "'repo', 'admin:public_key', 'admin:ssh_signing_key'" > "$tmp/scopes"
+  if HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
+    LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1; then
+    echo "an empty id_ed25519.pub was accepted as a key"
+    cat "$tmp/calls"
+    return 1
+  fi
+  ! grep -q '^ssh-key add' "$tmp/calls" || {
+    echo "an empty id_ed25519.pub was sent to GitHub"
+    cat "$tmp/calls"
+    return 1
+  }
+}
+check "install.sh sets up the signing key once and only once" signing_step
+
+# Step 4c has to bootstrap the login agent exactly once and kick it on every
+# run: `bootstrap` of a service that is already loaded is an error that would
+# end install.sh under set -e, and a kickstart skipped on the second run
+# would leave a session whose plist changed running the old one. launchctl
+# is stubbed -- the real one would load the agent into this session -- and
+# answers `print` from a marker its own `bootstrap` creates, so the second
+# run sees the service loaded the way the real launchd would report it.
+login_agent_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+  mkdir -p "$tmp/bin" "$tmp/home"
+  cat > "$tmp/bin/launchctl" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS"
+case "$1" in
+  print) [ -f "$LOADED" ] ;;
+  bootstrap) touch "$LOADED" ;;
+esac
+STUB
+  chmod +x "$tmp/bin/launchctl"
+  {
+    echo 'log() { :; }'
+    sed -n '/^# --- 4c\. Load the signing key at login ---/,/^# --- 5\./p' install.sh
+  } > "$steps"
+  grep -qF 'launchctl bootstrap' "$steps" || {
+    echo "could not extract step 4c from install.sh"
+    return 1
+  }
+  one_step_only "$steps" || return 1
+
+  local run
+  : > "$tmp/calls"
+  rm -f "$tmp/loaded"
+  for run in 1 2; do
+    HOME="$tmp/home" CALLS="$tmp/calls" LOADED="$tmp/loaded" PATH="$tmp/bin:$PATH" \
+      bash -euo pipefail "$steps" > "$tmp/out" 2>&1 || {
+      echo "run $run failed"
+      cat "$tmp/out"
+      return 1
+    }
+  done
+  [ "$(grep -c '^bootstrap ' "$tmp/calls")" -eq 1 ] || {
+    echo "expected the agent bootstrapped once across two runs"
+    cat "$tmp/calls"
+    return 1
+  }
+  [ "$(grep -c '^kickstart ' "$tmp/calls")" -eq 2 ] || {
+    echo "expected the agent kickstarted on each run"
+    cat "$tmp/calls"
+    return 1
+  }
+  # The label the step asks launchd about has to be the one the plist
+  # declares, or `print` fails forever and every run bootstraps again. Read
+  # from the plist rather than repeated here, so this cannot agree with a
+  # step that drifted from it.
+  local label
+  label=$(plutil -extract Label raw launchd/com.piedrac.ssh-add-keychain.plist) || return 1
+  grep -qF "print gui/$(id -u)/$label" "$tmp/calls" || {
+    echo "the step does not ask launchd about $label, the label the plist declares"
+    cat "$tmp/calls"
+    return 1
+  }
+
+  # A service launchd already reports -- a machine where an earlier run, or a
+  # login since, loaded it -- must not be bootstrapped again.
+  : > "$tmp/calls"
+  touch "$tmp/loaded"
+  HOME="$tmp/home" CALLS="$tmp/calls" LOADED="$tmp/loaded" PATH="$tmp/bin:$PATH" \
+    bash -euo pipefail "$steps" > "$tmp/out" 2>&1 || {
+    echo "run against a loaded service failed"
+    cat "$tmp/out"
+    return 1
+  }
+  ! grep -q '^bootstrap ' "$tmp/calls" || {
+    echo "bootstrapped a service launchd already reported as loaded"
+    cat "$tmp/calls"
+    return 1
+  }
+}
+check "install.sh loads the login agent once and kicks it every run" login_agent_step
 
 # ── macOS defaults ───────────────────────────────────────────────────────────
 # macos/defaults.txt is the fourth manifest here and the only one whose
@@ -978,267 +1371,6 @@ macos_refuses_a_manifest_in_a_missing_directory() {
 }
 check "check refuses a missing manifest instead of reading it as a match" macos_refuses_a_missing_manifest
 check "check names the requested path when its directory is missing too" macos_refuses_a_manifest_in_a_missing_directory
-
-# Step 8 has the same split as step 7: whether `claude mcp` registers a server
-# is Claude Code's problem, but which servers it is asked to add, remove, or
-# leave alone is decided here, from a comparison against ~/.claude.json. So it
-# runs with HOME pointed at a fixture state file and a `claude` that records
-# its arguments, and the fixture covers each branch of that decision once: a
-# server already registered as declared, one registered differently, one not
-# registered at all, and one registered that the manifest does not name.
-mcp_step() {
-  local tmp steps
-  tmp=$(mktemp -d) || return 1
-  trap 'rm -rf "$tmp"' RETURN
-  steps="$tmp/steps.sh"
-
-  {
-    echo 'log() { :; }'
-    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 9\./p' install.sh
-  } > "$steps"
-  grep -qF 'claude mcp add-json' "$steps" || {
-    echo "could not extract step 8 from install.sh"
-    return 1
-  }
-  one_step_only "$steps" || return 1
-
-  mkdir -p "$tmp/claude" "$tmp/home" "$tmp/bin"
-  cat > "$tmp/claude/mcp.json" << 'FIXTURE'
-{
-  "mcpServers": {
-    "same":    { "type": "http",  "url": "https://same.invalid/mcp" },
-    "changed": { "type": "http",  "url": "https://changed.invalid/v2" },
-    "missing": { "type": "stdio", "command": "missing-mcp", "args": [] }
-  }
-}
-FIXTURE
-  cat > "$tmp/home/.claude.json" << 'FIXTURE'
-{
-  "mcpServers": {
-    "same":    { "type": "http", "url": "https://same.invalid/mcp" },
-    "changed": { "type": "http", "url": "https://changed.invalid/v1" },
-    "extra":   { "type": "http", "url": "https://extra.invalid/mcp" }
-  },
-  "somethingClaudeWrote": true
-}
-FIXTURE
-  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/calls"\n' "$tmp" > "$tmp/bin/claude"
-  chmod +x "$tmp/bin/claude"
-  : > "$tmp/calls"
-
-  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
-    bash -euo pipefail "$steps" > /dev/null || return 1
-
-  # Order is by name, which is what `jq keys` yields, so the expectation is
-  # stable. `same` and `extra` must produce no call at all.
-  cat > "$tmp/want" << 'WANT'
-mcp remove changed --scope user
-mcp add-json changed {"type":"http","url":"https://changed.invalid/v2"} --scope user
-mcp add-json missing {"type":"stdio","command":"missing-mcp","args":[]} --scope user
-WANT
-  diff -u "$tmp/want" "$tmp/calls" || return 1
-
-  # A state file that does not exist yet -- a machine on its first run -- must
-  # be created rather than tripped over, and every server then added.
-  rm "$tmp/home/.claude.json"
-  : > "$tmp/calls"
-  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
-    bash -euo pipefail "$steps" > /dev/null || return 1
-  [ "$(grep -c 'mcp add-json' "$tmp/calls")" -eq 3 ] || {
-    echo "first run did not add every declared server:"
-    cat "$tmp/calls"
-    return 1
-  }
-  ! grep -q 'mcp remove' "$tmp/calls" || {
-    echo "first run tried to remove from an empty state file"
-    return 1
-  }
-}
-check "install.sh registers the MCP servers the manifest declares" mcp_step
-
-# Step 4b generates a key, registers it with gh and points config.local at it.
-# Each of those has an "already done" branch, and the test is that a second
-# run takes every one of them: a key regenerated is a key GitHub no longer
-# knows, and a signingkey appended twice is a config git refuses to read.
-#
-# The stub `gh` mirrors the two shapes that made the step's first drafts
-# wrong. Logged out, `auth status` exits 1 and the step has to log in, not
-# die with the message captured in a variable. Logged in, the token does not
-# carry the scopes that manage keys, and without them `ssh-key list` prints a
-# 404 to stderr and an empty list to stdout, exit 0 -- which a plain grep
-# reads as "not registered" -- while `add` fails. So the stub is logged in
-# only once `auth login` has been recorded, answers `auth status` from a
-# scope fixture, lists nothing and refuses to add until login or refresh has
-# added the scopes. Both starting points are run twice: logged out must log
-# in exactly once and never refresh (login asks for the scopes); logged in
-# without the scopes must refresh exactly once and never log in.
-signing_step() {
-  local tmp steps
-  tmp=$(mktemp -d) || return 1
-  trap 'rm -rf "$tmp"' RETURN
-  steps="$tmp/steps.sh"
-  mkdir -p "$tmp/bin"
-  # ssh-keygen: create the two files it would, record the call. The key
-  # holds a `++`, which as a regex never matches: the listing lookup has to
-  # be a substring test, and a key like this is one in a hundred real ones.
-  cat > "$tmp/bin/ssh-keygen" << 'STUB'
-#!/usr/bin/env bash
-echo "$*" >> "$CALLS"
-for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); f=${!j}; }; done
-echo private > "$f"; echo "ssh-ed25519 AAAAC3++NzaC1 t@example.com" > "$f.pub"
-STUB
-  # gh: `ssh-key list` answers from $KNOWN in the real CLI's tab-separated
-  # columns (TITLE, KEY, ADDED, ID, TYPE), `ssh-key add` appends to it, both
-  # only once the scopes in $SCOPES allow it. The title carries the other
-  # type's name on purpose: a match that searches the row instead of the
-  # type column would find it and never register the second type.
-  cat > "$tmp/bin/gh" << 'STUB'
-#!/usr/bin/env bash
-echo "$*" >> "$CALLS"
-# Grants exactly the -s values it was given, so a scope dropped from the
-# step is a scope the stub does not have either. Each key type needs its
-# own: authentication keys admin:public_key, signing keys
-# admin:ssh_signing_key, and a listing shows only the half its scope allows.
-asked() { for ((i = 1; i <= $#; i++)); do [ "${!i}" = -s ] && { j=$((i + 1)); printf ", '%s'" "${!j}"; }; done; true; }
-scoped() { grep -qF "'$1'" "$SCOPES"; }
-scope_for() { [ "$1" = signing ] && echo admin:ssh_signing_key || echo admin:public_key; }
-type=authentication
-for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
-case "$1 $2" in
-  "auth status")
-    [ -f "$LOGIN" ] || { echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1; }
-    printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
-  "auth login") touch "$LOGIN"; { printf "'repo'"; asked "$@"; } > "$SCOPES" ;;
-  "auth refresh") asked "$@" >> "$SCOPES" ;;
-  "ssh-key list")
-    for t in authentication signing; do
-      if scoped "$(scope_for "$t")"; then awk -F'\t' -v t="$t" '$5 == t' "$KNOWN"; else echo "HTTP 404" >&2; fi
-    done ;;
-  "ssh-key add")
-    scoped "$(scope_for "$type")" || { echo "HTTP 404" >&2; exit 1; }
-    [ "$type" = signing ] && title="authentication key of mac" || title="signing key of mac"
-    printf '%s\t%s\t2026-09-15T00:00:00Z\t1\t%s\n' "$title" "$(cat "$3")" "$type" >> "$KNOWN" ;;
-esac
-STUB
-  chmod +x "$tmp/bin/ssh-keygen" "$tmp/bin/gh"
-  {
-    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
-    echo 'log() { printf "==> %s\n" "$1"; }'
-    # shellcheck disable=SC2016  # same: step 4 defines this and the range starts after it
-    echo 'GIT_IDENTITY="$HOME/.config/git/config.local"'
-    sed -n '/^# --- 4b\. Signing key ---/,/^# --- 5\./p' install.sh
-  } > "$steps"
-  grep -qF 'ssh-keygen -t ed25519' "$steps" || {
-    echo "could not extract step 4b from install.sh"
-    return 1
-  }
-  one_step_only "$steps" || return 1
-
-  local start home run key
-  for start in logged-out logged-in; do
-    # A fresh HOME per starting point, holding what steps 3 and 4 leave
-    # behind: ~/.ssh exists and the identity is written.
-    home="$tmp/$start/home"
-    mkdir -p "$home/.ssh" "$home/.config/git"
-    printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
-    : > "$tmp/calls"
-    : > "$tmp/known"
-    rm -f "$tmp/login"
-    if [ "$start" = logged-in ]; then
-      touch "$tmp/login"
-      printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
-    else
-      : > "$tmp/scopes"
-    fi
-    for run in 1 2; do
-      HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
-        LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1 || {
-        echo "$start: run $run failed"
-        cat "$tmp/out"
-        return 1
-      }
-    done
-    local logins refreshes
-    logins=$(grep -c '^auth login' "$tmp/calls")
-    refreshes=$(grep -c '^auth refresh' "$tmp/calls")
-    if [ "$start" = logged-out ]; then
-      [ "$logins" -eq 1 ] && [ "$refreshes" -eq 0 ] || {
-        echo "$start: expected one login, asking for the scopes, and no refresh"
-        cat "$tmp/calls"
-        return 1
-      }
-    else
-      [ "$logins" -eq 0 ] && [ "$refreshes" -eq 1 ] || {
-        echo "$start: expected the scopes refreshed once, when missing, and no login"
-        cat "$tmp/calls"
-        return 1
-      }
-    fi
-    [ "$(grep -c '^-t ed25519' "$tmp/calls")" -eq 1 ] || {
-      echo "$start: key generated more than once"
-      cat "$tmp/calls"
-      return 1
-    }
-    grep -q '^ssh-key add .*--type authentication' "$tmp/calls" &&
-      grep -q '^ssh-key add .*--type signing' "$tmp/calls" &&
-      [ "$(grep -c '^ssh-key add' "$tmp/calls")" -eq 2 ] || {
-      echo "$start: expected one add per type (authentication + signing), once"
-      cat "$tmp/calls"
-      return 1
-    }
-    [ "$(grep -c signingkey "$home/.config/git/config.local")" -eq 1 ] || {
-      echo "$start: signingkey missing or duplicated"
-      return 1
-    }
-    git config --file "$home/.config/git/config.local" user.signingkey > /dev/null || {
-      echo "$start: config.local no longer parses"
-      return 1
-    }
-    # The switch travels with the key (git/config explains why), so it has to
-    # come out of the same file, once, and read true.
-    [ "$(grep -c gpgsign "$home/.config/git/config.local")" -eq 2 ] || {
-      echo "$start: expected exactly one gpgsign line per section in config.local"
-      cat "$home/.config/git/config.local"
-      return 1
-    }
-    for key in commit.gpgsign tag.gpgsign; do
-      [ "$(git config --file "$home/.config/git/config.local" "$key")" = true ] || {
-        echo "$start: $key is not true in config.local"
-        return 1
-      }
-    done
-    [ "$(wc -l < "$home/.config/git/allowed_signers")" -eq 1 ] || {
-      echo "$start: allowed_signers has $(wc -l < "$home/.config/git/allowed_signers") lines"
-      return 1
-    }
-  done
-
-  # A key file that exists but is empty -- a copy that went wrong -- yields an
-  # empty PUBKEY, and an empty needle is found in every row: every type reads
-  # as registered, nothing is added, and the identity ends up pointing at
-  # nothing. The step has to stop instead.
-  home="$tmp/empty/home"
-  mkdir -p "$home/.ssh" "$home/.config/git"
-  printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
-  : > "$home/.ssh/id_ed25519"
-  : > "$home/.ssh/id_ed25519.pub"
-  : > "$tmp/calls"
-  : > "$tmp/known"
-  touch "$tmp/login"
-  printf "'repo', 'admin:public_key', 'admin:ssh_signing_key'" > "$tmp/scopes"
-  if HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
-    LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1; then
-    echo "an empty id_ed25519.pub was accepted as a key"
-    cat "$tmp/calls"
-    return 1
-  fi
-  ! grep -q '^ssh-key add' "$tmp/calls" || {
-    echo "an empty id_ed25519.pub was sent to GitHub"
-    cat "$tmp/calls"
-    return 1
-  }
-}
-check "install.sh sets up the signing key once and only once" signing_step
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A

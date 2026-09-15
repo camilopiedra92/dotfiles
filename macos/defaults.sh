@@ -15,10 +15,13 @@
 # replaces the whole domain, taking with it every key the app wrote for
 # itself.
 #
-# Nothing here needs sudo, and nothing touches a domain Jamf manages on this
-# machine. cfprefsd is never killed: `defaults` already goes through it, and
-# killing it is the folk remedy that produces the stale-preferences bug it is
-# supposed to cure.
+# Nothing here needs sudo, and no key in the manifest is one a Jamf profile
+# sets on this machine -- per key, not per domain, since a profile can manage
+# two keys of a domain and leave the rest to the user; the manifest header
+# says how to check. A managed key would read back as applied and be
+# overruled. cfprefsd is never killed: `defaults` already goes through it,
+# and killing it is the folk remedy that produces the stale-preferences bug
+# it is supposed to cure.
 set -euo pipefail
 
 # MANIFEST is overridable so check.sh can point it at a fixture, and resolved

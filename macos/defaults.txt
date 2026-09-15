@@ -6,17 +6,30 @@
 #
 # Only values that differ from Apple's default are here. A default written
 # down is frozen: the day Apple ships a better one this file would put the
-# old one back, and nobody would know why. Same argument as node = "lts".
+# old one back, and nobody would know why. Same argument as node = "lts"
+# rather than a number.
 #
-# Nothing in a domain Jamf manages on this machine. Screen lock, updates,
-# firewall, FileVault and Siri are policy, and a line here for any of them
-# would be silently overruled while reading as if it applied.
+# No key here is one a Jamf profile sets on this machine. The rule is per
+# key and not per domain: management is by key, and com.apple.controlcenter
+# below is a domain a profile does touch (its Bluetooth and Wi-Fi menu
+# items) while BatteryShowPercentage in the same domain is not. To check,
+# `ls "/Library/Managed Preferences/$USER"` lists the managed domains and
+# `plutil -p` on one of those plists lists its keys. Screen lock, updates,
+# firewall, FileVault and Siri are policy there. A managed key written here
+# would be silently overruled while reading as if it applied: `defaults`
+# reads and writes only the user layer, and the managed one sits above it,
+# invisible to `defaults read` and consulted first by the app. Checked on
+# this machine: the managed Bluetooth key reads as "does not exist".
 #
-# Verified on macOS 26 by writing each key, restarting the owning app or
-# logging out, and confirming the behaviour and the System Settings toggle.
-# Several keys that every "macos.sh" template carries were dropped in that
-# pass because they no longer do anything; do not add one back without the
-# same test.
+# Verified by read-back only, so far: on macOS 26.6.2 on 2026-09-15,
+# `defaults.sh check` reports every key at its declared value. The pass
+# that proves behaviour -- the System Settings toggle showing the value,
+# tap-to-click and three-finger drag working after a log out -- is still
+# pending. A key that turns out not to take effect is to be removed and
+# named here, not patched with a second key copied from a "macos.sh"
+# template; those carry keys that stopped doing anything releases ago, and
+# a line that reads back correctly while changing nothing is what this
+# file exists to not have.
 
 # ── Finder ──────────────────────────────────────────────────────────────────
 
