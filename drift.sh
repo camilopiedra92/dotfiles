@@ -963,6 +963,22 @@ report "macos/defaults.txt matches this machine" \
   "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
   "$(macos_drift)"
 
+# Same contract as defaults.sh: 0 matches, 1 differs, anything else is the
+# checker itself failing. `check` reads pmset without sudo, so this never
+# prompts.
+power_drift() {
+  local out rc
+  out=$(./macos/power.sh check 2>&1)
+  rc=$?
+  case "$rc" in
+    0 | 1) printf '%s\n' "$out" ;;
+    *) printf 'macos/power.sh check failed (exit %s): %s\n' "$rc" "$out" ;;
+  esac
+}
+report "macos/power.sh settings match this machine" \
+  "./macos/power.sh apply (asks for your password), or change the line if the new value is the one you want" \
+  "$(power_drift)"
+
 printf '\n%sBackups%s\n' "$DIM" "$OFF"
 
 # Time Machine is disabled by policy on this machine, so the only copy of a

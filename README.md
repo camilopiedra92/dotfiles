@@ -60,6 +60,7 @@ bin/aware.sh           runs the aware-connector CLI from anywhere
 bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
 macos/defaults.txt     macOS settings, one `defaults` key per line
 macos/defaults.sh      applies the manifest (install.sh) or reports where the machine differs (drift.sh)
+macos/power.sh         the `pmset` settings, declared inline; same two verbs, `apply` is the one that needs sudo
 claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
@@ -396,7 +397,9 @@ only once (against a stub `ssh-keygen`, `ssh-add` and `gh`), that its login
 agent step bootstraps once and kickstarts every run (against a stub
 `launchctl`), that `macos/defaults.txt` is well-formed, and that
 `macos/defaults.sh` writes exactly the differing keys and nothing when the
-machine already matches (against a stub `defaults`).
+machine already matches (against a stub `defaults`), and that `macos/power.sh`
+writes only through `sudo`, only for a difference, and never from `check`
+(against a stub `pmset` and `sudo`).
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
@@ -512,7 +515,8 @@ Deliberately absent, and why:
   be silently overruled while reading as if it applied: `defaults` reads and
   writes only the user layer, and the managed one sits above it, invisible to
   `defaults read` and consulted first by the app.
-- **`sudo`.** Nothing this manifest touches needs it.
+- **`sudo`.** Nothing this manifest touches needs it. The one setting that
+  does is in `macos/power.sh`, below, and not here, so that stays true.
 - **Killing `cfprefsd`.** `defaults` already goes through it; killing it is
   the folk remedy that produces the stale-preferences bug it is supposed to
   cure.
@@ -548,6 +552,44 @@ forced to 0 and the per-host key left at 1, tapping still clicked and
 System Settings still showed tap-to-click on — the driver reads the
 per-host key, and the template keys were dead. See the Trackpad section of
 the manifest.
+
+## Power
+
+```bash
+macos/power.sh apply|check
+```
+
+The settings `pmset` owns, which `defaults` cannot reach. Same two verbs and
+the same callers as the manifest above, and the same rule about content: only
+values that differ from Apple's own, each with its reason in the script. One
+is declared — Energy Mode on battery set to Low Power, `powermode 1` under
+the battery profile, with plugged-in left at Automatic. It is the one
+software lever left with a runtime gain worth a line; the rest of what
+`pmset -g custom` prints on this machine is what Apple ships, and the
+charge limit that holds the battery at 80% is already on.
+
+A separate script rather than a `pmset:` prefix in `defaults.txt`, because
+writing through `pmset` needs root and the manifest promises nothing in it
+does; keeping them apart keeps that promise true by construction. Toggling
+Energy Mode in System Settings was the other candidate and lost the way
+everything unwritten loses here: it does not survive a rebuild and nothing
+reports when it changes. `check` reads `pmset -g custom`, which needs no
+privilege, so `drift.sh` never prompts; `apply` goes through `sudo` only for
+a value that differs, so `install.sh` asks for a password here at most once
+and a second run asks for nothing. A `pmset -g custom` with no battery
+profile at all is a broken checker (exit 2), not a match.
+
+`powermode` is not in `man pmset` on macOS 26.6.2. It is what `pmset -g
+custom` prints and what System Settings → Battery → Energy Mode writes
+(`LowPowerMode` in `/Library/Preferences/com.apple.PowerManagement.<uuid>.plist`,
+per profile). Applied on this machine on 2026-09-15 and verified by
+read-back three ways the same day: `pmset -g custom` printed `powermode 1`
+under Battery Power, the plist's `LowPowerMode` read 1 under Battery Power
+and 0 under AC Power, and `system_profiler SPPowerDataType` reported Low
+Power Mode Yes for Battery Power and No for AC Power. A second `apply` was
+silent and asked for no password. Not checked: the System Settings pane
+itself, and the runtime gain — that one is a number only a full discharge
+gives.
 
 ## Finding drift
 
