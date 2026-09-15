@@ -1453,16 +1453,21 @@ printf '\n%sGit guard%s\n' "$DIM" "$OFF"
 # the first run of these tests did, and only an inverted stub revealed it.
 GUARD=$PWD/claude/git-guard.sh
 
-# Runs a command without the variables git exports to a hook. The guard tests
-# build a throwaway repository and ask git about it, and this script is run by
-# the pre-commit hook: git hands that hook GIT_INDEX_FILE, and for `git commit
-# -a` it is an absolute path to this repository's index lock. Inherited, it
-# wins over the temp directory's own .git, so a clean temp tree reads as dirty
-# and the guard blocks. Plain `git commit` passes a relative `.git/index`,
-# which resolves inside the temp directory by accident -- which is how twenty
-# commits went through before the first `-a` failed. The checks must mean the
-# same thing run by hand, by the hook and in CI, so every git call that is
-# about the throwaway repository goes through here.
+# Runs a command without the variables a hook, or a shell, can hand git. The
+# guard tests build a throwaway repository and ask git about it, and this
+# script is run by the pre-commit hook: git hands that hook GIT_INDEX_FILE,
+# and for `git commit -a` it is an absolute path to this repository's index
+# lock. Inherited, it wins over the temp directory's own .git, so a clean temp
+# tree reads as dirty and the guard blocks. Plain `git commit` passes a
+# relative `.git/index`, which resolves inside the temp directory by accident
+# -- every commit here since the guard tests landed was a plain one, and the
+# first `-a` was refused. GIT_DIR and GIT_WORK_TREE are not exported by git
+# (measured with a hook that printed its environment); they are cleared for
+# the shell that might. The checks must mean the same thing run by hand, by
+# the hook and in CI, so every git call that is about the throwaway
+# repository goes through here -- and only those: `git ls-files` and `git
+# grep` above are about this repository and must read the index the commit
+# is being made from.
 hookless() {
   env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE -u GIT_PREFIX "$@"
 }
@@ -1525,34 +1530,6 @@ guard_reset_clean_tree() {
 }
 check "reset --hard is allowed when nothing would be lost" guard_reset_clean_tree
 
-# The same verdict with the `git commit -a` hook environment in place: an
-# absolute GIT_INDEX_FILE set at the call, which is what the hook does to this
-# whole script. Only that variable -- git does not export GIT_DIR to a hook,
-# measured with a hook that printed its environment -- and the index belongs
-# to a decoy repository built here, never to this one. The first version of
-# this check set GIT_DIR to this repository's own .git, and while it was red
-# the fixture's `commit --allow-empty -m init` landed three empty commits on
-# two real branches. A test that mutates the thing it checks when it fails is
-# worse than no test. The decoy tracks one file so that, judged through its
-# index, the temp repository's empty tree reads as a deletion: without
-# hookless the guard sees that and blocks.
-guard_reset_clean_tree_under_hook() {
-  local decoy out rc
-  decoy=$(mktemp -d)
-  hookless git -C "$decoy" init -q
-  echo x > "$decoy/tracked.txt"
-  hookless git -C "$decoy" add tracked.txt
-  hookless git -C "$decoy" -c user.email=t@t -c user.name=t commit -q -m init
-  out=$(GIT_INDEX_FILE="$decoy/.git/index" guard_reset_clean_tree 2>&1)
-  rc=$?
-  rm -r "$decoy"
-  [ "$rc" -eq 0 ] || {
-    echo "under a hook's git environment: $out"
-    return 1
-  }
-}
-check "the guard tests ignore the git environment a hook exports" guard_reset_clean_tree_under_hook
-
 guard_reset_dirty_tree() {
   local dir out
   dir=$(mktemp -d)
@@ -1568,6 +1545,47 @@ guard_reset_dirty_tree() {
   }
 }
 check "reset --hard is blocked when it would discard work" guard_reset_dirty_tree
+
+# The same verdict with the `git commit -a` hook environment in place: an
+# absolute GIT_INDEX_FILE set at the call, which is what the hook does to this
+# whole script. Only that variable -- git does not export GIT_DIR to a hook,
+# measured with a hook that printed its environment -- and the index belongs
+# to a decoy repository built here, never to this one. The first version of
+# this check set GIT_DIR to this repository's own .git, and while it was red
+# the fixture's `commit --allow-empty -m init` landed three empty commits on
+# two real branches. A test that mutates the thing it checks when it fails is
+# worse than no test. The decoy tracks one file so that, judged through its
+# index, the temp repository's empty tree reads as a deletion: without
+# hookless the guard sees that and blocks.
+#
+# Both fixtures run this way, because they fail differently. The clean one
+# reads the decoy's file as deleted and blocks, which the verdict shows. The
+# dirty one's verdict is blocked either way -- a file git does not know about
+# is uncommitted work too -- so its failure is not in the verdict but in the
+# side effect: its `git add` is the one call here that writes into the
+# foreign index, which under the real hook is the commit being made. So the
+# decoy's index is read back afterwards and must still list only its own file.
+guard_tests_under_hook() {
+  local decoy out rc=0 listed
+  decoy=$(mktemp -d)
+  hookless git -C "$decoy" init -q
+  echo x > "$decoy/decoy.txt"
+  hookless git -C "$decoy" add decoy.txt
+  hookless git -C "$decoy" -c user.email=t@t -c user.name=t commit -q -m init
+  out=$(GIT_INDEX_FILE="$decoy/.git/index" guard_reset_clean_tree 2>&1 &&
+    GIT_INDEX_FILE="$decoy/.git/index" guard_reset_dirty_tree 2>&1) || rc=$?
+  listed=$(hookless git -C "$decoy" ls-files)
+  rm -r "$decoy"
+  [ "$rc" -eq 0 ] || {
+    echo "under a hook's git environment: $out"
+    return 1
+  }
+  [ "$listed" = decoy.txt ] || {
+    echo "the dirty fixture wrote into the foreign index: $listed"
+    return 1
+  }
+}
+check "the guard tests ignore the git environment a hook exports" guard_tests_under_hook
 
 # A guard that is not wired runs never, and because it fails open that costs
 # nothing visible: no error, no warning, just no guard. The tests above prove
