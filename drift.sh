@@ -973,7 +973,9 @@ printf '\n%sBackups%s\n' "$DIM" "$OFF"
 repos_without_remote() {
   local dir
   for dir in "$HOME"/Development/*/; do
-    [ -d "$dir/.git" ] || continue
+    # A linked worktree's .git is a file pointing at the primary checkout,
+    # not a directory, and its remotes are the primary's -- -e catches both.
+    [ -e "$dir/.git" ] || continue
     [ -n "$(git -C "$dir" remote)" ] || echo "${dir%/}"
   done
 }

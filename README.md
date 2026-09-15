@@ -554,11 +554,12 @@ cannot disagree with what applying it would do.
 
 And it asks whether every repository under `~/Development` has a remote.
 Time Machine is banned by policy on this machine, so a remote is not a
-convenience but the only backup a repository has — a clone with no `origin`
-exists on this disk and nowhere else. Only the top level of `~/Development`
-is checked: a project is a directory directly under it with a `.git` in it,
-and whatever repositories that project nests inside itself are its own
-business, not this script's.
+convenience but the only backup a repository has — a repository with no
+remote at all exists on this disk and nowhere else. Only the top level of
+`~/Development` is checked: a project is a directory directly under it with
+a `.git` (or, for a worktree, a file pointing at one), and whatever
+repositories that project nests inside itself are its own business, not
+this script's.
 
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,
