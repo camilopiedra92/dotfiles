@@ -85,7 +85,7 @@ printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*
+  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -94,7 +94,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*
+  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -111,7 +111,7 @@ else
   skip "actionlint" "brew install actionlint"
 fi
 
-syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/*; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
@@ -751,6 +751,137 @@ if want != got:
 PY
 }
 check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
+
+# ── macOS defaults ───────────────────────────────────────────────────────────
+# macos/defaults.txt is the fourth manifest here and the only one whose
+# consumer is a script of this repo's own. So the parsing is where the bugs
+# would be, and it is exercised against a stub `defaults` that records what
+# it was asked and answers `read` from a fixture: the real one writes to this
+# machine's preferences, which a check must never do.
+printf '\n%smacOS defaults%s\n' "$DIM" "$OFF"
+
+macos_manifest() {
+  local bad
+  bad=$(sed 's/#.*//' macos/defaults.txt | awk '
+    NF == 0 { next }
+    NF < 4 { print NR": fewer than four fields"; next }
+    $3 !~ /^(bool|int|float|string)$/ { print NR": unknown type "$3; next }
+    $3 == "bool" && $4 !~ /^(true|false)$/ { print NR": bool must be true or false" }
+    $3 == "int" && $4 !~ /^-?[0-9]+$/ { print NR": int must be an integer" }
+    $3 == "float" && $4 !~ /^-?[0-9]+(\.[0-9]+)?$/ { print NR": float must be a number" }
+  ')
+  [ -z "$bad" ] || {
+    printf '%s\n' "$bad"
+    return 1
+  }
+}
+check "macos/defaults.txt has domain key type value per line" macos_manifest
+
+# The stub answers `read` from $STATE (lines of "domain key value"), records
+# every `write` to $WRITES, and every killall to $KILLED. `defaults read` on a
+# key that is not set exits 1 and prints to stderr, which is what the stub
+# reproduces so the "unset" path is the real one.
+macos_stub() {
+  local dir=$1
+  mkdir -p "$dir/bin"
+  cat > "$dir/bin/defaults" << 'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  read)
+    v=$(awk -v d="$2" -v k="$3" '$1 == d && $2 == k { print $3; exit }' "$STATE")
+    [ -n "$v" ] || { echo "does not exist" >&2; exit 1; }
+    echo "$v" ;;
+  write)
+    echo "$2 $3 $4 $5" >> "$WRITES" ;;
+esac
+STUB
+  cat > "$dir/bin/killall" << 'STUB'
+#!/usr/bin/env bash
+echo "$1" >> "$KILLED"
+STUB
+  chmod +x "$dir/bin/defaults" "$dir/bin/killall"
+}
+
+# A manifest of three keys whose read-back forms differ from their written
+# forms: a bool reads back as 1/0, a float as a bare number, a string with ~
+# has to compare against the expanded HOME.
+macos_fixture_manifest() {
+  cat > "$1" << 'EOF'
+# comment line
+com.apple.finder    ShowPathbar    bool    true    # trailing comment
+com.apple.dock      autohide-delay float   0
+com.apple.screencapture location  string  ~/Screenshots
+EOF
+}
+
+macos_apply_is_a_noop_when_matching() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  macos_fixture_manifest "$tmp/defaults.txt"
+  printf 'com.apple.finder ShowPathbar 1\ncom.apple.dock autohide-delay 0\ncom.apple.screencapture location %s/Screenshots\n' "$tmp/home" > "$tmp/state"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    bash macos/defaults.sh apply > "$tmp/out" || return 1
+  [ ! -s "$tmp/writes" ] || {
+    echo "wrote although everything matched:"
+    cat "$tmp/writes"
+    return 1
+  }
+  [ ! -s "$tmp/killed" ] || {
+    echo "restarted an app although nothing changed"
+    return 1
+  }
+}
+check "apply writes nothing when the machine already matches" macos_apply_is_a_noop_when_matching
+
+macos_apply_writes_only_the_difference() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  macos_fixture_manifest "$tmp/defaults.txt"
+  # Finder matches; the dock key is unset; the screenshot path is wrong.
+  printf 'com.apple.finder ShowPathbar 1\ncom.apple.screencapture location /elsewhere\n' > "$tmp/state"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    bash macos/defaults.sh apply > "$tmp/out" || return 1
+  diff <(printf 'com.apple.dock autohide-delay -float 0\ncom.apple.screencapture location -string %s/Screenshots\n' "$tmp/home") "$tmp/writes" || return 1
+  # Only the Dock changed; Finder must not be restarted for it.
+  diff <(echo Dock) "$tmp/killed" || return 1
+}
+check "apply writes exactly the differing keys and restarts only their app" macos_apply_writes_only_the_difference
+
+macos_check_reports_and_fails() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  macos_fixture_manifest "$tmp/defaults.txt"
+  printf 'com.apple.finder ShowPathbar 0\ncom.apple.dock autohide-delay 0\ncom.apple.screencapture location %s/Screenshots\n' "$tmp/home" > "$tmp/state"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  if out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    bash macos/defaults.sh check); then
+    echo "check exited 0 with a difference present"
+    return 1
+  fi
+  [ "$out" = "com.apple.finder ShowPathbar: want true, have 0" ] || {
+    echo "unexpected report: $out"
+    return 1
+  }
+  [ ! -s "$tmp/writes" ] || {
+    echo "check wrote to defaults"
+    return 1
+  }
+}
+check "check reports each difference and never writes" macos_check_reports_and_fails
 
 # Step 8 has the same split as step 7: whether `claude mcp` registers a server
 # is Claude Code's problem, but which servers it is asked to add, remove, or
