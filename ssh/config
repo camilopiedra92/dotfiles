@@ -1,0 +1,12 @@
+# Linked to ~/.ssh/config by install.sh. Only what every host needs; a host
+# with its own key or user gets its own block below this one, on the
+# machine, in ~/.ssh/config.local -- which is why the Include comes first:
+# ssh takes the first value it finds for an option.
+Include config.local
+
+Host *
+  # Load keys into the agent on first use and remember the passphrase in
+  # the Keychain, so it is typed once per machine and never per push.
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519

@@ -170,6 +170,49 @@ report "no formula is missing a dependency" \
   "brew install <dep>, or reinstall the formula that wants it" \
   "$(brew_missing_deps)"
 
+printf '\n%sGit%s\n' "$DIM" "$OFF"
+
+# A signing key GitHub has forgotten -- revoked, or the machine re-enrolled
+# under a new title -- signs every commit with a signature the web UI marks
+# Unverified, and nothing local notices. Asks GitHub, so it lives here and
+# not in check.sh.
+#
+# The switch is checked first. commit.gpgsign lives in config.local with the
+# key rather than in git/config (that file says why), which means the
+# versioned config no longer states "commits are signed" on its face -- this
+# line is where that statement now lives, together with the README.
+signing_key_known() {
+  local key file pub
+  [ "$(git config commit.gpgsign 2> /dev/null)" = true ] ||
+    echo "commits are not signed here: commit.gpgsign is not true"
+  [ "$(git config tag.gpgsign 2> /dev/null)" = true ] ||
+    echo "tags are not signed here: tag.gpgsign is not true"
+  key=$(git config user.signingkey 2> /dev/null) || {
+    echo "no user.signingkey in the git config"
+    return 0
+  }
+  file=${key/#\~/$HOME}
+  [ -f "$file" ] || {
+    echo "user.signingkey points at a missing file: $key"
+    return 0
+  }
+  # Without this scope `gh ssh-key list` answers a 404 on stderr and an empty
+  # list on stdout, exit 0, and empty would read as "forgotten". Reported as
+  # the cause rather than as the symptom it would otherwise show up as.
+  gh auth status 2>&1 | grep -qF "'admin:ssh_signing_key'" || {
+    echo "the gh token cannot list signing keys (no admin:ssh_signing_key scope)"
+    return 0
+  }
+  pub=$(awk '{ print $2 }' "$file")
+  # Each row of the listing carries the key and its type. Matching the pair
+  # is what tells "registered, but only for authentication" from registered.
+  gh ssh-key list 2> /dev/null | grep -F "$pub" | grep -qw signing ||
+    echo "GitHub has no signing key matching $key"
+}
+report "the signing key is registered with GitHub" \
+  "./install.sh" \
+  "$(signing_key_known)"
+
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
 # settings.json is merged rather than symlinked, because Claude Code rewrites it

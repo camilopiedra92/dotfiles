@@ -590,6 +590,16 @@ install_is_idempotent() {
     echo "statusline was not symlinked"
     return 1
   }
+  # ssh ignores a config it or anyone else could tamper with, so the link is
+  # only useful inside a directory nobody but the owner can enter.
+  [ -L "$tmp/home/.ssh/config" ] || {
+    echo "ssh config was not symlinked"
+    return 1
+  }
+  [ "$(stat -f %Lp "$tmp/home/.ssh")" = 700 ] || {
+    echo ".ssh was created with mode $(stat -f %Lp "$tmp/home/.ssh"), not 700"
+    return 1
+  }
 
   # The merge must leave valid JSON that kept the repo's values, not an empty
   # scaffold.
@@ -1044,6 +1054,121 @@ WANT
   }
 }
 check "install.sh registers the MCP servers the manifest declares" mcp_step
+
+# Step 4b generates a key, registers it with gh and points config.local at it.
+# Each of those has an "already done" branch, and the test is that a second
+# run takes every one of them: a key regenerated is a key GitHub no longer
+# knows, and a signingkey appended twice is a config git refuses to read.
+#
+# The stub `gh` mirrors the shape that made the step's first draft wrong. The
+# login token does not carry the scopes that manage keys, and without them
+# `gh ssh-key list` prints a 404 to stderr and an empty list to stdout, exit 0
+# -- which a plain grep reads as "not registered" -- while `add` fails. So the
+# stub answers `auth status` from a scope fixture that starts without them,
+# lists nothing and refuses to add until `auth refresh` has appended them,
+# and the check asks that the refresh happened exactly once across two runs.
+signing_step() {
+  local tmp steps
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  steps="$tmp/steps.sh"
+  # What steps 3 and 4 leave behind: ~/.ssh exists and the identity is written.
+  mkdir -p "$tmp/bin" "$tmp/home/.ssh" "$tmp/home/.config/git"
+  printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$tmp/home/.config/git/config.local"
+  # ssh-keygen: create the two files it would, record the call.
+  cat > "$tmp/bin/ssh-keygen" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS"
+for ((i = 1; i <= $#; i++)); do [ "${!i}" = -f ] && { j=$((i + 1)); f=${!j}; }; done
+echo private > "$f"; echo "ssh-ed25519 AAAA t@example.com" > "$f.pub"
+STUB
+  # gh: `ssh-key list` answers from $KNOWN in the real CLI's columns (title,
+  # key, type, added, id), `ssh-key add` appends to it, both only once the
+  # scopes in $SCOPES allow it.
+  cat > "$tmp/bin/gh" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS"
+case "$1 $2" in
+  "auth status") printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
+  "auth refresh") printf ", 'admin:public_key', 'admin:ssh_signing_key'" >> "$SCOPES" ;;
+  "ssh-key list")
+    if grep -qF admin:ssh_signing_key "$SCOPES"; then cat "$KNOWN"; else echo "HTTP 404" >&2; fi ;;
+  "ssh-key add")
+    grep -qF admin:ssh_signing_key "$SCOPES" || { echo "HTTP 404" >&2; exit 1; }
+    type=authentication
+    for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
+    printf 'mac\t%s\t%s\t2026-09-15T00:00:00Z\t1\n' "$(cat "$3")" "$type" >> "$KNOWN" ;;
+esac
+STUB
+  chmod +x "$tmp/bin/ssh-keygen" "$tmp/bin/gh"
+  : > "$tmp/calls"
+  : > "$tmp/known"
+  printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    # shellcheck disable=SC2016  # same: step 4 defines this and the range starts after it
+    echo 'GIT_IDENTITY="$HOME/.config/git/config.local"'
+    sed -n '/^# --- 4b\. Signing key ---/,/^# --- 5\./p' install.sh
+  } > "$steps"
+  grep -qF 'ssh-keygen -t ed25519' "$steps" || {
+    echo "could not extract step 4b from install.sh"
+    return 1
+  }
+  one_step_only "$steps" || return 1
+
+  for run in 1 2; do
+    HOME="$tmp/home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
+      PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > /dev/null 2>&1 || {
+      echo "run $run failed"
+      return 1
+    }
+  done
+  [ "$(grep -c '^-t ed25519' "$tmp/calls")" -eq 1 ] || {
+    echo "key generated more than once"
+    cat "$tmp/calls"
+    return 1
+  }
+  [ "$(grep -c '^auth refresh' "$tmp/calls")" -eq 1 ] || {
+    echo "expected the scopes to be refreshed once, when missing, and never again"
+    cat "$tmp/calls"
+    return 1
+  }
+  grep -q '^ssh-key add .*--type authentication' "$tmp/calls" &&
+    grep -q '^ssh-key add .*--type signing' "$tmp/calls" &&
+    [ "$(grep -c '^ssh-key add' "$tmp/calls")" -eq 2 ] || {
+    echo "expected one add per type (authentication + signing), once"
+    cat "$tmp/calls"
+    return 1
+  }
+  [ "$(grep -c signingkey "$tmp/home/.config/git/config.local")" -eq 1 ] || {
+    echo "signingkey missing or duplicated"
+    return 1
+  }
+  git config --file "$tmp/home/.config/git/config.local" user.signingkey > /dev/null || {
+    echo "config.local no longer parses"
+    return 1
+  }
+  # The switch travels with the key (git/config explains why), so it has to
+  # come out of the same file, once, and read true.
+  [ "$(grep -c gpgsign "$tmp/home/.config/git/config.local")" -eq 2 ] || {
+    echo "expected exactly one gpgsign line per section in config.local"
+    cat "$tmp/home/.config/git/config.local"
+    return 1
+  }
+  local key
+  for key in commit.gpgsign tag.gpgsign; do
+    [ "$(git config --file "$tmp/home/.config/git/config.local" "$key")" = true ] || {
+      echo "$key is not true in config.local"
+      return 1
+    }
+  done
+  [ "$(wc -l < "$tmp/home/.config/git/allowed_signers")" -eq 1 ] || {
+    echo "allowed_signers has $(wc -l < "$tmp/home/.config/git/allowed_signers") lines"
+    return 1
+  }
+}
+check "install.sh sets up the signing key once and only once" signing_step
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A

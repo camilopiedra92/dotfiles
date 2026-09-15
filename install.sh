@@ -67,6 +67,12 @@ link "$DOTFILES/zsh/.zsh_plugins.txt" "$HOME/.config/zsh/.zsh_plugins.txt"
 # but the legacy one wins, so the two cannot coexist: step 4 below deletes them.
 link "$DOTFILES/git/config" "$HOME/.config/git/config"
 link "$DOTFILES/git/ignore" "$HOME/.config/git/ignore"
+# ssh refuses a config it can write to, so the directory is 700 -- set on
+# every run and not only at creation, because a ~/.ssh that already existed
+# arrives with whatever mode it had -- and the link is to a file in a repo you
+# own. config.local next to it is per machine and never versioned.
+mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+link "$DOTFILES/ssh/config" "$HOME/.ssh/config"
 link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
 link "$DOTFILES/ghostty/config" "$HOME/.config/ghostty/config"
@@ -205,6 +211,52 @@ if [ ! -f "$GIT_IDENTITY" ]; then
 	email = $GIT_EMAIL
 EOF
 fi
+
+# --- 4b. Signing key ---
+# One ed25519 key for both authentication and signing. Generated here, on
+# the machine, with a passphrase you type now and the Keychain remembers;
+# the private half never leaves ~/.ssh and never enters this repo. Each
+# piece checks for itself before acting, so a second run does nothing.
+SSH_KEY="$HOME/.ssh/id_ed25519"
+if [ ! -f "$SSH_KEY" ]; then
+  log "Generating your SSH key (choose a passphrase; the Keychain will remember it)"
+  ssh-keygen -t ed25519 -C "$(git config --file "$GIT_IDENTITY" user.email)" -f "$SSH_KEY"
+fi
+PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
+# The token `gh auth login` issues cannot manage keys. Without these two
+# scopes `gh ssh-key list` prints a 404 to stderr and nothing to stdout, exit
+# 0 -- an empty list that reads as "not registered" -- and `add` fails. So
+# they are asked for first, in the browser, and only while missing: the
+# second interactive moment of this step, and one a second run never sees.
+GH_SCOPES=$(gh auth status 2>&1)
+if ! grep -qF "'admin:public_key'" <<< "$GH_SCOPES" ||
+  ! grep -qF "'admin:ssh_signing_key'" <<< "$GH_SCOPES"; then
+  log "Granting gh the scopes that manage SSH keys (opens a browser)"
+  gh auth refresh -h github.com -s admin:public_key -s admin:ssh_signing_key
+fi
+# GitHub keeps authentication and signing keys in separate lists, and a key
+# in one is not in the other. Both are added, each only if missing. One
+# listing covers both: each row carries the key and its type, so matching
+# on the pair is what tells "registered as the other kind" from "registered".
+for type in authentication signing; do
+  if ! gh ssh-key list 2> /dev/null | grep -F "$PUBKEY" | grep -qw "$type"; then
+    log "Registering the key with GitHub for $type"
+    gh ssh-key add "$SSH_KEY.pub" --type "$type" --title "$(scutil --get LocalHostName)"
+  fi
+done
+# The signing key is identity, so it lives with the identity and not in the
+# versioned config. `git config --file` is what makes the write idempotent:
+# it replaces the value instead of appending a second [user] section.
+git config --file "$GIT_IDENTITY" user.signingkey "$SSH_KEY.pub"
+# The switch goes next to the key, not into git/config: that file is live from
+# the first clone, and gpgsign without a key refuses every commit on the
+# machine. Written here, the two cannot disagree.
+git config --file "$GIT_IDENTITY" commit.gpgsign true
+git config --file "$GIT_IDENTITY" tag.gpgsign true
+# What local verification checks against. Rewritten whole from the current
+# identity and key so it can never hold a stale line.
+printf '%s %s\n' "$(git config --file "$GIT_IDENTITY" user.email)" "$(cat "$SSH_KEY.pub")" \
+  > "$HOME/.config/git/allowed_signers"
 
 # --- 5. Runtimes ---
 log "Installing runtimes with mise"
