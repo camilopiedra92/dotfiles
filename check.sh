@@ -896,6 +896,40 @@ macos_check_reports_and_fails() {
 }
 check "check reports each difference and never writes" macos_check_reports_and_fails
 
+# A missing manifest must not read as "the machine matches" -- drift.sh's
+# own contract for `check` is 0 (matches) or 1 (differences); anything else
+# it treats as a broken checker rather than a clean run, but only if this
+# script actually reports it that way instead of exiting 0 on an empty read.
+macos_refuses_a_missing_manifest() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  rc=0
+  out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/does-not-exist.txt" \
+    bash macos/defaults.sh check 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "exited $rc on a missing manifest, want 2"
+    echo "$out"
+    return 1
+  }
+  case "$out" in
+    *"no manifest"*) ;;
+    *)
+      echo "missing manifest did not mention 'no manifest': $out"
+      return 1
+      ;;
+  esac
+  [ ! -s "$tmp/writes" ] || {
+    echo "wrote although the manifest could not be read"
+    return 1
+  }
+}
+check "check refuses a missing manifest instead of reading it as a match" macos_refuses_a_missing_manifest
+
 # Step 8 has the same split as step 7: whether `claude mcp` registers a server
 # is Claude Code's problem, but which servers it is asked to add, remove, or
 # leave alone is decided here, from a comparison against ~/.claude.json. So it

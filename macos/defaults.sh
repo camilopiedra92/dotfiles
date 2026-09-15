@@ -23,9 +23,14 @@ set -euo pipefail
 
 # MANIFEST is overridable so check.sh can point it at a fixture, and resolved
 # here, before the `cd` below, so a relative override means what it looks
-# like it means -- relative to the caller -- rather than to macos/.
+# like it means -- relative to the caller -- rather than to macos/. A `cd`
+# into a directory that does not exist fails, but that failure is on the
+# `cd`, not on the assignment as a whole -- bash's `set -e` does not fail an
+# assignment over a failing command substitution -- so it is not caught here.
+# Nothing needs to catch it here: the readability check below does, once
+# MANIFEST is settled either way.
 if [ -n "${MANIFEST:-}" ]; then
-  MANIFEST=$(cd "$(dirname "$MANIFEST")" && pwd)/$(basename "$MANIFEST")
+  MANIFEST=$(cd "$(dirname "$MANIFEST")" 2> /dev/null && pwd)/$(basename "$MANIFEST")
 fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -41,6 +46,15 @@ case "$MODE" in
     ;;
 esac
 MANIFEST=${MANIFEST:-defaults.txt}
+
+# A manifest that cannot be read -- missing, a bad override, a typo'd rename
+# -- must not read as "the machine matches". drift.sh treats any exit other
+# than `check`'s own 0 (matches) or 1 (differences) as a broken checker, and
+# surfaces it as drift rather than as a clean run.
+[ -r "$MANIFEST" ] || {
+  echo "no manifest at $MANIFEST" >&2
+  exit 2
+}
 
 # What `defaults read` prints for a declared value, so the two can be
 # compared as strings. Bools read back as 1/0; floats read back as bare
