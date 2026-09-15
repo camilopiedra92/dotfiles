@@ -530,6 +530,19 @@ has no line in the manifest: it is a Finder flag, not a `defaults` key, so the
 parser has no field that could hold it. It runs unconditionally, the same way
 `mkdir -p ~/Screenshots` does — both are no-ops once already done.
 
+A domain written `host:NSGlobalDomain` instead of `NSGlobalDomain` is read
+and written through `defaults -currentHost`, which reaches
+`~/Library/Preferences/ByHost/.GlobalPreferences.<uuid>.plist` instead of the
+domain's usual plist — macOS keeps some preferences, trackpad and mouse among
+them, per host rather than per user. The manifest's trackpad keys were wrong
+for a while because of this: every `macos.sh` template on the internet writes
+`com.apple.AppleMultitouchTrackpad` and
+`com.apple.driver.AppleBluetoothMultitouch.trackpad`, `check` reported those
+as applied, and tap-to-click still did not work — nothing on this machine
+reads them. The way to find the key that actually does something is to
+toggle the setting in System Settings and diff what changed under
+`~/Library/Preferences`, not to trust a template.
+
 ## Finding drift
 
 ```bash

@@ -1,8 +1,12 @@
 # macOS settings this machine is expected to have, one per line.
 #
 # Four whitespace-separated fields: domain, key, type, value. `#` starts a
-# comment. macos/defaults.sh applies the file from install.sh and checks it
-# from drift.sh, and is the only thing that reads it.
+# comment. The domain may be written `host:NSGlobalDomain` instead of
+# `NSGlobalDomain`: macOS keeps some preferences -- trackpad and mouse among
+# them -- per host rather than in the domain's usual file, and defaults.sh
+# reads and writes a `host:` line through `defaults -currentHost` to reach
+# it. macos/defaults.sh applies the file from install.sh and checks it from
+# drift.sh, and is the only thing that reads it.
 #
 # Only values that differ from Apple's default are here. A default written
 # down is frozen: the day Apple ships a better one this file would put the
@@ -21,15 +25,17 @@
 # invisible to `defaults read` and consulted first by the app. Checked on
 # this machine: the managed Bluetooth key reads as "does not exist".
 #
-# Verified by read-back only, so far: on macOS 26.6.2 on 2026-09-15,
-# `defaults.sh check` reports every key at its declared value. The pass
-# that proves behaviour -- the System Settings toggle showing the value,
-# tap-to-click and three-finger drag working after a log out -- is still
-# pending. A key that turns out not to take effect is to be removed and
-# named here, not patched with a second key copied from a "macos.sh"
-# template; those carry keys that stopped doing anything releases ago, and
-# a line that reads back correctly while changing nothing is what this
-# file exists to not have.
+# Verified by read-back only, except tap-to-click: on macOS 26.6.2 on
+# 2026-09-15, `defaults.sh check` reports every key at its declared value,
+# and tap-to-click is also UI-verified -- toggling it in System Settings and
+# diffing preference files showed it lands in the per-host global domain
+# below, not the two Trackpad domains every "macos.sh" template writes. The
+# same pass for three-finger drag -- toggling it in System Settings to find
+# its real key -- is still pending; see the Trackpad section. A key that
+# turns out not to take effect is to be removed and named here, not patched
+# with a second key copied from a template; those carry keys that stopped
+# doing anything releases ago, and a line that reads back correctly while
+# changing nothing is what this file exists to not have.
 
 # ── Finder ──────────────────────────────────────────────────────────────────
 
@@ -96,12 +102,23 @@ NSGlobalDomain          AppleKeyboardUIMode             int     2
 
 # ── Trackpad ────────────────────────────────────────────────────────────────
 
-# Tap to click and three-finger drag. Both domains are needed: the first is
-# the built-in trackpad, the second an external one.
-com.apple.AppleMultitouchTrackpad                     Clicking                bool  true
-com.apple.driver.AppleBluetoothMultitouch.trackpad    Clicking                bool  true
-com.apple.AppleMultitouchTrackpad                     TrackpadThreeFingerDrag bool  true
-com.apple.driver.AppleBluetoothMultitouch.trackpad    TrackpadThreeFingerDrag bool  true
+# com.apple.AppleMultitouchTrackpad and com.apple.driver.AppleBluetoothMulti-
+# touch.trackpad Clicking/TrackpadThreeFingerDrag stood here until
+# 2026-09-15: every "macos.sh" template on the internet writes them, but on
+# macOS 26.6.2 nothing reads them back -- toggling tap-to-click in System
+# Settings and diffing preference files showed only
+# ~/Library/Preferences/ByHost/.GlobalPreferences.<uuid>.plist changing, not
+# either Trackpad domain. They read back as applied and changed nothing,
+# which is exactly what this file's header says to remove on sight.
+#
+# Tap to click. Per-host because macOS keeps trackpad and mouse settings per
+# machine, which is also why the key lives in the ByHost file rather than in
+# NSGlobalDomain's own plist.
+host:NSGlobalDomain    com.apple.mouse.tapBehavior    int    1
+# Three-finger drag: pending the same proof. Toggling it in System Settings
+# and diffing ByHost would be expected to show com.apple.trackpad.three-
+# FingerDragGesture (currently 0 on this machine), but that toggle has not
+# been done yet, so the key is not declared here without it.
 
 # ── Dialogs and documents ───────────────────────────────────────────────────
 
