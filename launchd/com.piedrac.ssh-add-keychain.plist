@@ -20,7 +20,8 @@ forever; no StartInterval, because the agent forgets the key only at
 logout, and a login is exactly when launchd runs this. Nothing is logged:
 `launchctl print gui/$(id -u)/com.piedrac.ssh-add-keychain` shows the last
 exit status, and a non-zero one has a single cause worth knowing -- the
-passphrase is not in the Keychain, which the next `ssh` fixes.
+passphrase is not in the Keychain, which running install.sh again fixes
+(its step 4b stores it with `ssh-add --apple-use-keychain`).
 -->
 <plist version="1.0">
 <dict>

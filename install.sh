@@ -76,10 +76,10 @@ link "$DOTFILES/git/ignore" "$HOME/.config/git/ignore"
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 link "$DOTFILES/ssh/config" "$HOME/.ssh/config"
-# Linked here, loaded in 4c. launchd only reads this directory, and a link
-# is what keeps the file's edits reaching it without a second copy to
-# forget. A symlink is what `brew services` puts here too, so launchd
-# following one is not something this repo is first to rely on.
+# Linked here, loaded in 4c. launchd only reads this directory, and the
+# file is versioned in the repo: a copy would drift from it on the first
+# edit, with nothing to report the gap. launchd reads the target through
+# the link.
 link "$DOTFILES/launchd/com.piedrac.ssh-add-keychain.plist" "$HOME/Library/LaunchAgents/com.piedrac.ssh-add-keychain.plist"
 link "$DOTFILES/mise/config.toml" "$HOME/.config/mise/config.toml"
 link "$DOTFILES/vscode/settings.json" "$HOME/Library/Application Support/Code/User/settings.json"
@@ -235,8 +235,11 @@ fi
 # run, so nothing would ever store it and the login agent of 4c would have
 # nothing to load. This is the one call that does both: the key goes into
 # the agent now and the passphrase into the Keychain, asked for once and
-# only while the Keychain does not have it. Silent otherwise, which is what
-# lets it run every time rather than only next to a fresh key.
+# only while the Keychain does not have it. It still prints "Identity
+# added" on every run, but prompts for nothing once the Keychain holds the
+# passphrase, which is what lets it run every time rather than only next
+# to a fresh key. It needs an agent socket, so this step is written for a
+# login session on the Mac itself, not an ssh session into it.
 ssh-add --apple-use-keychain "$SSH_KEY"
 PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
 # An empty or truncated .pub -- a copy that went wrong -- must stop here: the
