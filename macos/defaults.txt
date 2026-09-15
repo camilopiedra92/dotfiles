@@ -25,9 +25,13 @@
 # invisible to `defaults read` and consulted first by the app. Checked on
 # this machine: the managed Bluetooth key reads as "does not exist".
 #
-# Verified by read-back only, except the trackpad: on macOS 26.6.2 on
-# 2026-09-15, `defaults.sh check` reports every key at its declared value.
-# Tap-to-click is behaviour-verified: with the per-host
+# Verified on macOS 26.6.2 on 2026-09-15. By read-back for every key:
+# `defaults.sh check` reports each at its declared value. By behaviour, the
+# same day, for the ones that could be watched: key repeat (both sliders at
+# the fast end in System Settings, a held key repeats in Ghostty),
+# press-and-hold (accent popup in Notes, repeat in VS Code), Spaces not
+# rearranging (the toggle reads off), the save dialog opening expanded in
+# TextEdit, and the trackpad below. Tap-to-click is behaviour-verified: with the per-host
 # com.apple.mouse.tapBehavior at 1 and both template Trackpad domains'
 # Clicking keys forced to 0, tapping still clicked and System Settings
 # still showed tap-to-click on, with no log out -- the driver reads the
@@ -37,8 +41,8 @@
 # com.apple.trackpad.threeFingerDragGesture at 1 and both template
 # TrackpadThreeFingerDrag keys forced to 0, a window still followed three
 # fingers. See the Trackpad section. A key that turns out not to take
-# effect is to be removed and
-# named here, not patched with a second key copied from a template; those
+# effect is to be removed and named here, not patched with a second key
+# copied from a template; those
 # carry keys that stopped doing anything releases ago, and a line that
 # reads back correctly while changing nothing is what this file exists to
 # not have.
