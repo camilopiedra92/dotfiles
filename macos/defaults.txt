@@ -32,11 +32,12 @@
 # Clicking keys forced to 0, tapping still clicked and System Settings
 # still showed tap-to-click on, with no log out -- the driver reads the
 # per-host key, not the template ones, which is why the four template lines
-# are gone rather than kept alongside it. Three-finger drag's key location
-# is verified the same way -- toggling in System Settings writes both
-# places -- and the same conclusion should follow by the same mechanism,
-# but its own behavioural test was not run separately. See the Trackpad
-# section. A key that turns out not to take effect is to be removed and
+# are gone rather than kept alongside it. Three-finger drag is
+# behaviour-verified the same way: with the per-host
+# com.apple.trackpad.threeFingerDragGesture at 1 and both template
+# TrackpadThreeFingerDrag keys forced to 0, a window still followed three
+# fingers. See the Trackpad section. A key that turns out not to take
+# effect is to be removed and
 # named here, not patched with a second key copied from a template; those
 # carry keys that stopped doing anything releases ago, and a line that
 # reads back correctly while changing nothing is what this file exists to
@@ -126,10 +127,11 @@ host:NSGlobalDomain    com.apple.mouse.tapBehavior    int    1
 # Three-finger drag. Key location verified 2026-09-15: toggled on in System
 # Settings -> Accessibility -> Pointer Control -> Trackpad Options, then
 # read back from ByHost .GlobalPreferences (its mtime moved, along with
-# both Trackpad domains' -- see the comment above). The same mechanism as
-# tap-to-click -- System Settings writes both places, only the per-host one
-# is read -- should hold here too, but was not tested separately:
-# TrackpadThreeFingerDrag was not forced to 0 and dragged against. The
+# both Trackpad domains' -- see the comment above). Behaviour verified the
+# same day: with this key at 1 and TrackpadThreeFingerDrag forced to 0 in
+# both Trackpad domains, dragging a window with three fingers still worked,
+# with no log out -- the same mechanism as tap-to-click, proven for this
+# gesture rather than inferred from that one. The
 # toggle writes all three keys below, not just the drag one -- once three
 # fingers mean drag, the three-finger swipe gestures move to four fingers,
 # so it turns the swipe keys off rather than leaving them pointing at a
