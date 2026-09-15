@@ -3,8 +3,9 @@
 # ~/.ssh/config.local -- which is why the Include comes first: ssh takes the
 # first value it finds for an option, so that block's User wins. IdentityFile
 # is the exception: it accumulates, so the host's own key is tried first and
-# the one below is still offered after it. A host that must never see the
-# shared key adds IdentitiesOnly yes to its block.
+# the one below is still offered after it. Nothing in config.local can take
+# it away, because Host * matches every host; a host that must never see it
+# needs the pattern here to exclude it, as `Host * !name`.
 Include config.local
 
 Host *

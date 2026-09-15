@@ -258,8 +258,9 @@ The pieces are split by what they are, not by tool:
   `~/.ssh/config.local`, on the machine, and its `User` wins over `Host *`
   only because it is read before it. `IdentityFile` is the exception — it
   accumulates rather than overrides — so a host block's own key is tried first
-  and the shared one is still offered after it; a host that must never see the
-  shared key says `IdentitiesOnly yes` in its block.
+  and the shared one is still offered after it. Nothing in `config.local` can
+  remove it, because `Host *` matches every host; a host that must never see
+  the shared key needs the versioned pattern to exclude it (`Host * !name`).
 
 `install.sh` does the rest, once, and does nothing the second time. It generates
 `~/.ssh/id_ed25519` if there is none — the passphrase prompt is the first of

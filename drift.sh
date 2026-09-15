@@ -210,6 +210,15 @@ signing_key_known() {
     return 0
   }
   pub=$(awk '{ print $2 }' "$file")
+  # The lookup below is a substring test and an empty needle matches every
+  # row, so a .pub that is empty or truncated would read as registered.
+  case "$pub" in
+    AAAA*) ;;
+    *)
+      echo "$key does not look like a public key"
+      return 0
+      ;;
+  esac
   # The listing is tab-separated: TITLE, KEY, ADDED, ID, TYPE. The key is a
   # substring test and not a regex, because base64 holds `+`; the type is
   # compared in its own column, as install.sh does, so a key registered for

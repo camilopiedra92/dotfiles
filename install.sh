@@ -226,14 +226,36 @@ if [ ! -f "$SSH_KEY" ]; then
   ssh-keygen -t ed25519 -C "$(git config --file "$GIT_IDENTITY" user.email)" -f "$SSH_KEY"
 fi
 PUBKEY=$(awk '{ print $2 }' "$SSH_KEY.pub")
+# An empty or truncated .pub -- a copy that went wrong -- must stop here: the
+# lookup below is a substring test, an empty needle is found in every row,
+# and the identity would end up pointing at nothing. Every OpenSSH public
+# key's base64 starts with AAAA (the encoded length of its type string).
+case "$PUBKEY" in
+  AAAA*) ;;
+  *)
+    echo "$SSH_KEY.pub does not look like a public key" >&2
+    exit 1
+    ;;
+esac
 # Nothing above logs gh in, and a new machine is not: `gh auth status` then
 # exits 1, and under set -e that would end the script here with its message
 # captured in a variable and never shown. So the login is done here, the
 # second thing this step asks of you (a browser round trip), asking for the
 # key scopes at the same time so the refresh below has nothing to do.
+#
+# Every flag answers a prompt the interactive flow would otherwise ask.
+# -p https keeps the protocol this machine already uses; -w is the browser
+# round trip rather than a pasted token; --skip-ssh-key because registering
+# the key is this step's job, a few lines down. The remaining prompt, to set
+# gh up as git's credential helper, gh skips on its own when it already is
+# the helper (its Prompt returns early on IsOurs), which git/config declares
+# for github.com. That is the reason it must stay declared there: answered
+# yes, gh writes the helper with `git config --global` -- into the versioned
+# file, since that is what ~/.config/git/config links to.
 if ! gh auth status > /dev/null 2>&1; then
   log "Logging gh into GitHub (opens a browser)"
-  gh auth login -h github.com -s admin:public_key -s admin:ssh_signing_key
+  gh auth login -h github.com -p https -w --skip-ssh-key \
+    -s admin:public_key -s admin:ssh_signing_key
 fi
 # A token from an earlier login cannot manage keys. Without these two scopes
 # `gh ssh-key list` prints a 404 to stderr and nothing to stdout, exit 0 --

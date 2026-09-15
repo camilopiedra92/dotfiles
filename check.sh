@@ -1095,18 +1095,27 @@ STUB
   cat > "$tmp/bin/gh" << 'STUB'
 #!/usr/bin/env bash
 echo "$*" >> "$CALLS"
-scoped() { grep -qF admin:ssh_signing_key "$SCOPES"; }
+# Grants exactly the -s values it was given, so a scope dropped from the
+# step is a scope the stub does not have either. Each key type needs its
+# own: authentication keys admin:public_key, signing keys
+# admin:ssh_signing_key, and a listing shows only the half its scope allows.
+asked() { for ((i = 1; i <= $#; i++)); do [ "${!i}" = -s ] && { j=$((i + 1)); printf ", '%s'" "${!j}"; }; done; true; }
+scoped() { grep -qF "'$1'" "$SCOPES"; }
+scope_for() { [ "$1" = signing ] && echo admin:ssh_signing_key || echo admin:public_key; }
+type=authentication
+for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
 case "$1 $2" in
   "auth status")
     [ -f "$LOGIN" ] || { echo "You are not logged into any GitHub hosts. To log in, run: gh auth login" >&2; exit 1; }
     printf "  - Token scopes: %s\n" "$(cat "$SCOPES")" ;;
-  "auth login") touch "$LOGIN"; case "$*" in *admin:ssh_signing_key*) printf "'repo', 'admin:public_key', 'admin:ssh_signing_key'" > "$SCOPES" ;; *) printf "'repo'" > "$SCOPES" ;; esac ;;
-  "auth refresh") printf ", 'admin:public_key', 'admin:ssh_signing_key'" >> "$SCOPES" ;;
-  "ssh-key list") if scoped; then cat "$KNOWN"; else echo "HTTP 404" >&2; fi ;;
+  "auth login") touch "$LOGIN"; { printf "'repo'"; asked "$@"; } > "$SCOPES" ;;
+  "auth refresh") asked "$@" >> "$SCOPES" ;;
+  "ssh-key list")
+    for t in authentication signing; do
+      if scoped "$(scope_for "$t")"; then awk -F'\t' -v t="$t" '$5 == t' "$KNOWN"; else echo "HTTP 404" >&2; fi
+    done ;;
   "ssh-key add")
-    scoped || { echo "HTTP 404" >&2; exit 1; }
-    type=authentication
-    for ((i = 1; i <= $#; i++)); do [ "${!i}" = --type ] && { j=$((i + 1)); type=${!j}; }; done
+    scoped "$(scope_for "$type")" || { echo "HTTP 404" >&2; exit 1; }
     [ "$type" = signing ] && title="authentication key of mac" || title="signing key of mac"
     printf '%s\t%s\t2026-09-15T00:00:00Z\t1\t%s\n' "$title" "$(cat "$3")" "$type" >> "$KNOWN" ;;
 esac
@@ -1203,6 +1212,31 @@ STUB
       return 1
     }
   done
+
+  # A key file that exists but is empty -- a copy that went wrong -- yields an
+  # empty PUBKEY, and an empty needle is found in every row: every type reads
+  # as registered, nothing is added, and the identity ends up pointing at
+  # nothing. The step has to stop instead.
+  home="$tmp/empty/home"
+  mkdir -p "$home/.ssh" "$home/.config/git"
+  printf '[user]\n\tname = T\n\temail = t@example.com\n' > "$home/.config/git/config.local"
+  : > "$home/.ssh/id_ed25519"
+  : > "$home/.ssh/id_ed25519.pub"
+  : > "$tmp/calls"
+  : > "$tmp/known"
+  touch "$tmp/login"
+  printf "'repo', 'admin:public_key', 'admin:ssh_signing_key'" > "$tmp/scopes"
+  if HOME="$home" DOTFILES="$PWD" CALLS="$tmp/calls" KNOWN="$tmp/known" SCOPES="$tmp/scopes" \
+    LOGIN="$tmp/login" PATH="$tmp/bin:$PATH" bash -euo pipefail "$steps" > "$tmp/out" 2>&1; then
+    echo "an empty id_ed25519.pub was accepted as a key"
+    cat "$tmp/calls"
+    return 1
+  fi
+  ! grep -q '^ssh-key add' "$tmp/calls" || {
+    echo "an empty id_ed25519.pub was sent to GitHub"
+    cat "$tmp/calls"
+    return 1
+  }
 }
 check "install.sh sets up the signing key once and only once" signing_step
 
