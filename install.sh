@@ -273,4 +273,13 @@ for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES/claude/mcp.json"); do
   claude mcp add-json "$name" "$want" --scope user
 done
 
+# --- 9. macOS defaults ---
+# The system layer this repo used to leave to hand: Finder, Dock, keyboard,
+# trackpad, screenshots. Declared in macos/defaults.txt, applied only where
+# the machine differs, so a second run writes nothing and restarts nothing.
+# Last because a Finder restart in the middle of a run is a surprise, and
+# because nothing above depends on it.
+log "Applying macOS defaults"
+"$DOTFILES/macos/defaults.sh" apply
+
 log "Done. Open Ghostty."

@@ -56,6 +56,8 @@ vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
 bin/aware.sh           runs the aware-connector CLI from anywhere
 bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
+macos/defaults.txt     macOS settings, one `defaults` key per line
+macos/defaults.sh      applies the manifest (install.sh) or reports where the machine differs (drift.sh)
 claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
@@ -381,6 +383,54 @@ here rather than turning into a CI failure nobody can explain later. When it
 does fail, either upgrade the pin and its hash in `.github/tool-checksums.txt`,
 or pin your local tool back.
 
+## macOS defaults
+
+```bash
+macos/defaults.sh apply|check
+```
+
+One parser reads `macos/defaults.txt` for both verbs. `install.sh` calls
+`apply`, `drift.sh` calls `check`, and if each had its own copy of the parsing
+the two would eventually disagree about what a line means the first time one
+of them was edited without the other.
+
+Two other shapes were considered and rejected. The one every "macos.sh"
+template on the internet uses — a script of bare `defaults write` lines — was
+rejected because it cannot be verified: nothing can read it back without
+parsing shell, which is exactly the job `check` has to do. `defaults import`
+of a plist per domain was the other candidate, rejected because it replaces
+the whole domain, taking with it every key the owning app wrote for itself —
+Finder's window positions and VS Code's own settings alongside the handful of
+keys this repo actually wants to declare.
+
+The manifest keeps to **only non-defaults**: only values that differ from
+Apple's own. Same argument as `node = "lts"` in `mise/config.toml` — a default
+written down is frozen, and the day Apple ships a better one this file would
+put the old one back, with nobody knowing why.
+
+Deliberately absent, and why:
+
+- **Anything in a domain Jamf manages on this machine** — screen lock,
+  updates, firewall, FileVault, Siri. A line here for any of them would be
+  silently overruled while reading as if it applied.
+- **`sudo`.** Nothing this manifest touches needs it.
+- **Killing `cfprefsd`.** `defaults` already goes through it; killing it is
+  the folk remedy that produces the stale-preferences bug it is supposed to
+  cure.
+- **`LSQuarantine`.** Turning it off system-wide silences the "downloaded from
+  the internet, are you sure?" prompt for every app forever — a security
+  trade this repo does not make on your behalf.
+- **Press-and-hold, globally.** The keyboard layout here is ABC and Spanish
+  accents are typed through press-and-hold; turning it off everywhere to fix
+  key repeat would break accents to get there. It is turned off per app
+  instead, for VS Code and Ghostty, where holding a key is meant to repeat it
+  — see the manifest.
+
+`~/Library` is unhidden on every `apply` (`chflags nohidden ~/Library`) but
+has no line in the manifest: it is a Finder flag, not a `defaults` key, so the
+parser has no field that could hold it. It runs unconditionally, the same way
+`mkdir -p ~/Screenshots` does — both are no-ops once already done.
+
 ## Finding drift
 
 ```bash
@@ -429,6 +479,10 @@ it, so removing that interpreter leaves the command on `PATH` and dead: still
 installed, still declared, still the right version, `bad interpreter` when you
 type it. It found exactly that on the first run — a tool built against an
 Anaconda python that is no longer on this machine.
+
+It also asks `macos/defaults.sh check` whether `macos/defaults.txt` matches
+this machine — the same parser `install.sh` applies with, so the comparison
+cannot disagree with what applying it would do.
 
 It is not part of `check.sh` and CI never runs it, on purpose. Every check in
 there has to mean the same thing on a runner as on this laptop; this one cannot,

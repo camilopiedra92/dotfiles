@@ -875,6 +875,16 @@ report "every command on PATH can run" \
   "remove the link, or reinstall whatever put it there" \
   "$(broken_commands)"
 
+printf '\n%smacOS%s\n' "$DIM" "$OFF"
+
+# The manifest is applied by install.sh and drifts the same way the Brewfile
+# does: System Settings is a UI that writes the same keys, and an OS upgrade
+# occasionally resets one. Same script, other verb, so the comparison cannot
+# disagree with the application.
+report "macos/defaults.txt matches this machine" \
+  "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
+  "$(./macos/defaults.sh check)"
+
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sNo drift: installed and declared match%s\n\n' "$GREEN" "$OFF"
 else

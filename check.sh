@@ -911,7 +911,7 @@ mcp_step() {
 
   {
     echo 'log() { :; }'
-    sed -n '/^# --- 8\. Claude Code MCP servers/,/^log "Done\./p' install.sh
+    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 9\./p' install.sh
   } > "$steps"
   grep -qF 'claude mcp add-json' "$steps" || {
     echo "could not extract step 8 from install.sh"
