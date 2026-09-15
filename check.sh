@@ -928,7 +928,45 @@ macos_refuses_a_missing_manifest() {
     return 1
   }
 }
+
+# A MANIFEST override whose directory does not exist either (not just the
+# file) is a second way to reach the same bug: the `cd` inside the
+# resolution has to be its own command substitution, or a failing `cd` is
+# swallowed by `set -e` and the readability check further down catches it
+# only by accident, against a garbage path it constructs instead of the one
+# asked for. Asserting the message names the path as given is what tells the
+# two apart: the accident path can only ever report a mangled one.
+macos_refuses_a_manifest_in_a_missing_directory() {
+  local tmp rc out want
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  want="$tmp/no-such-dir/x.txt"
+  rc=0
+  out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$want" \
+    bash macos/defaults.sh check 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "exited $rc on a manifest in a missing directory, want 2"
+    echo "$out"
+    return 1
+  }
+  case "$out" in
+    *"$want"*) ;;
+    *)
+      echo "did not name the requested path ($want): $out"
+      return 1
+      ;;
+  esac
+  [ ! -s "$tmp/writes" ] || {
+    echo "wrote although the manifest could not be read"
+    return 1
+  }
+}
 check "check refuses a missing manifest instead of reading it as a match" macos_refuses_a_missing_manifest
+check "check names the requested path when its directory is missing too" macos_refuses_a_manifest_in_a_missing_directory
 
 # Step 8 has the same split as step 7: whether `claude mcp` registers a server
 # is Claude Code's problem, but which servers it is asked to add, remove, or

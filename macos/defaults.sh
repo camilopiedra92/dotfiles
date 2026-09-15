@@ -23,14 +23,18 @@ set -euo pipefail
 
 # MANIFEST is overridable so check.sh can point it at a fixture, and resolved
 # here, before the `cd` below, so a relative override means what it looks
-# like it means -- relative to the caller -- rather than to macos/. A `cd`
-# into a directory that does not exist fails, but that failure is on the
-# `cd`, not on the assignment as a whole -- bash's `set -e` does not fail an
-# assignment over a failing command substitution -- so it is not caught here.
-# Nothing needs to catch it here: the readability check below does, once
-# MANIFEST is settled either way.
+# like it means -- relative to the caller -- rather than to macos/. The `cd`
+# is its own command substitution, assigned to `dir` alone, so its failure
+# -- a directory that does not exist -- is the exit status bash checks under
+# `set -e`, and is caught here rather than left to accidentally also fail
+# the readability check further down against whatever garbage path a
+# concatenated substitution would have produced.
 if [ -n "${MANIFEST:-}" ]; then
-  MANIFEST=$(cd "$(dirname "$MANIFEST")" 2> /dev/null && pwd)/$(basename "$MANIFEST")
+  dir=$(cd "$(dirname "$MANIFEST")" 2> /dev/null && pwd) || {
+    echo "no manifest at $MANIFEST" >&2
+    exit 2
+  }
+  MANIFEST="$dir/$(basename "$MANIFEST")"
 fi
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
