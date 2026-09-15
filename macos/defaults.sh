@@ -22,6 +22,11 @@
 # overruled. cfprefsd is never killed: `defaults` already goes through it,
 # and killing it is the folk remedy that produces the stale-preferences bug
 # it is supposed to cure.
+#
+# A domain field written `host:NSGlobalDomain` instead of `NSGlobalDomain` is
+# read and written through `defaults -currentHost`: macOS keeps some
+# preferences -- trackpad and mouse among them -- per host, in the ByHost
+# plist rather than the one a bare domain name reads.
 set -euo pipefail
 
 # MANIFEST is overridable so check.sh can point it at a fixture, and resolved
@@ -89,26 +94,54 @@ owner() {
   esac
 }
 
+# Runs `defaults`, prefixing `-currentHost` when $1 is 1. A function that
+# switches on a leading flag, rather than an array of extra arguments, is
+# because macOS still ships bash 3.2, where "${arr[@]}" on an array left
+# empty (the non-host case) is an unbound-variable error under `set -u`.
+defaults_for_host() {
+  local use_host=$1
+  shift
+  if [ "$use_host" = 1 ]; then
+    defaults -currentHost "$@"
+  else
+    defaults "$@"
+  fi
+}
+
 DIFFERENCES=0
 RESTART=""
 
 while read -r domain key type value; do
   [ -n "$domain" ] || continue
+  # macOS keeps trackpad and mouse preferences per host, in the ByHost
+  # plist rather than the domain's usual one, and `-currentHost` is how
+  # `defaults` addresses that file. A `host:` prefix on the domain field
+  # says a line lives there; report and apply against it while keeping the
+  # prefix in what gets printed, so `check`'s output still names the exact
+  # manifest line.
+  report_domain=$domain
+  use_host=0
+  case "$domain" in
+    host:*)
+      domain=${domain#host:}
+      use_host=1
+      ;;
+  esac
   want=$(canonical "$type" "$value")
-  have=$(defaults read "$domain" "$key" 2> /dev/null) || have="unset"
+  have=$(defaults_for_host "$use_host" read "$domain" "$key" 2> /dev/null) || have="unset"
   # Floats come back from `defaults read` in whatever form they were written,
   # so both sides go through the same formatting before comparing.
   [ "$type" = float ] && [ "$have" != unset ] && have=$(canonical float "$have")
   [ "$have" = "$want" ] && continue
   DIFFERENCES=1
   if [ "$MODE" = check ]; then
-    echo "$domain $key: want $value, have $have"
+    echo "$report_domain $key: want $value, have $have"
     continue
   fi
-  echo "$domain $key -> $value"
+  echo "$report_domain $key -> $value"
   case "$type" in
-    string) defaults write "$domain" "$key" -string "$(canonical string "$value")" ;;
-    *) defaults write "$domain" "$key" "-$type" "$value" ;;
+    string) defaults_for_host "$use_host" write "$domain" "$key" -string "$(canonical string "$value")" ;;
+    *) defaults_for_host "$use_host" write "$domain" "$key" "-$type" "$value" ;;
   esac
   app=$(owner "$domain")
   [ -z "$app" ] || case " $RESTART " in *" $app "*) ;; *) RESTART="$RESTART $app" ;; esac

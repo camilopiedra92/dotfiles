@@ -1172,9 +1172,14 @@ macos_manifest() {
     echo "macos/defaults.txt missing"
     return 1
   }
+  # `host:` is the one prefix defaults.sh interprets (it strips it and adds
+  # `-currentHost`), so it is the one place a typo'd or unknown prefix has to
+  # be refused here -- otherwise `hots:NSGlobalDomain` reads as a plain
+  # domain and `defaults` would happily create a plist literally named that.
   bad=$(sed 's/#.*//' macos/defaults.txt | awk '
     NF == 0 { next }
     NF < 4 { print NR": fewer than four fields"; next }
+    $1 ~ /:/ && $1 !~ /^host:./ { print NR": unknown domain prefix "$1; next }
     NF > 4 && $3 != "string" { print NR": extra fields"; next }
     $3 !~ /^(bool|int|float|string)$/ { print NR": unknown type "$3; next }
     $3 == "bool" && $4 !~ /^(true|false)$/ { print NR": bool must be true or false" }
@@ -1191,19 +1196,30 @@ check "macos/defaults.txt has domain key type value per line" macos_manifest
 # The stub answers `read` from $STATE (lines of "domain key value"), records
 # every `write` to $WRITES, and every killall to $KILLED. `defaults read` on a
 # key that is not set exits 1 and prints to stderr, which is what the stub
-# reproduces so the "unset" path is the real one.
+# reproduces so the "unset" path is the real one. A leading `-currentHost`
+# (defaults.sh's own way of addressing the per-host ByHost file) switches the
+# stub to a separate $STATE_HOST/$WRITES_HOST pair, so a test can prove a
+# `host:` manifest line never touches the plain domain's state and vice
+# versa.
 macos_stub() {
   local dir=$1
   mkdir -p "$dir/bin"
   cat > "$dir/bin/defaults" << 'STUB'
 #!/usr/bin/env bash
+state=$STATE
+writes=$WRITES
+if [ "$1" = -currentHost ]; then
+  shift
+  state=$STATE_HOST
+  writes=$WRITES_HOST
+fi
 case "$1" in
   read)
-    v=$(awk -v d="$2" -v k="$3" '$1 == d && $2 == k { print $3; exit }' "$STATE")
+    v=$(awk -v d="$2" -v k="$3" '$1 == d && $2 == k { print $3; exit }' "$state")
     [ -n "$v" ] || { echo "does not exist" >&2; exit 1; }
     echo "$v" ;;
   write)
-    echo "$2 $3 $4 $5" >> "$WRITES" ;;
+    echo "$2 $3 $4 $5" >> "$writes" ;;
 esac
 STUB
   cat > "$dir/bin/killall" << 'STUB'
@@ -1299,6 +1315,51 @@ macos_check_reports_and_fails() {
   }
 }
 check "check reports each difference and never writes" macos_check_reports_and_fails
+
+# A `host:` line must go through `-currentHost` on both read and write, and a
+# plain line in the same manifest must not gain it by accident -- the two
+# states below are disjoint, so either script touching the wrong one shows up
+# as a wrong report or a write on the wrong side.
+macos_host_lines_use_currenthost() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  cat > "$tmp/defaults.txt" << 'EOF'
+host:NSGlobalDomain    com.apple.mouse.tapBehavior    int    1
+NSGlobalDomain         KeyRepeat                       int    2
+EOF
+  printf 'NSGlobalDomain com.apple.mouse.tapBehavior 0\n' > "$tmp/state_host"
+  printf 'NSGlobalDomain KeyRepeat 2\n' > "$tmp/state"
+  : > "$tmp/writes"
+  : > "$tmp/writes_host"
+  : > "$tmp/killed"
+  HOME="$tmp/home" STATE="$tmp/state" STATE_HOST="$tmp/state_host" \
+    WRITES="$tmp/writes" WRITES_HOST="$tmp/writes_host" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    bash macos/defaults.sh apply > "$tmp/out" || return 1
+  diff <(echo "NSGlobalDomain com.apple.mouse.tapBehavior -int 1") "$tmp/writes_host" || return 1
+  [ ! -s "$tmp/writes" ] || {
+    echo "a host: line wrote to the plain domain:"
+    cat "$tmp/writes"
+    return 1
+  }
+  diff <(printf 'host:NSGlobalDomain com.apple.mouse.tapBehavior -> 1\nother apps read the new values when they next launch; keyboard and trackpad changes need a log out and back in\n') "$tmp/out" || return 1
+
+  : > "$tmp/writes_host"
+  if out=$(HOME="$tmp/home" STATE="$tmp/state" STATE_HOST="$tmp/state_host" \
+    WRITES="$tmp/writes" WRITES_HOST="$tmp/writes_host" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    bash macos/defaults.sh check); then
+    echo "check exited 0 with a difference present"
+    return 1
+  fi
+  [ "$out" = "host:NSGlobalDomain com.apple.mouse.tapBehavior: want 1, have 0" ] || {
+    echo "unexpected report: $out"
+    return 1
+  }
+}
+check "a host: line reads and writes -currentHost, a plain line does not" macos_host_lines_use_currenthost
 
 # A missing manifest must not read as "the machine matches" -- drift.sh's
 # own contract for `check` is 0 (matches) or 1 (differences); anything else

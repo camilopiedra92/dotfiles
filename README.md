@@ -530,6 +530,25 @@ has no line in the manifest: it is a Finder flag, not a `defaults` key, so the
 parser has no field that could hold it. It runs unconditionally, the same way
 `mkdir -p ~/Screenshots` does — both are no-ops once already done.
 
+A domain written `host:NSGlobalDomain` instead of `NSGlobalDomain` is read
+and written through `defaults -currentHost`, which reaches
+`~/Library/Preferences/ByHost/.GlobalPreferences.<uuid>.plist` instead of the
+domain's usual plist — macOS keeps some preferences, trackpad and mouse among
+them, per host rather than per user. The manifest's trackpad keys told only
+part of the story for a while: every `macos.sh` template on the internet
+writes `com.apple.AppleMultitouchTrackpad` and
+`com.apple.driver.AppleBluetoothMultitouch.trackpad`, `check` reported those
+as applied, and tap-to-click still did not work. Toggling the setting in
+System Settings and diffing every plist under `~/Library/Preferences` —
+`ByHost/` included, not only the domain a template writes — showed System
+Settings writes to more than one place, so read-back on a single domain
+could not say by itself which one the driver actually consults. A
+behavioural test settled it: with the template domains' `Clicking` keys
+forced to 0 and the per-host key left at 1, tapping still clicked and
+System Settings still showed tap-to-click on — the driver reads the
+per-host key, and the template keys were dead. See the Trackpad section of
+the manifest.
+
 ## Finding drift
 
 ```bash

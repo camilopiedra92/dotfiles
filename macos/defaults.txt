@@ -1,8 +1,12 @@
 # macOS settings this machine is expected to have, one per line.
 #
 # Four whitespace-separated fields: domain, key, type, value. `#` starts a
-# comment. macos/defaults.sh applies the file from install.sh and checks it
-# from drift.sh, and is the only thing that reads it.
+# comment. The domain may be written `host:NSGlobalDomain` instead of
+# `NSGlobalDomain`: macOS keeps some preferences -- trackpad and mouse among
+# them -- per host rather than in the domain's usual file, and defaults.sh
+# reads and writes a `host:` line through `defaults -currentHost` to reach
+# it. macos/defaults.sh applies the file from install.sh and checks it from
+# drift.sh, and is the only thing that reads it.
 #
 # Only values that differ from Apple's default are here. A default written
 # down is frozen: the day Apple ships a better one this file would put the
@@ -21,15 +25,22 @@
 # invisible to `defaults read` and consulted first by the app. Checked on
 # this machine: the managed Bluetooth key reads as "does not exist".
 #
-# Verified by read-back only, so far: on macOS 26.6.2 on 2026-09-15,
-# `defaults.sh check` reports every key at its declared value. The pass
-# that proves behaviour -- the System Settings toggle showing the value,
-# tap-to-click and three-finger drag working after a log out -- is still
-# pending. A key that turns out not to take effect is to be removed and
-# named here, not patched with a second key copied from a "macos.sh"
-# template; those carry keys that stopped doing anything releases ago, and
-# a line that reads back correctly while changing nothing is what this
-# file exists to not have.
+# Verified by read-back only, except the trackpad: on macOS 26.6.2 on
+# 2026-09-15, `defaults.sh check` reports every key at its declared value.
+# Tap-to-click is behaviour-verified: with the per-host
+# com.apple.mouse.tapBehavior at 1 and both template Trackpad domains'
+# Clicking keys forced to 0, tapping still clicked and System Settings
+# still showed tap-to-click on, with no log out -- the driver reads the
+# per-host key, not the template ones, which is why the four template lines
+# are gone rather than kept alongside it. Three-finger drag's key location
+# is verified the same way -- toggling in System Settings writes both
+# places -- and the same conclusion should follow by the same mechanism,
+# but its own behavioural test was not run separately. See the Trackpad
+# section. A key that turns out not to take effect is to be removed and
+# named here, not patched with a second key copied from a template; those
+# carry keys that stopped doing anything releases ago, and a line that
+# reads back correctly while changing nothing is what this file exists to
+# not have.
 
 # ── Finder ──────────────────────────────────────────────────────────────────
 
@@ -96,12 +107,38 @@ NSGlobalDomain          AppleKeyboardUIMode             int     2
 
 # ── Trackpad ────────────────────────────────────────────────────────────────
 
-# Tap to click and three-finger drag. Both domains are needed: the first is
-# the built-in trackpad, the second an external one.
-com.apple.AppleMultitouchTrackpad                     Clicking                bool  true
-com.apple.driver.AppleBluetoothMultitouch.trackpad    Clicking                bool  true
-com.apple.AppleMultitouchTrackpad                     TrackpadThreeFingerDrag bool  true
-com.apple.driver.AppleBluetoothMultitouch.trackpad    TrackpadThreeFingerDrag bool  true
+# com.apple.AppleMultitouchTrackpad and com.apple.driver.AppleBluetoothMultitouch.trackpad
+# Clicking/TrackpadThreeFingerDrag stood here until 2026-09-15: every
+# "macos.sh" template on the internet writes them, and with them alone
+# tap-to-click did not take. Toggling tap-to-click and three-finger drag in
+# System Settings writes both places -- the per-host global domain below
+# and these two Trackpad domains -- but only the per-host one is read.
+# Proven 2026-09-15 13:40, no log out: with both domains' Clicking forced
+# to 0 and com.apple.mouse.tapBehavior left at 1, tapping still clicked and
+# System Settings still showed tap-to-click on. The template keys are dead
+# on 26.6.2; deleted rather than kept alongside the key that actually
+# works.
+#
+# Tap to click. Per-host because macOS keeps trackpad and mouse settings per
+# machine, which is also why the key lives in the ByHost file rather than in
+# NSGlobalDomain's own plist.
+host:NSGlobalDomain    com.apple.mouse.tapBehavior    int    1
+# Three-finger drag. Key location verified 2026-09-15: toggled on in System
+# Settings -> Accessibility -> Pointer Control -> Trackpad Options, then
+# read back from ByHost .GlobalPreferences (its mtime moved, along with
+# both Trackpad domains' -- see the comment above). The same mechanism as
+# tap-to-click -- System Settings writes both places, only the per-host one
+# is read -- should hold here too, but was not tested separately:
+# TrackpadThreeFingerDrag was not forced to 0 and dragged against. The
+# toggle writes all three keys below, not just the drag one -- once three
+# fingers mean drag, the three-finger swipe gestures move to four fingers,
+# so it turns the swipe keys off rather than leaving them pointing at a
+# gesture that no longer exists. com.apple.trackpad.fourFingerHorizSwipeGesture
+# and com.apple.trackpad.fourFingerVertSwipeGesture read 2 after the
+# toggle, Apple's own default, so they are not declared here.
+host:NSGlobalDomain    com.apple.trackpad.threeFingerDragGesture        int   1
+host:NSGlobalDomain    com.apple.trackpad.threeFingerHorizSwipeGesture  int   0
+host:NSGlobalDomain    com.apple.trackpad.threeFingerVertSwipeGesture   int   0
 
 # ── Dialogs and documents ───────────────────────────────────────────────────
 
