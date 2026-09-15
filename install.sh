@@ -422,4 +422,11 @@ done
 log "Applying macOS defaults"
 "$DOTFILES/macos/defaults.sh" apply
 
+# --- 10. Power ---
+# The settings pmset owns, kept out of defaults.txt because they need root:
+# this is the one step after Homebrew that can ask for a password, and it
+# asks only when a declared value differs, so a second run is silent.
+log "Applying power settings"
+"$DOTFILES/macos/power.sh" apply
+
 log "Done. Open Ghostty."
