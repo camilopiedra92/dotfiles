@@ -762,9 +762,16 @@ printf '\n%smacOS defaults%s\n' "$DIM" "$OFF"
 
 macos_manifest() {
   local bad
+  # sed's "No such file" goes to its own stderr, not into $bad, so a missing
+  # manifest would otherwise feed awk nothing and read as zero problems.
+  [ -f macos/defaults.txt ] || {
+    echo "macos/defaults.txt missing"
+    return 1
+  }
   bad=$(sed 's/#.*//' macos/defaults.txt | awk '
     NF == 0 { next }
     NF < 4 { print NR": fewer than four fields"; next }
+    NF > 4 && $3 != "string" { print NR": extra fields"; next }
     $3 !~ /^(bool|int|float|string)$/ { print NR": unknown type "$3; next }
     $3 == "bool" && $4 !~ /^(true|false)$/ { print NR": bool must be true or false" }
     $3 == "int" && $4 !~ /^-?[0-9]+$/ { print NR": int must be an integer" }
@@ -835,6 +842,11 @@ macos_apply_is_a_noop_when_matching() {
     echo "restarted an app although nothing changed"
     return 1
   }
+  [ ! -s "$tmp/out" ] || {
+    echo "printed output although nothing changed:"
+    cat "$tmp/out"
+    return 1
+  }
 }
 check "apply writes nothing when the machine already matches" macos_apply_is_a_noop_when_matching
 
@@ -854,6 +866,7 @@ macos_apply_writes_only_the_difference() {
   diff <(printf 'com.apple.dock autohide-delay -float 0\ncom.apple.screencapture location -string %s/Screenshots\n' "$tmp/home") "$tmp/writes" || return 1
   # Only the Dock changed; Finder must not be restarted for it.
   diff <(echo Dock) "$tmp/killed" || return 1
+  diff <(printf 'com.apple.dock autohide-delay -> 0\ncom.apple.screencapture location -> ~/Screenshots\nrestarted: Dock\nother apps read the new values when they next launch; keyboard and trackpad changes need a log out and back in\n') "$tmp/out" || return 1
 }
 check "apply writes exactly the differing keys and restarts only their app" macos_apply_writes_only_the_difference
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Applies macos/defaults.txt to this machine, or reports where it differs.
 #
-# Usage:  macos/defaults.sh [apply|check]
+# Usage:  macos/defaults.sh apply|check
 #
 # One file reads the manifest for both verbs on purpose: install.sh applies
 # it and drift.sh checks it, and if each had its own parser the two would
@@ -21,17 +21,25 @@
 # supposed to cure.
 set -euo pipefail
 
+# MANIFEST is overridable so check.sh can point it at a fixture, and resolved
+# here, before the `cd` below, so a relative override means what it looks
+# like it means -- relative to the caller -- rather than to macos/.
+if [ -n "${MANIFEST:-}" ]; then
+  MANIFEST=$(cd "$(dirname "$MANIFEST")" && pwd)/$(basename "$MANIFEST")
+fi
+
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-MODE=${1:-apply}
+# No default verb: install.sh always means apply and drift.sh always means
+# check, so a bare invocation is a mistake worth an error, not a guess.
+MODE=${1:-}
 case "$MODE" in
   apply | check) ;;
   *)
-    echo "usage: macos/defaults.sh [apply|check]" >&2
+    echo "usage: macos/defaults.sh apply|check" >&2
     exit 2
     ;;
 esac
-# Overridable so check.sh can point it at a fixture.
 MANIFEST=${MANIFEST:-defaults.txt}
 
 # What `defaults read` prints for a declared value, so the two can be
@@ -62,7 +70,6 @@ owner() {
 
 DIFFERENCES=0
 RESTART=""
-LOGOUT=0
 
 while read -r domain key type value; do
   [ -n "$domain" ] || continue
@@ -84,7 +91,6 @@ while read -r domain key type value; do
   esac
   app=$(owner "$domain")
   [ -z "$app" ] || case " $RESTART " in *" $app "*) ;; *) RESTART="$RESTART $app" ;; esac
-  case "$domain" in NSGlobalDomain | com.apple.AppleMultitouchTrackpad | com.apple.driver.AppleBluetoothMultitouch.trackpad) LOGOUT=1 ;; esac
 done < <(sed 's/#.*//' "$MANIFEST")
 
 if [ "$MODE" = check ]; then
@@ -100,6 +106,9 @@ mkdir -p "$HOME/Screenshots"
 # Skipped under check.sh, whose HOME is a temporary directory with no Library.
 [ -d "$HOME/Library" ] && chflags nohidden "$HOME/Library"
 
-for app in $RESTART; do killall "$app"; done
+# An app being restarted is an optimisation, not a promise: over SSH, or with
+# Finder quit, it is simply not running, and that must not abort the writes
+# already made.
+for app in $RESTART; do killall "$app" || true; done
 [ -z "$RESTART" ] || echo "restarted:$RESTART"
-[ "$LOGOUT" -eq 0 ] || echo "log out and back in for the keyboard and trackpad changes to take effect"
+[ "$DIFFERENCES" -eq 0 ] || echo "other apps read the new values when they next launch; keyboard and trackpad changes need a log out and back in"

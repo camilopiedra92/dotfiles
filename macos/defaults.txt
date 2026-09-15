@@ -32,6 +32,8 @@ com.apple.finder        FXPreferredViewStyle            string  Nlsv
 com.apple.finder        FXDefaultSearchScope            string  SCcf
 # Renaming a.txt to a.md is a rename, not a mistake worth a dialog.
 com.apple.finder        FXEnableExtensionChangeWarning  bool    false
+# In list view, a folder sorted between files by name is invisible until you
+# scroll to where its name would put it.
 com.apple.finder        _FXSortFoldersFirst             bool    true
 # New windows open at home, not at Recents. PfHm = home directory.
 com.apple.finder        NewWindowTarget                 string  PfHm
@@ -109,4 +111,6 @@ com.apple.screencapture disable-shadow                  bool    true
 
 # ── Menu bar ────────────────────────────────────────────────────────────────
 
+# The icon alone shows quarters. A laptop that ends a meeting at 20% versus
+# 5% is the difference the number makes.
 com.apple.controlcenter BatteryShowPercentage           bool    true
