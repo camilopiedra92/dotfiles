@@ -30,4 +30,4 @@
 # Bumping it takes two steps in either order: `specify self upgrade` moves the
 # machine, and this line has to follow. drift.sh reports the gap until it does,
 # and reports the tag going stale against upstream's releases before that.
-specify-cli  git+https://github.com/github/spec-kit.git@v1.0.6
+specify-cli  git+https://github.com/github/spec-kit.git@v1.0.7
