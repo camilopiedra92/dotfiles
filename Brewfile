@@ -13,6 +13,10 @@ brew "eza"
 brew "fastfetch"
 # Simple, fast and user-friendly alternative to find
 brew "fd"
+# Video encoder. Needed by projects that build video outside a bundled binary:
+# ~/Development/riso needs the fps and tile filters, which Remotion's bundled
+# ffmpeg is built without.
+brew "ffmpeg"
 # Command-line fuzzy finder written in Go
 brew "fzf"
 # Disk usage analyzer with console interface written in Go
