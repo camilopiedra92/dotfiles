@@ -217,6 +217,17 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   containers or VMs where Claude Code can't cause damage", and this laptop is
   neither. The same page notes a user can set this in their own settings to lock
   themselves out of the mode, which is what this does.
+- **`rm -rf` is not denied, and that is the protection, not a gap in it.** A
+  deny rule is a prefix on the command text, so `Bash(rm -rf:*)` never matched
+  `rm -fr`, `rm -r -f`, `/bin/rm -rf` or `bash -c '…'`: it read as protection
+  while granting none, the same failure `git-guard.sh` exists for. What it did
+  stop was the legitimate case, Claude clearing away files it had just made. The
+  real guards need no rule: Claude Code refuses any removal of a critical path
+  (`/`, `~`, …) even over an allow rule or hook, and auto mode's classifier
+  blocks irreversibly destroying files that existed before the session, deletes
+  through unresolved variables, and is shown `git status` before an `rm -rf` in a
+  repo. A hook was the alternative and lost: it cannot know which files the
+  session created, which is the one distinction that matters here.
 
 Note what a deny rule can and cannot reach. It covers Claude's own file tools
 and the shell commands Claude Code recognises — `cat`, `head`, `sed` — and stops
