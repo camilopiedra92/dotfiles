@@ -50,7 +50,9 @@ path=(
 # version and a script silently got a different major.
 #
 # Shims cover exactly that gap: they are plain symlinks to mise, so they cost
-# nothing to put on PATH and resolve the same versions. .zshrc still activates
-# afterwards and takes precedence there, which avoids paying a subprocess hop
-# per command in the shell you actually type in.
+# nothing to put on PATH and resolve the same versions. In the shell you type
+# in, .zshrc still activates afterwards and takes precedence there, which avoids
+# paying a subprocess hop per command. It does not when CLAUDECODE is set: an
+# agent snapshots PATH once and never runs the prompt hook, so it stays on these
+# shims -- see the Runtimes section of .zshrc.
 path=("${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims" $path)

@@ -63,8 +63,25 @@ zstyle ':fzf-tab:complete:cd:*' fzf-preview 'eza -1 --color=always $realpath'
 zstyle ':fzf-tab:*' switch-group '<' '>'
 
 # ---------- Runtimes ----------
-# mise manages node, python, go... per the mise.toml of each project
-eval "$(mise activate zsh)"
+# mise manages node, python, go... per the mise.toml of each project.
+#
+# `mise activate` puts the resolved install dirs on PATH and relies on its
+# precmd/chpwd hooks to recompute them per directory. Claude Code (CLAUDECODE=1)
+# reads this file once, in an interactive shell started where claude was
+# launched, snapshots the resulting PATH and replays it before every command in
+# a fresh shell -- the hooks are not in the snapshot and no prompt is ever drawn.
+# Observed 2026-09-24: launched from a directory on the global config, the
+# snapshot froze installs/node/26/bin ahead of the shims, and `node --version`
+# printed v26 inside a project whose mise.toml pins 24.
+#
+# So an agent gets shims only, which is what mise's docs recommend for anything
+# that never draws a prompt: they resolve per directory at exec time, so a
+# frozen PATH is still correct. The shell you type in keeps full activation.
+if [[ -n $CLAUDECODE ]]; then
+  eval "$(mise activate zsh --shims)"
+else
+  eval "$(mise activate zsh)"
+fi
 
 # ---------- Prompt ----------
 eval "$(starship init zsh)"
