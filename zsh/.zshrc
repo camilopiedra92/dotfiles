@@ -74,7 +74,9 @@ eval "$(mise activate zsh)"
 # stayed ahead of the shims, and `node --version` printed v26 in a project whose
 # mise.toml pins 24. Deactivating for the launch leaves the shims from .zshenv,
 # which resolve per directory at exec time; the subshell keeps this shell
-# activated. Claude launched from an IDE does not come through here: not tested.
+# activated. A bare `mise deactivate` is enough because after activate `mise`
+# is a shell function whose deactivate branch evals the binary's output itself
+# (checked with `type mise` and `functions mise`, 2026-09-24). Claude launched from an IDE does not come through here: not tested.
 claude() { (mise deactivate && command claude "$@") }
 
 # ---------- Prompt ----------
