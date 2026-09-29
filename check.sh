@@ -967,6 +967,13 @@ STUB
     if [ "$start" = logged-in ]; then
       touch "$tmp/login"
       printf "'gist', 'read:org', 'repo', 'workflow'" > "$tmp/scopes"
+      # A second identity, scoped to one directory: a client's GitHub account
+      # with its own key. The file is all the machine declares; the step has
+      # to turn it into the includeIf and the allowed_signers line.
+      mkdir -p "$home/.config/git/identities"
+      echo "ssh-ed25519 AAAAC3client c@client.example" > "$home/.ssh/id_client.pub"
+      printf '[identity]\n\tgitdir = ~/work/client/\n[user]\n\temail = c@client.example\n\tsigningkey = ~/.ssh/id_client.pub\n' \
+        > "$home/.config/git/identities/client.gitconfig"
     else
       : > "$tmp/scopes"
     fi
@@ -1035,8 +1042,35 @@ STUB
         return 1
       }
     done
-    [ "$(wc -l < "$home/.config/git/allowed_signers")" -eq 1 ] || {
-      echo "$start: allowed_signers has $(wc -l < "$home/.config/git/allowed_signers") lines"
+    local signers=1
+    [ "$start" = logged-in ] && signers=2
+    [ "$(wc -l < "$home/.config/git/allowed_signers")" -eq "$signers" ] || {
+      echo "$start: allowed_signers has $(wc -l < "$home/.config/git/allowed_signers") lines, expected $signers"
+      cat "$home/.config/git/allowed_signers"
+      return 1
+    }
+    [ "$start" = logged-in ] || continue
+    grep -qxF 'c@client.example ssh-ed25519 AAAAC3client c@client.example' "$home/.config/git/allowed_signers" || {
+      echo "$start: the scoped identity's key is not an allowed signer"
+      cat "$home/.config/git/allowed_signers"
+      return 1
+    }
+    [ "$(grep -c includeIf "$home/.config/git/config.local")" -eq 1 ] || {
+      echo "$start: expected exactly one includeIf in config.local after two runs"
+      cat "$home/.config/git/config.local"
+      return 1
+    }
+    # The proof that matters is git's own answer: inside the scoped directory
+    # the scoped identity wins, outside it the default one still holds.
+    printf '[include]\n\tpath = config.local\n' > "$home/.config/git/config"
+    mkdir -p "$home/work/client/repo" "$home/elsewhere"
+    git -C "$home/work/client/repo" init -q
+    git -C "$home/elsewhere" init -q
+    local inside outside
+    inside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_NOSYSTEM=1 git -C "$home/work/client/repo" config user.email)
+    outside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_NOSYSTEM=1 git -C "$home/elsewhere" config user.email)
+    [ "$inside" = c@client.example ] && [ "$outside" = t@example.com ] || {
+      echo "$start: expected c@client.example inside the scoped directory and t@example.com outside, got '$inside' and '$outside'"
       return 1
     }
   done

@@ -89,7 +89,7 @@ they are usually installed to:
 | `~/.zshenv` | cannot be moved: zsh reads it before it can know about `ZDOTDIR`, and it is what points at the directory below |
 | `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see below — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
-| `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against) |
+| `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against); plus `identities/`, one file per identity scoped to a directory, written by hand (see Commit signing) |
 | `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
 | `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
@@ -263,7 +263,7 @@ The pieces are split by what they are, not by tool:
   its own copy of the public key and checks against that; `git log
   --show-signature` and `git verify-commit` on this machine check against this
   file, one `email key` line per identity. `install.sh` rewrites it whole from
-  the current identity and key, so it can never hold a stale line.
+  the current identities and keys, so it can never hold a stale line.
 - **`ssh/config` makes the key usable without typing.** `AddKeysToAgent` loads
   it into the agent on first use and `UseKeychain` stores the passphrase in the
   Keychain, so it is typed once per machine and never per push — and never
@@ -316,6 +316,44 @@ names is still registered for signing. A key GitHub has
 forgotten — revoked, or the machine re-enrolled under a new title — signs every
 commit with a signature the web UI marks Unverified, and nothing on the machine
 notices on its own.
+
+### A second identity, scoped to a directory
+
+A client's GitHub account — its own email, its own key — is one file on the
+machine, `~/.config/git/identities/<name>.gitconfig`, never versioned because
+it names the client. It declares the directory it owns and everything git
+should use there:
+
+```ini
+[identity]
+	gitdir = ~/Development/<client>/
+[user]
+	email = me@client.example
+	signingkey = ~/.ssh/id_ed25519_<client>.pub
+[core]
+	sshCommand = ssh -o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519_<client>
+```
+
+`install.sh` turns each file into an `includeIf "gitdir:…"` in `config.local`
+and a line in `allowed_signers`, and a second run changes nothing; `check.sh`
+proves git answers with the scoped email inside the directory and the default
+one outside it. Repositories under that directory use SSH remotes, so the
+`sshCommand` is what picks the account, with no `gh auth switch` whose
+forgetting would push this repository as the client.
+
+`IdentityAgent=none` is load-bearing. Observed on 2026-09-29: with the agent
+holding both keys, `ssh -i <client key> -o IdentitiesOnly=yes` still
+authenticated as the default account, because the agent's key was offered
+first and GitHub accepted it. Without the agent, the `-i` key is tried first
+and `UseKeychain` still supplies its passphrase; signing is unaffected, since
+it goes through the agent, which the login agent fills with every key the
+Keychain knows.
+
+What `install.sh` does not do for a scoped identity: generate its key or
+register it with GitHub, because `gh` is logged into the default account.
+Both are by hand — `ssh-keygen`, `ssh-add --apple-use-keychain`, then the key
+added to the client account as both an authentication and a signing key — and
+`drift.sh` checks only the default key's registration, not these.
 
 ## Why the sandbox is not enabled
 
