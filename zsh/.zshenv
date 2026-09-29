@@ -33,6 +33,8 @@ typeset -U path PATH
 # and so existed only where a terminal was attached.
 path=(
   "$HOME/.local/bin"                  # claude, dev-nuke, user binaries
+  "$HOME/.coda/bin"                   # coda; its installer's ~/.zshrc line never runs under ZDOTDIR
+  "$HOME/.stepwise/bin"               # stepwise, which spawns coda from non-interactive shells
   /opt/homebrew/opt/rustup/bin        # rustup does not symlink itself
   /opt/homebrew/opt/postgresql@17/bin # keg-only, so no psql without this
   $path
