@@ -315,10 +315,31 @@ git config --file "$GIT_IDENTITY" user.signingkey "$SSH_KEY.pub"
 # machine. Written here, the two cannot disagree.
 git config --file "$GIT_IDENTITY" commit.gpgsign true
 git config --file "$GIT_IDENTITY" tag.gpgsign true
+# Identities scoped to a directory -- a client's GitHub account, with its own
+# email and key -- are one file each in identities/, written on the machine
+# and never versioned, since they name the client. Each declares the directory
+# it owns under [identity] gitdir, and this is what makes git honour it: an
+# includeIf in config.local, set with `git config --file` so a second run
+# replaces rather than appends. The same file carries the rest of the identity
+# (user.*, core.sshCommand); git reads it whole once the includeIf matches.
+GIT_SCOPED="$HOME/.config/git/identities"
+for scoped in "$GIT_SCOPED"/*.gitconfig; do
+  [ -f "$scoped" ] || continue
+  git config --file "$GIT_IDENTITY" \
+    "includeIf.gitdir:$(git config --file "$scoped" identity.gitdir).path" \
+    "identities/$(basename "$scoped")"
+done
 # What local verification checks against. Rewritten whole from the current
-# identity and key so it can never hold a stale line.
-printf '%s %s\n' "$(git config --file "$GIT_IDENTITY" user.email)" "$(cat "$SSH_KEY.pub")" \
-  > "$HOME/.config/git/allowed_signers"
+# identities and keys so it can never hold a stale line: the default identity
+# first, then one line per scoped identity.
+{
+  printf '%s %s\n' "$(git config --file "$GIT_IDENTITY" user.email)" "$(cat "$SSH_KEY.pub")"
+  for scoped in "$GIT_SCOPED"/*.gitconfig; do
+    [ -f "$scoped" ] || continue
+    printf '%s %s\n' "$(git config --file "$scoped" user.email)" \
+      "$(cat "$(git config --file "$scoped" --path user.signingkey)")"
+  done
+} > "$HOME/.config/git/allowed_signers"
 
 # --- 4c. Load the signing key at login ---
 # After a reboot the agent is empty, and nothing here refills it: git talks
