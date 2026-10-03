@@ -16,7 +16,7 @@
 # itself.
 #
 # Nothing here needs sudo, and no key in the manifest is one a Jamf profile
-# sets on this machine -- per key, not per domain, since a profile can manage
+# sets on the work Mac -- per key, not per domain, since a profile can manage
 # two keys of a domain and leave the rest to the user; the manifest header
 # says how to check. A managed key would read back as applied and be
 # overruled. cfprefsd is never killed: `defaults` already goes through it,
@@ -68,6 +68,13 @@ MANIFEST=${MANIFEST:-defaults.txt}
   exit 2
 }
 
+# This Mac's own lines, read after the shared ones, from its profile under
+# machines/. No profile is a broken checker: machine.sh says why on stderr
+# and exits 2, and so does this, before anything is read or written.
+MACHINE_DIR=$(./machine.sh dir) || exit 2
+OVERLAY="$MACHINE_DIR/defaults.txt"
+[ -f "$OVERLAY" ] || OVERLAY=/dev/null
+
 # What `defaults read` prints for a declared value, so the two can be
 # compared as strings. Bools read back as 1/0; floats read back as bare
 # numbers, so 0.0 and 0 are the same value; a leading ~ in a path is ours,
@@ -110,7 +117,11 @@ defaults_for_host() {
 
 DIFFERENCES=0
 RESTART=""
+FOLDERS=()
 
+# awk rather than sed into `while read`: read drops a last line with no
+# newline after it -- most likely the overlay's, which comes last -- and awk
+# always ends what it prints with one.
 while read -r domain key type value; do
   [ -n "$domain" ] || continue
   # macOS keeps trackpad and mouse preferences per host, in the ByHost
@@ -128,6 +139,12 @@ while read -r domain key type value; do
       ;;
   esac
   want=$(canonical "$type" "$value")
+  # Keys whose value is a folder an app writes into, which has to exist.
+  # Collected from the parsed line, so a path with a space in it is the same
+  # path here as in the write.
+  case "$domain $key" in
+    "pl.maketheweb.cleanshotx exportPath" | "com.apple.screencapture location") FOLDERS+=("$want") ;;
+  esac
   have=$(defaults_for_host "$use_host" read "$domain" "$key" 2> /dev/null) || have="unset"
   # Floats come back from `defaults read` in whatever form they were written,
   # so both sides go through the same formatting before comparing.
@@ -145,15 +162,18 @@ while read -r domain key type value; do
   esac
   app=$(owner "$domain")
   [ -z "$app" ] || case " $RESTART " in *" $app "*) ;; *) RESTART="$RESTART $app" ;; esac
-done < <(sed 's/#.*//' "$MANIFEST")
+done < <(awk '{ sub(/#.*/, ""); print }' "$MANIFEST" "$OVERLAY")
 
 if [ "$MODE" = check ]; then
   exit "$DIFFERENCES"
 fi
 
-# The screenshot directory has to exist or screencapture falls back to the
-# Desktop without saying so. Created every run: mkdir -p is the no-op.
-mkdir -p "$HOME/Screenshots"
+# A screenshot folder has to exist, or the tool has nowhere to write. Only
+# the folders this Mac's manifests declare, created every run: mkdir -p is
+# the no-op.
+for folder in ${FOLDERS[@]+"${FOLDERS[@]}"}; do
+  mkdir -p "$folder"
+done
 
 # ~/Library is hidden by a flag, not a preference, so it has no line in the
 # manifest. Developers live in it; the flag is cleared here and only here.

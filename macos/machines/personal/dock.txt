@@ -1,0 +1,17 @@
+# The personal Mac's Dock apps, left to right, one absolute path per line.
+# `#` starts a comment. macos/dock.sh applies it from install.sh and checks it
+# from drift.sh; folders and stacks right of the divider are not managed here.
+#
+# Taken from this machine's Dock on 2026-10-03, unchanged.
+/Applications/Google Chrome.app
+/Applications/Todoist.app
+/Applications/Notion Calendar.app
+/Applications/TradingView.app
+/System/Applications/Notes.app
+/System/Applications/Photos.app
+/Applications/1Password.app
+/Applications/WhatsApp.app
+/System/Applications/Messages.app
+/Applications/Ghostty.app
+/Applications/Visual Studio Code.app
+/Applications/Claude.app

@@ -1,0 +1,33 @@
+# Settings only the personal Mac has, read after macos/defaults.txt. Same
+# format.
+
+# ── Windows ─────────────────────────────────────────────────────────────────
+
+# Dragging a window to a screen edge does not tile it: Rectangle, installed
+# here by hand and not by the Brewfile, does the tiling, and one drag should
+# have one tiler answering it.
+com.apple.WindowManager EnableTilingByEdgeDrag          bool    false
+com.apple.WindowManager EnableTopTilingByEdgeDrag       bool    false
+
+# ── Mouse ───────────────────────────────────────────────────────────────────
+
+# Tracking speed for the mouse used with this Mac. A per-device feel, so not
+# shared.
+NSGlobalDomain          com.apple.mouse.scaling         float   1.5
+
+# ── Screenshots ─────────────────────────────────────────────────────────────
+
+# CleanShot X takes every screenshot here: macOS's own Cmd+Shift+3/4/5
+# shortcuts are turned off, so the com.apple.screencapture keys configure a
+# tool nothing calls, and none are declared. The shortcuts themselves are
+# nested dictionaries in com.apple.symbolichotkeys, which a line here cannot
+# hold.
+#
+# Saved to their own folder, not the Desktop. defaults.sh creates it. The key
+# was found on 2026-10-03 by diffing `defaults export` of this domain before
+# and after choosing the folder in CleanShot's Settings -> General -> Export
+# location: exportPath was the one key added. CleanShot is not sandboxed (no
+# app-sandbox entitlement), so a plain path is all it needs -- no
+# security-scoped bookmark. Verified by behaviour the same day: a capture
+# saved from CleanShot's overlay landed in ~/Screenshots, not the Desktop.
+pl.maketheweb.cleanshotx exportPath                     string  ~/Screenshots

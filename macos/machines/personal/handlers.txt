@@ -1,0 +1,5 @@
+# Default apps only the personal Mac has: apps installed by hand rather than
+# by the Brewfile, so not on every machine. Same format as macos/handlers.txt.
+
+md      abnerworks.Typora
+pdf     com.adobe.Acrobat.Pro

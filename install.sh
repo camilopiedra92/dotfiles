@@ -434,12 +434,35 @@ for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES/claude/mcp.json"); do
   claude mcp add-json "$name" "$want" --scope user
 done
 
+# --- 8b. Machine profile ---
+# Which macos/machines/<profile> this Mac is, recorded once outside the repo
+# in ~/.config/dotfiles/machine; the steps below read their per-machine
+# manifests from it. Asked at a terminal; anywhere else -- CI, a piped run --
+# the run stops here with the reason, rather than waiting on a prompt nobody
+# will answer or carrying on into steps that would each fail without it.
+# A name with no profile asks again, since `set` names the valid ones; end of
+# input stops the run with a reason instead of `read`'s silent failure.
+if ! why=$("$DOTFILES/macos/machine.sh" dir 2>&1 > /dev/null); then
+  echo "$why" >&2
+  [ -t 0 ] || exit 2
+  while :; do
+    read -r -p "Profile for this Mac: " profile || {
+      echo "no profile given; run ./install.sh again to choose one" >&2
+      exit 2
+    }
+    "$DOTFILES/macos/machine.sh" set "$profile" && break
+  done
+fi
+machine_dir=$("$DOTFILES/macos/machine.sh" dir)
+log "Machine profile: ${machine_dir##*/}"
+
 # --- 9. macOS defaults ---
 # The system layer this repo used to leave to hand: Finder, Dock, keyboard,
 # trackpad, screenshots. Declared in macos/defaults.txt, applied only where
 # the machine differs, so a second run writes nothing and restarts nothing.
-# Last because a Finder restart in the middle of a run is a surprise, and
-# because nothing above depends on it.
+# Late because a Finder or Dock restart in the middle of a run is a surprise;
+# the steps after it restart the Dock at most once more, and nothing above
+# depends on any of them.
 log "Applying macOS defaults"
 "$DOTFILES/macos/defaults.sh" apply
 
@@ -449,5 +472,24 @@ log "Applying macOS defaults"
 # asks only when a declared value differs, so a second run is silent.
 log "Applying power settings"
 "$DOTFILES/macos/power.sh" apply
+
+# --- 10b. Touch ID for sudo ---
+# The other step that writes as root, kept beside power for that reason: it
+# asks for a password only while the line is missing, so a second run is
+# silent.
+log "Enabling Touch ID for sudo"
+"$DOTFILES/macos/touchid.sh" apply
+
+# --- 11. Dock and file handlers ---
+# The Dock's apps and the default app per file extension, declared in the
+# machine's dock.txt and in macos/handlers.txt plus the machine's own
+# handlers.txt. After Homebrew so the apps they name
+# exist; a declared app that is still missing -- anything the Brewfile does
+# not install, on a fresh machine -- is reported and skipped rather than
+# stopping the run.
+log "Applying the Dock"
+"$DOTFILES/macos/dock.sh" apply
+log "Applying file handlers"
+"$DOTFILES/macos/handlers.sh" apply
 
 log "Done. Open Ghostty."

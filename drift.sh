@@ -959,7 +959,7 @@ macos_drift() {
     *) printf 'macos/defaults.sh check failed (exit %s): %s\n' "$rc" "$out" ;;
   esac
 }
-report "macos/defaults.txt matches this machine" \
+report "the defaults manifests match this machine" \
   "./macos/defaults.sh apply, or move the line if the new value is the one you want" \
   "$(macos_drift)"
 
@@ -979,11 +979,37 @@ report "macos/power.sh settings match this machine" \
   "./macos/power.sh apply (asks for your password), or change the line if the new value is the one you want" \
   "$(power_drift)"
 
+# Same contract again for the Dock and the file handlers: 0 matches, 1
+# differs, anything else is the checker failing. Both drift the same way the
+# defaults do -- dragging an app into the Dock, or "Open With > Change All"
+# in Finder, writes the same thing the scripts do, and nothing else notices.
+script_drift() {
+  local script=$1 out rc
+  out=$("$script" check 2>&1)
+  rc=$?
+  case "$rc" in
+    0 | 1) printf '%s\n' "$out" ;;
+    *) printf '%s check failed (exit %s): %s\n' "$script" "$rc" "$out" ;;
+  esac
+}
+report "Touch ID is on for sudo" \
+  "./macos/touchid.sh apply (asks for your password)" \
+  "$(script_drift ./macos/touchid.sh)"
+report "this machine's dock.txt matches the Dock" \
+  "./macos/dock.sh apply, or edit macos/machines/<profile>/dock.txt if the new Dock is the one you want; with no dock.txt yet, write one -- dockutil --list shows the apps" \
+  "$(script_drift ./macos/dock.sh)"
+report "the handlers manifests match the default apps" \
+  "./macos/handlers.sh apply, or edit the line, shared or this machine's, if the new app is the one you want" \
+  "$(script_drift ./macos/handlers.sh)"
+
 printf '\n%sBackups%s\n' "$DIM" "$OFF"
 
-# Time Machine is disabled by policy on this machine, so the only copy of a
-# project is its remote. A repository under ~/Development with no remote
-# exists on this disk and nowhere else. Only the top level: a project is a
+# A remote is the one copy of a project that leaves this machine on every
+# machine this repo runs on. On the work Mac, Time Machine is disabled by
+# policy and the remote is the only copy at all; on the personal one, which
+# is not MDM-enrolled (`profiles status -type enrollment`, 2026-10-03), Time
+# Machine is allowed but writes to a disk in the same room. A repository
+# under ~/Development with no remote has no copy anywhere else. Only the top level: a project is a
 # directory here with a .git in it, and nested repositories are that
 # project's business.
 repos_without_remote() {
