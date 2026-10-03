@@ -1,0 +1,13 @@
+# Settings only the work Mac has, read after macos/defaults.txt. Same format.
+
+# ── Screenshots ─────────────────────────────────────────────────────────────
+
+# macOS's own screenshot tool, which the work Mac uses; these two lines were
+# in the shared manifest, for both Macs, until 2026-10-03, when the personal
+# one moved to CleanShot X.
+#
+# Their own folder, not the Desktop. defaults.sh creates it.
+com.apple.screencapture location                        string  ~/Screenshots
+# A window screenshot without the drop shadow, which is 40px of transparent
+# padding on every side that every image viewer renders as grey.
+com.apple.screencapture disable-shadow                  bool    true

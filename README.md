@@ -61,6 +61,12 @@ bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
 macos/defaults.txt     macOS settings, one `defaults` key per line
 macos/defaults.sh      applies the manifest (install.sh) or reports where the machine differs (drift.sh)
 macos/power.sh         the `pmset` settings, declared inline; same two verbs, `apply` is the one that needs sudo
+macos/touchid.sh       turns on Touch ID for sudo through /etc/pam.d/sudo_local, or reports it off
+macos/dock.sh          applies a machine's dock.txt through `dockutil`, or reports where the Dock differs
+macos/handlers.txt     the default app per file extension on every Mac, only where it differs from Apple's
+macos/handlers.sh      applies it, plus the machine's own, through `duti`, or reports where the Mac differs
+macos/machine.sh       which profile under macos/machines/ this Mac is (`dir`), or records it (`set`)
+macos/machines/<p>/    what only one Mac has: dock.txt, and defaults.txt / handlers.txt read after the shared ones
 claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
@@ -448,7 +454,9 @@ agent step bootstraps once and kickstarts every run (against a stub
 `macos/defaults.sh` writes exactly the differing keys and nothing when the
 machine already matches (against a stub `defaults`), and that `macos/power.sh`
 writes only through `sudo`, only for a difference, and never from `check`
-(against a stub `pmset` and `sudo`).
+(against a stub `pmset` and `sudo`), and that `macos/dock.sh` and
+`macos/handlers.sh` change only what differs and skip, without failing, an app
+that is not installed (against a stub `dockutil` and `duti`).
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
@@ -554,7 +562,7 @@ put the old one back, with nobody knowing why.
 
 Deliberately absent, and why:
 
-- **Any key a Jamf profile sets on this machine** — screen lock, updates,
+- **Any key a Jamf profile sets on the work Mac** — screen lock, updates,
   firewall, FileVault, Siri. The rule is per key, not per domain: a profile
   can manage two keys of a domain and leave the rest alone, and it does —
   `com.apple.controlcenter` is managed for its Bluetooth and Wi-Fi menu items
@@ -580,8 +588,11 @@ Deliberately absent, and why:
 
 `~/Library` is unhidden on every `apply` (`chflags nohidden ~/Library`) but
 has no line in the manifest: it is a Finder flag, not a `defaults` key, so the
-parser has no field that could hold it. It runs unconditionally, the same way
-`mkdir -p ~/Screenshots` does — both are no-ops once already done.
+parser has no field that could hold it. It runs unconditionally and is a
+no-op once done. The screenshot folder a Mac declares — CleanShot's
+`exportPath` on the personal one, `com.apple.screencapture location` on the
+work one — is created the same way, from the parsed line, so only where a
+manifest names one.
 
 A domain written `host:NSGlobalDomain` instead of `NSGlobalDomain` is read
 and written through `defaults -currentHost`, which reaches
@@ -640,6 +651,130 @@ silent and asked for no password. Not checked: the System Settings pane
 itself, and the runtime gain — that one is a number only a full discharge
 gives.
 
+## Touch ID for sudo
+
+```bash
+macos/touchid.sh apply|check
+```
+
+Touch ID instead of the password for `sudo`, on every Mac, through
+`/etc/pam.d/sudo_local` — the file Apple provides for it, which
+`/etc/pam.d/sudo` includes first and a system update leaves alone. Apple
+ships `sudo_local.template` with the one line commented out; `apply` writes
+that template with the line uncommented, or adds the line to a
+`sudo_local` that already exists and keeps the rest. Editing
+`/etc/pam.d/sudo` was the other way and lost: an update rewrites it.
+
+Same contract as `power.sh`: `check` only reads, so `drift.sh` never
+prompts; `apply` goes through `sudo` once, only while the line is missing.
+No `sudo_local` and no template is a broken checker (exit 2), not a file to
+invent. Inside tmux, `sudo` still asks for the password: according to
+`pam_reattach`'s documentation, Touch ID needs the GUI session a tmux server
+is not attached to (not tested here; `pam_reattach` is not installed).
+
+Verified on the personal Mac on 2026-10-03: `apply`, run from a terminal,
+asked for the password once and wrote Apple's template with the line
+uncommented (root:wheel, 644); `check` then exited 0; and `sudo -k && sudo
+true` completed without a password prompt. Run from Claude Code's `!`
+prompt, which has no terminal, `apply` failed at `sudo` and wrote nothing.
+
+## Dock and file handlers
+
+```bash
+macos/dock.sh apply|check
+macos/handlers.sh apply|check
+```
+
+Same two verbs and callers as the two above. A machine's `dock.txt` lists
+its Dock's apps left to right; `macos/handlers.txt` maps a file extension to
+the app that opens it, only where that differs from Apple's choice, and a
+machine's own `handlers.txt` adds the extensions only it has an app for.
+
+Neither fits in `defaults.txt`. The Dock's app list is one ordered array of
+dictionaries carrying per-machine file references, and the handlers belong
+to Launch Services, whose plist is an array keyed by UTI. Saving either plist
+as-is was the other candidate and lost the way `defaults import` did above:
+opaque in a diff, and carrying one machine's references to the next.
+`dockutil` and `duti` write them through the supported path, and the
+manifests stay the part a person decides.
+
+The Dock is rebuilt rather than patched: when it differs, every app is
+removed and the declared ones added back in order, then the Dock restarts
+once. Only the app section is managed; folders and stacks right of the
+divider are neither touched nor compared. A spacer tile in the app section
+is drift, since the manifest cannot declare one, and `apply` removes it —
+with `dockutil --remove spacer-tiles`, which takes spacers in the folder
+section too. Paths are compared with symlinks resolved and Unicode
+composed: Safari's `/Applications` path is a symlink into the system
+cryptex, which is what the Dock stores (observed); an accented name may
+come back decomposed while the manifest is typed composed (guarded against,
+not observed — no app in this Dock has one). Every handler line sets the role
+`all`, which includes `shell` — for a script, that is what makes a
+double-click open it in the editor instead of running it, and why `.sh`
+and `.js` moved from Ghostty and Chrome to VS Code on 2026-10-03. The
+browser and mail handlers are left out: Apple documents that changing the
+default browser asks the user to confirm, so `apply` could not do it
+unattended (not tested here). `check` compares the app `duti -x` reports as
+the default, the one a double-click opens; it does not read each role
+apart.
+
+Without `dockutil` or `duti`, or with `dockutil --list` failing, both
+scripts exit 2 — a broken checker for `drift.sh`, not an empty Dock or a
+machine with no handlers.
+
+An app a manifest names but that is not installed — on a fresh machine,
+anything the Brewfile does not install — is skipped by `apply` with a line on stderr, so `install.sh`
+does not stop halfway, and reported by `check` until it is installed or
+removed from the manifest.
+
+Verified on the personal Mac on 2026-10-03. Dock: `check` exited 0 against the
+Dock as it stood; with Claude moved to the first slot by hand, `check`
+reported the order, `apply` put it back, `check` exited 0 and a second
+`apply` printed nothing. Handlers: `apply` set `js` and `sh` to VS Code, and
+`duti -x` read the new handler back about three seconds later — Launch
+Services takes the change asynchronously, so a `check` run immediately
+after `apply` still reports the old one. After that, `check` exited 0 and a
+second `apply` printed nothing. Not checked: double-clicking a file in
+Finder.
+
+## More than one Mac
+
+```bash
+macos/machine.sh dir | set <name>
+```
+
+The same repo runs on a personal Mac and a work Mac, which share most
+settings and differ in a few: the Dock's apps, an app one of them does not
+have. What every Mac gets stays where it was — `macos/defaults.txt`,
+`macos/handlers.txt`. What only one gets lives under
+`macos/machines/<profile>/`: `dock.txt`, which is only ever per machine, and
+`defaults.txt` and `handlers.txt`, read after the shared file of the same
+name. A key or an extension is in the shared file or a machine's, never
+both, which `check.sh` enforces: in both, it would be written twice and the
+last write would win by the order of a loop rather than by anything written
+down.
+
+Which profile a Mac is comes from `~/.config/dotfiles/machine`, one word,
+outside the repo. `install.sh` asks for it once, at a terminal, and stops
+with the reason anywhere else rather than wait on a prompt nobody will
+answer. Without it, or with a name that has no directory, `machine.sh dir`
+exits 2 and so does every script that asks it: guessing would apply one
+Mac's Dock to the other. A profile with no `dock.txt` is a Dock nobody has
+declared yet — `check` says so, `apply` leaves it alone.
+
+The hostname was the other candidate and lost because two Macs can share
+one and a rename changes it without anything saying so; the hardware serial
+lost because it would put an identifier in a public repo and need an edit
+the day the Mac is replaced.
+
+Verified on 2026-10-03 on the personal Mac: with no machine file `dir`
+exited 2 and named the file and both profiles; after `set personal`, the
+Dock, handlers and defaults checks read the personal manifests and matched.
+The work profile was checked from the personal Mac by pointing
+`MACHINE_FILE` at a file saying `work`: the Dock reported "not declared",
+the handlers matched on the shared lines alone, and no CleanShot line was
+read. Not tested on the work Mac itself.
+
 ## Finding drift
 
 ```bash
@@ -689,14 +824,17 @@ installed, still declared, still the right version, `bad interpreter` when you
 type it. It found exactly that on the first run — a tool built against an
 Anaconda python that is no longer on this machine.
 
-It also asks `macos/defaults.sh check` whether `macos/defaults.txt` matches
-this machine — the same parser `install.sh` applies with, so the comparison
-cannot disagree with what applying it would do.
+It also asks `macos/defaults.sh check` whether `macos/defaults.txt`, plus
+this Mac's own `macos/machines/<profile>/defaults.txt`, matches the machine
+— the same parser `install.sh` applies with, so the comparison cannot
+disagree with what applying it would do.
 
 And it asks whether every repository under `~/Development` has a remote.
-Time Machine is banned by policy on this machine, so a remote is not a
-convenience but the only backup a repository has — a repository with no
-remote at all exists on this disk and nowhere else. Only the top level of
+On the work Mac Time Machine is banned by policy, so a remote is not a
+convenience but the only backup a repository has; on the personal one Time
+Machine is allowed, but its disk sits next to the laptop, and the remote is
+still the only copy that is somewhere else. A repository with no remote
+has no copy anywhere else. Only the top level of
 `~/Development` is checked: a project is a directory directly under it with
 a `.git` (or, for a worktree, a file pointing at one), and whatever
 repositories that project nests inside itself are its own business, not

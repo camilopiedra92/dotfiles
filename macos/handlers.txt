@@ -1,0 +1,24 @@
+# The default app per file extension on every Mac: extension (no dot), then
+# the app's bundle id. `#` starts a comment. macos/handlers.sh applies it from
+# install.sh, for every role, and checks it from drift.sh, followed by the
+# Mac's own macos/machines/<profile>/handlers.txt; an extension is in one or
+# the other, never both.
+#
+# Only extensions whose handler differs from Apple's own choice, the same
+# rule as defaults.txt. A bundle id is what `duti -x <ext>` prints on its
+# third line, or `osascript -e 'id of app "Name"'`.
+
+# Data and config files open in the editor.
+json    com.microsoft.VSCode
+yaml    com.microsoft.VSCode
+yml     com.microsoft.VSCode
+toml    com.microsoft.VSCode
+csv     com.microsoft.VSCode
+
+# Source files open in the editor, never anywhere that runs them. Before
+# 2026-10-03 `.js` opened in Chrome and `.sh` in Ghostty, which executes the
+# script on a double-click.
+py      com.microsoft.VSCode
+ts      com.microsoft.VSCode
+js      com.microsoft.VSCode
+sh      com.microsoft.VSCode

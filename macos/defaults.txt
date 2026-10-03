@@ -1,4 +1,6 @@
-# macOS settings this machine is expected to have, one per line.
+# macOS settings every Mac this repo runs on is expected to have, one per
+# line. What only one of them has goes in macos/machines/<profile>/defaults.txt,
+# in the same format, read after this file; a key is in one or the other.
 #
 # Four whitespace-separated fields: domain, key, type, value. `#` starts a
 # comment. The domain may be written `host:NSGlobalDomain` instead of
@@ -13,7 +15,7 @@
 # old one back, and nobody would know why. Same argument as node = "lts"
 # rather than a number.
 #
-# No key here is one a Jamf profile sets on this machine. The rule is per
+# No key here is one a Jamf profile sets on the work Mac. The rule is per
 # key and not per domain: management is by key, and com.apple.controlcenter
 # below is a domain a profile does touch (its Bluetooth and Wi-Fi menu
 # items) while BatteryShowPercentage in the same domain is not. To check,
@@ -23,7 +25,7 @@
 # would be silently overruled while reading as if it applied: `defaults`
 # reads and writes only the user layer, and the managed one sits above it,
 # invisible to `defaults read` and consulted first by the app. Checked on
-# this machine: the managed Bluetooth key reads as "does not exist".
+# the work Mac: the managed Bluetooth key reads as "does not exist".
 #
 # Verified on macOS 26.6.2 on 2026-09-15. By read-back for every key:
 # `defaults.sh check` reports each at its declared value. By behaviour, the
@@ -70,6 +72,12 @@ com.apple.finder        NewWindowTarget                 string  PfHm
 # and every colleague's machine that mounts it.
 com.apple.desktopservices  DSDontWriteNetworkStores     bool    true
 com.apple.desktopservices  DSDontWriteUSBStores         bool    true
+# A folder opened from a Finder window opens in a window of its own, not as a
+# tab of the one it came from.
+com.apple.finder        FinderSpawnTab                  bool    false
+# Items in the Trash are deleted after 30 days, so it never needs emptying by
+# hand and never holds a year of deletions.
+com.apple.finder        FXRemoveOldTrashItems           bool    true
 
 # ── Dock and Mission Control ────────────────────────────────────────────────
 
@@ -79,11 +87,50 @@ com.apple.dock          minimize-to-application         bool    true
 # The hidden Dock appears the moment the cursor reaches the edge, not after
 # the half-second Apple adds.
 com.apple.dock          autohide-delay                  float   0
+# And slides in and out in a fraction of Apple's animation (1 is Apple's).
+com.apple.dock          autohide-time-modifier          float   0.12
+# Size and magnification, as set in System Settings -> Desktop & Dock.
+com.apple.dock          tilesize                        int     77
+com.apple.dock          magnification                   bool    true
+com.apple.dock          largesize                       int     92
+# Minimizing scales the window down instead of the genie animation.
+com.apple.dock          mineffect                       string  scale
+# Mission Control groups each app's windows together instead of spreading
+# them out one by one.
+com.apple.dock          expose-group-apps               bool    true
+# Bottom-right hot corner: Apple's Quick Note stays, but only with Cmd held
+# (1048576 is the Command modifier mask), so a cursor flung into the corner
+# does not open a note.
+com.apple.dock          wvous-br-modifier               int     1048576
 # Recents in the Dock is a second, unsorted app switcher.
 com.apple.dock          show-recents                    bool    false
 # Spaces stay where you put them. With this on, the one you used last moves
 # to the front and Ctrl+number stops meaning anything.
 com.apple.dock          mru-spaces                      bool    false
+# Clicking the wallpaper does not sweep every window aside to show the
+# desktop; a stray click between windows is not a request for it.
+com.apple.WindowManager EnableStandardClickToShowDesktop bool   false
+
+# ── Windows and scrolling ───────────────────────────────────────────────────
+
+# Scroll bars are always shown, so where you are in a long file is visible
+# without moving the pointer first.
+NSGlobalDomain          AppleShowScrollBars             string  Always
+# Clicking in the scroll bar jumps to that spot rather than paging once.
+NSGlobalDomain          AppleScrollerPagingBehavior     bool    true
+# Double-clicking a title bar does nothing, so a double-click aimed at a
+# toolbar button that lands an inch off does not resize the window.
+NSGlobalDomain          AppleActionOnDoubleClick        string  None
+# Windows keep their own colour instead of picking up a tint of the
+# wallpaper behind them.
+NSGlobalDomain          AppleReduceDesktopTinting       bool    true
+
+# ── Spotlight ───────────────────────────────────────────────────────────────
+
+# Spotlight keeps a clipboard history. How long it keeps it is left at
+# whatever Apple ships: whether this Mac's 8 hours is that default or a
+# choice could not be told from here, and a default written down is frozen.
+com.apple.Spotlight     PasteboardHistoryEnabled        bool    true
 
 # ── Keyboard and text ───────────────────────────────────────────────────────
 
@@ -159,11 +206,9 @@ NSGlobalDomain          NSDocumentSaveNewDocumentsToCloud       bool    false
 
 # ── Screenshots ─────────────────────────────────────────────────────────────
 
-# Their own folder, not the Desktop. defaults.sh creates it.
-com.apple.screencapture location                        string  ~/Screenshots
-# A window screenshot without the drop shadow, which is 40px of transparent
-# padding on every side that every image viewer renders as grey.
-com.apple.screencapture disable-shadow                  bool    true
+# Each Mac takes screenshots with a different tool -- CleanShot X on the
+# personal one, macOS's own on the work one -- so the folder and the rest are
+# declared in macos/machines/<profile>/defaults.txt.
 
 # ── Menu bar ────────────────────────────────────────────────────────────────
 

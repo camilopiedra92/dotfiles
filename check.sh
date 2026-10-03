@@ -810,7 +810,7 @@ mcp_step() {
 
   {
     echo 'log() { :; }'
-    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 9\./p' install.sh
+    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 8b\./p' install.sh
   } > "$steps"
   grep -qF 'claude mcp add-json' "$steps" || {
     echo "could not extract step 8 from install.sh"
@@ -1190,6 +1190,216 @@ STUB
 }
 check "install.sh loads the login agent once and kicks it every run" login_agent_step
 
+# ── Machine profile ──────────────────────────────────────────────────────────
+# One repo, more than one Mac. macos/machine.sh says which profile under
+# macos/machines/ this Mac is, from a one-word file outside the repo, and the
+# per-machine manifests hang off that answer. No profile, or one that names a
+# directory that does not exist, has to be a broken checker (exit 2) for
+# every script that asks: guessing would apply one Mac's Dock to the other.
+printf '\n%sMachine profile%s\n' "$DIM" "$OFF"
+
+# A profile directory named `test` with nothing in it, and a machine file
+# naming it. Shared by every test below that runs a per-machine script.
+machine_fixture() {
+  mkdir -p "$1/machines/test"
+  echo test > "$1/machine"
+}
+
+machine_run() {
+  local tmp=$1
+  shift
+  MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/machine.sh "$@"
+}
+
+machine_requires_a_known_profile() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/machines/personal" "$tmp/machines/work"
+  rc=0
+  out=$(machine_run "$tmp" dir 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "dir exited $rc with no machine file, want 2: $out"
+    return 1
+  }
+  case "$out" in
+    *"$tmp/machine"*"personal work"*) ;;
+    *)
+      echo "did not name the file and the profiles to choose from: $out"
+      return 1
+      ;;
+  esac
+  echo nope > "$tmp/machine"
+  rc=0
+  out=$(machine_run "$tmp" dir 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "dir exited $rc for an unknown profile, want 2: $out"
+    return 1
+  }
+  case "$out" in
+    *"unknown machine 'nope'"*) ;;
+    *)
+      echo "did not name the unknown profile: $out"
+      return 1
+      ;;
+  esac
+}
+check "dir refuses a missing machine file and an unknown profile" machine_requires_a_known_profile
+
+machine_set_validates_then_writes() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  # $tmp/etc exists, so only the name check can refuse ../etc.
+  mkdir -p "$tmp/machines/personal" "$tmp/etc"
+  rc=0
+  out=$(machine_run "$tmp" set ../etc 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -e "$tmp/machine" ] || {
+    echo "set accepted a profile that does not exist (exit $rc): $out"
+    return 1
+  }
+  machine_run "$tmp" set personal || return 1
+  [ "$(cat "$tmp/machine")" = personal ] || {
+    echo "set wrote: $(cat "$tmp/machine")"
+    return 1
+  }
+  out=$(machine_run "$tmp" dir) || return 1
+  [ "$out" = "$tmp/machines/personal" ] || {
+    echo "dir printed $out"
+    return 1
+  }
+}
+check "set refuses an unknown profile, writes a known one, and dir finds it" machine_set_validates_then_writes
+
+# A profile name is lowercase letters, digits and dashes, matched byte by
+# byte. A bracket range follows the locale's collation in bash 3.2, so
+# [a-z] lets uppercase through under en_US.UTF-8 -- and APFS, being
+# case-insensitive, would then resolve `Personal` to personal/ on one Mac
+# and not on a case-sensitive volume. Inner whitespace is not trimmed into
+# a different, valid name either.
+machine_names_are_exact() {
+  local tmp rc name
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/machines/personal"
+  for name in Personal "per sonal"; do
+    rc=0
+    LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 machine_run "$tmp" set "$name" 2> /dev/null || rc=$?
+    [ "$rc" -eq 2 ] && [ ! -e "$tmp/machine" ] || {
+      echo "set accepted '$name' (exit $rc)"
+      return 1
+    }
+    printf '%s\n' "$name" > "$tmp/machine"
+    rc=0
+    LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 machine_run "$tmp" dir > /dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 2 ] || {
+      echo "dir accepted a machine file saying '$name' (exit $rc)"
+      return 1
+    }
+    rm "$tmp/machine"
+  done
+}
+check "a profile name matches exactly: no uppercase, no inner space" machine_names_are_exact
+
+# install.sh's own step for the profile: silent when one is recorded, and
+# when none is and nobody is at a terminal to answer -- CI, a piped run -- it
+# stops with machine.sh's reason instead of waiting on a prompt or carrying
+# on into steps that would then fail one by one. Extracted the same way the
+# idempotence check extracts the symlink steps, and run against a fixture.
+install_machine_step() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    sed -n '/^# --- 8b\. Machine profile/,/^# --- 9\./p' install.sh
+  } > "$tmp/step.sh"
+  grep -qF 'machine.sh' "$tmp/step.sh" || {
+    echo "could not extract step 8b from install.sh"
+    return 1
+  }
+  one_step_only "$tmp/step.sh" || return 1
+  mkdir -p "$tmp/machines/personal"
+  rc=0
+  out=$(MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" DOTFILES="$PWD" \
+    bash -euo pipefail "$tmp/step.sh" < /dev/null 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -e "$tmp/machine" ] || {
+    echo "without a terminal or a profile the step exited $rc, want 2: $out"
+    return 1
+  }
+  case "$out" in
+    *"no machine profile"*) ;;
+    *)
+      echo "did not say why it stopped: $out"
+      return 1
+      ;;
+  esac
+  echo personal > "$tmp/machine"
+  out=$(MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" DOTFILES="$PWD" \
+    bash -euo pipefail "$tmp/step.sh" < /dev/null 2>&1) || {
+    echo "the step failed with a profile recorded: $out"
+    return 1
+  }
+  [ "$out" = "==> Machine profile: personal" ] || {
+    echo "unexpected output with a profile recorded: $out"
+    return 1
+  }
+}
+check "install.sh stops when there is no profile and nobody to ask" install_machine_step
+
+# The prompt itself, through a real terminal: expect(1), which macOS ships,
+# allocates one and answers it. A wrong name asks again rather than ending
+# the install; end of input stops it with a reason rather than in silence.
+install_machine_prompt() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    sed -n '/^# --- 8b\. Machine profile/,/^# --- 9\./p' install.sh
+  } > "$tmp/step.sh"
+  mkdir -p "$tmp/machines/personal"
+  rc=0
+  out=$(MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" DOTFILES="$PWD" expect -c "
+    set timeout 10
+    spawn bash -euo pipefail $tmp/step.sh
+    expect {Profile for this Mac: }
+    send nope\r
+    expect {Profile for this Mac: }
+    send personal\r
+    expect eof
+    exit [lindex [wait] 3]
+  " 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(cat "$tmp/machine" 2> /dev/null)" = personal ] || {
+    echo "a wrong answer then a right one did not record personal (exit $rc): $out"
+    return 1
+  }
+  rm "$tmp/machine"
+  rc=0
+  out=$(MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" DOTFILES="$PWD" expect -c "
+    set timeout 10
+    spawn bash -euo pipefail $tmp/step.sh
+    expect {Profile for this Mac: }
+    send \004
+    expect eof
+    exit [lindex [wait] 3]
+  " 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -e "$tmp/machine" ] || {
+    echo "end of input at the prompt exited $rc, want 2: $out"
+    return 1
+  }
+  case "$out" in
+    *"no profile given"*) ;;
+    *)
+      echo "end of input did not say why it stopped: $out"
+      return 1
+      ;;
+  esac
+}
+check "install.sh asks again after a wrong name, and stops with a reason on end of input" install_machine_prompt
+
 # ── macOS defaults ───────────────────────────────────────────────────────────
 # macos/defaults.txt is the fourth manifest here and the only one whose
 # consumer is a script of this repo's own. So the parsing is where the bugs
@@ -1199,33 +1409,46 @@ check "install.sh loads the login agent once and kicks it every run" login_agent
 printf '\n%smacOS defaults%s\n' "$DIM" "$OFF"
 
 macos_manifest() {
-  local bad
+  local bad f
   # sed's "No such file" goes to its own stderr, not into $bad, so a missing
   # manifest would otherwise feed awk nothing and read as zero problems.
   [ -f macos/defaults.txt ] || {
     echo "macos/defaults.txt missing"
     return 1
   }
+  # A machine's overlay is applied on top of the shared file, so a key in
+  # both would be written twice with two values, and which one wins would
+  # depend on the order of the loop rather than on anything written down.
+  for f in macos/machines/*/defaults.txt; do
+    [ -f "$f" ] || continue
+    bad=$(cat macos/defaults.txt "$f" | sed 's/#.*//' | awk 'NF { print $1, $2 }' | sort | uniq -d)
+    [ -z "$bad" ] || {
+      echo "$f declares a key the shared manifest already does: $bad"
+      return 1
+    }
+  done
   # `host:` is the one prefix defaults.sh interprets (it strips it and adds
   # `-currentHost`), so it is the one place a typo'd or unknown prefix has to
   # be refused here -- otherwise `hots:NSGlobalDomain` reads as a plain
   # domain and `defaults` would happily create a plist literally named that.
-  bad=$(sed 's/#.*//' macos/defaults.txt | awk '
+  bad=$(for f in macos/defaults.txt macos/machines/*/defaults.txt; do
+    [ -f "$f" ] && sed 's/#.*//' "$f" | awk -v f="$f" '
     NF == 0 { next }
-    NF < 4 { print NR": fewer than four fields"; next }
-    $1 ~ /:/ && $1 !~ /^host:./ { print NR": unknown domain prefix "$1; next }
-    NF > 4 && $3 != "string" { print NR": extra fields"; next }
-    $3 !~ /^(bool|int|float|string)$/ { print NR": unknown type "$3; next }
-    $3 == "bool" && $4 !~ /^(true|false)$/ { print NR": bool must be true or false" }
-    $3 == "int" && $4 !~ /^-?[0-9]+$/ { print NR": int must be an integer" }
-    $3 == "float" && $4 !~ /^-?[0-9]+(\.[0-9]+)?$/ { print NR": float must be a number" }
-  ')
+    NF < 4 { print f":"NR": fewer than four fields"; next }
+    $1 ~ /:/ && $1 !~ /^host:./ { print f":"NR": unknown domain prefix "$1; next }
+    NF > 4 && $3 != "string" { print f":"NR": extra fields"; next }
+    $3 !~ /^(bool|int|float|string)$/ { print f":"NR": unknown type "$3; next }
+    $3 == "bool" && $4 !~ /^(true|false)$/ { print f":"NR": bool must be true or false" }
+    $3 == "int" && $4 !~ /^-?[0-9]+$/ { print f":"NR": int must be an integer" }
+    $3 == "float" && $4 !~ /^-?[0-9]+(\.[0-9]+)?$/ { print f":"NR": float must be a number" }
+  '
+  done)
   [ -z "$bad" ] || {
     printf '%s\n' "$bad"
     return 1
   }
 }
-check "macos/defaults.txt has domain key type value per line" macos_manifest
+check "every defaults manifest has domain key type value per line, no key twice" macos_manifest
 
 # The stub answers `read` from $STATE (lines of "domain key value"), records
 # every `write` to $WRITES, and every killall to $KILLED. `defaults read` on a
@@ -1261,6 +1484,7 @@ STUB
 echo "$1" >> "$KILLED"
 STUB
   chmod +x "$dir/bin/defaults" "$dir/bin/killall"
+  machine_fixture "$dir"
 }
 
 # A manifest of three keys whose read-back forms differ from their written
@@ -1286,7 +1510,7 @@ macos_apply_is_a_noop_when_matching() {
   : > "$tmp/killed"
   HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
-    bash macos/defaults.sh apply > "$tmp/out" || return 1
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh apply > "$tmp/out" || return 1
   [ ! -s "$tmp/writes" ] || {
     echo "wrote although everything matched:"
     cat "$tmp/writes"
@@ -1316,7 +1540,7 @@ macos_apply_writes_only_the_difference() {
   : > "$tmp/killed"
   HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
-    bash macos/defaults.sh apply > "$tmp/out" || return 1
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh apply > "$tmp/out" || return 1
   diff <(printf 'com.apple.dock autohide-delay -float 0\ncom.apple.screencapture location -string %s/Screenshots\n' "$tmp/home") "$tmp/writes" || return 1
   # Only the Dock changed; Finder must not be restarted for it.
   diff <(echo Dock) "$tmp/killed" || return 1
@@ -1335,7 +1559,7 @@ macos_check_reports_and_fails() {
   : > "$tmp/killed"
   if out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
-    bash macos/defaults.sh check); then
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh check); then
     echo "check exited 0 with a difference present"
     return 1
   fi
@@ -1371,7 +1595,7 @@ EOF
   HOME="$tmp/home" STATE="$tmp/state" STATE_HOST="$tmp/state_host" \
     WRITES="$tmp/writes" WRITES_HOST="$tmp/writes_host" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
-    bash macos/defaults.sh apply > "$tmp/out" || return 1
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh apply > "$tmp/out" || return 1
   diff <(echo "NSGlobalDomain com.apple.mouse.tapBehavior -int 1") "$tmp/writes_host" || return 1
   [ ! -s "$tmp/writes" ] || {
     echo "a host: line wrote to the plain domain:"
@@ -1384,7 +1608,7 @@ EOF
   if out=$(HOME="$tmp/home" STATE="$tmp/state" STATE_HOST="$tmp/state_host" \
     WRITES="$tmp/writes" WRITES_HOST="$tmp/writes_host" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
-    bash macos/defaults.sh check); then
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh check); then
     echo "check exited 0 with a difference present"
     return 1
   fi
@@ -1409,7 +1633,7 @@ macos_refuses_a_missing_manifest() {
   rc=0
   out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$tmp/does-not-exist.txt" \
-    bash macos/defaults.sh check 2>&1) || rc=$?
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh check 2>&1) || rc=$?
   [ "$rc" -eq 2 ] || {
     echo "exited $rc on a missing manifest, want 2"
     echo "$out"
@@ -1446,7 +1670,7 @@ macos_refuses_a_manifest_in_a_missing_directory() {
   rc=0
   out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
     PATH="$tmp/bin:$PATH" MANIFEST="$want" \
-    bash macos/defaults.sh check 2>&1) || rc=$?
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh check 2>&1) || rc=$?
   [ "$rc" -eq 2 ] || {
     echo "exited $rc on a manifest in a missing directory, want 2"
     echo "$out"
@@ -1466,6 +1690,44 @@ macos_refuses_a_manifest_in_a_missing_directory() {
 }
 check "check refuses a missing manifest instead of reading it as a match" macos_refuses_a_missing_manifest
 check "check names the requested path when its directory is missing too" macos_refuses_a_manifest_in_a_missing_directory
+
+# The machine's own defaults.txt is read after the shared one, and a missing
+# machine profile stops the run before anything is written.
+macos_applies_the_machine_overlay() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  macos_stub "$tmp"
+  printf 'com.apple.finder ShowPathbar bool true\n' > "$tmp/defaults.txt"
+  # No newline at the end, and a space in the value: the two ways the last
+  # line of a hand-written overlay has gone missing or been cut short.
+  printf 'pl.maketheweb.cleanshotx exportPath string ~/My Shots' > "$tmp/machines/test/defaults.txt"
+  : > "$tmp/state"
+  : > "$tmp/writes"
+  : > "$tmp/killed"
+  HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh apply > /dev/null || return 1
+  diff - "$tmp/writes" << EOF || return 1
+com.apple.finder ShowPathbar -bool true
+pl.maketheweb.cleanshotx exportPath -string $tmp/home/My Shots
+EOF
+  [ -d "$tmp/home/My Shots" ] || {
+    echo "the folder exportPath names was not created whole: $(ls "$tmp/home")"
+    return 1
+  }
+  rm "$tmp/machine"
+  : > "$tmp/writes"
+  rc=0
+  out=$(HOME="$tmp/home" STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/defaults.txt" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/defaults.sh apply 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -s "$tmp/writes" ] || {
+    echo "apply exited $rc or wrote with no machine profile: $out"
+    return 1
+  }
+}
+check "the machine's defaults.txt is applied after the shared one, last line and folder included, and is required" macos_applies_the_machine_overlay
 
 # ── macOS power ──────────────────────────────────────────────────────────────
 # macos/power.sh is the one script here that writes through sudo, so the
@@ -1611,6 +1873,755 @@ power_check_refuses_a_missing_battery_profile() {
   esac
 }
 check "check refuses a pmset output with no battery profile instead of reading it as a match" power_check_refuses_a_missing_battery_profile
+
+# ── macOS Dock ───────────────────────────────────────────────────────────────
+# macos/dock.sh rebuilds the Dock's app section from the machine's dock.txt through
+# dockutil. The stub answers `--list` from $STATE in dockutil's own shape --
+# label, percent-encoded file URL, section, plist, tab-separated -- and
+# records every --add and --remove to $WRITES. The state always carries a
+# Downloads stack under persistentOthers, which the script must neither count
+# nor remove, and an app whose name has a space, so the URL has to be decoded
+# rather than compared raw.
+printf '\n%smacOS Dock%s\n' "$DIM" "$OFF"
+
+dock_manifest() {
+  local bad f
+  ls macos/machines/*/dock.txt > /dev/null 2>&1 || {
+    echo "no macos/machines/*/dock.txt at all"
+    return 1
+  }
+  bad=$(for f in macos/machines/*/dock.txt; do
+    sed 's/#.*//; s/[[:space:]]*$//' "$f" | awk -v f="$f" '
+    NF == 0 { next }
+    $0 !~ /^\/.*\.app$/ { print f":"NR": not an absolute path to an .app: "$0; next }
+    seen[$0]++ { print f":"NR": listed twice: "$0 }
+  '
+  done)
+  [ -z "$bad" ] || {
+    printf '%s\n' "$bad"
+    return 1
+  }
+}
+check "every machine's dock.txt is one absolute .app path per line, none twice" dock_manifest
+
+dock_stub() {
+  local dir=$1
+  mkdir -p "$dir/bin" "$dir/Applications/Google Chrome.app" "$dir/Applications/Ghostty.app" "$dir/Applications/Notes.app"
+  cat > "$dir/bin/dockutil" << 'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  --list)
+    [ -z "${LIST_FAILS:-}" ] || { echo "dockutil stub: list failed" >&2; exit 1; }
+    cat "$STATE" ;;
+  --add | --remove) echo "$*" >> "$WRITES" ;;
+  *) echo "dockutil stub: unexpected call: $*" >&2; exit 99 ;;
+esac
+STUB
+  cat > "$dir/bin/killall" << 'STUB'
+#!/usr/bin/env bash
+echo "$1" >> "$KILLED"
+STUB
+  chmod +x "$dir/bin/dockutil" "$dir/bin/killall"
+  machine_fixture "$dir"
+  printf '%s/Applications/Google Chrome.app\n%s/Applications/Ghostty.app\n' "$dir" "$dir" > "$dir/machines/test/dock.txt"
+  : > "$dir/writes"
+  : > "$dir/killed"
+}
+
+# One line of `dockutil --list` for each app path given, in that order,
+# followed by the Downloads stack.
+dock_state() {
+  local out=$1 app enc
+  shift
+  : > "$out"
+  for app in "$@"; do
+    enc=${app// /%20}
+    printf '%s\tfile://%s/\tpersistentApps\t/Users/x/Library/Preferences/com.apple.dock.plist\n' \
+      "$(basename "$app" .app)" "$enc" >> "$out"
+  done
+  printf 'Downloads\tfile:///Users/x/Downloads/\tpersistentOthers\t/Users/x/Library/Preferences/com.apple.dock.plist\n' >> "$out"
+}
+
+dock_run() {
+  local tmp=$1
+  shift
+  STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" \
+    PATH="$tmp/bin:$PATH" MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/dock.sh "$@"
+}
+
+dock_apply_is_a_noop_when_matching() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app" "$tmp/Applications/Ghostty.app"
+  dock_run "$tmp" apply > "$tmp/out" 2>&1 || {
+    cat "$tmp/out"
+    return 1
+  }
+  [ ! -s "$tmp/writes" ] || {
+    echo "changed the Dock although it matched:"
+    cat "$tmp/writes"
+    return 1
+  }
+  [ ! -s "$tmp/killed" ] || {
+    echo "restarted the Dock although nothing changed"
+    return 1
+  }
+  [ ! -s "$tmp/out" ] || {
+    echo "printed output although nothing changed:"
+    cat "$tmp/out"
+    return 1
+  }
+}
+check "apply leaves the Dock alone when it already matches" dock_apply_is_a_noop_when_matching
+
+dock_apply_rebuilds_the_app_section() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  # Wrong order, plus an app the manifest does not declare.
+  dock_state "$tmp/state" "$tmp/Applications/Ghostty.app" "$tmp/Applications/Notes.app" "$tmp/Applications/Google Chrome.app"
+  dock_run "$tmp" apply > "$tmp/out" || return 1
+  diff - "$tmp/writes" << EOF || return 1
+--remove Ghostty --no-restart
+--remove Notes --no-restart
+--remove Google Chrome --no-restart
+--add $tmp/Applications/Google Chrome.app --section apps --no-restart
+--add $tmp/Applications/Ghostty.app --section apps --no-restart
+EOF
+  diff <(echo Dock) "$tmp/killed" || return 1
+  diff <(echo "Dock -> Google Chrome, Ghostty") "$tmp/out" || return 1
+}
+check "apply rebuilds only the app section, in order, and restarts the Dock once" dock_apply_rebuilds_the_app_section
+
+dock_check_reports_and_never_writes() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  dock_state "$tmp/state" "$tmp/Applications/Ghostty.app" "$tmp/Applications/Google Chrome.app"
+  if out=$(dock_run "$tmp" check); then
+    echo "check exited 0 with a difference present"
+    return 1
+  fi
+  diff - <(printf '%s\n' "$out") << 'EOF' || return 1
+Dock: want Google Chrome, Ghostty
+Dock: have Ghostty, Google Chrome
+EOF
+  [ ! -s "$tmp/writes" ] && [ ! -s "$tmp/killed" ] || {
+    echo "check changed the Dock"
+    return 1
+  }
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app" "$tmp/Applications/Ghostty.app"
+  out=$(dock_run "$tmp" check) || {
+    echo "check exited non-zero with the Dock matching: $out"
+    return 1
+  }
+  [ -z "$out" ] || {
+    echo "check printed with the Dock matching: $out"
+    return 1
+  }
+}
+check "check reports the difference, exits 0 on a match, and never writes" dock_check_reports_and_never_writes
+
+# A declared app that is not installed -- the normal state of a fresh machine
+# before the App Store has run -- must not stop install.sh, and must not
+# vanish either: apply builds the Dock from what is there and says what it
+# skipped, check keeps reporting it until it is installed or undeclared.
+dock_handles_an_app_that_is_not_installed() {
+  local tmp out rc
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  printf '%s/Applications/Missing.app\n' "$tmp" >> "$tmp/machines/test/dock.txt"
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app" "$tmp/Applications/Ghostty.app"
+  dock_run "$tmp" apply > "$tmp/out" 2> "$tmp/err" || {
+    echo "apply failed on a missing app"
+    cat "$tmp/err"
+    return 1
+  }
+  [ ! -s "$tmp/writes" ] || {
+    echo "rebuilt the Dock although every installed app was already in place:"
+    cat "$tmp/writes"
+    return 1
+  }
+  diff <(echo "not installed, left out of the Dock: $tmp/Applications/Missing.app") "$tmp/err" || return 1
+  rc=0
+  out=$(dock_run "$tmp" check) || rc=$?
+  [ "$rc" -eq 1 ] || {
+    echo "check exited $rc with a declared app missing, want 1"
+    return 1
+  }
+  [ "$out" = "not installed: $tmp/Applications/Missing.app" ] || {
+    echo "unexpected report: $out"
+    return 1
+  }
+}
+check "a declared app that is not installed is skipped by apply and reported by check" dock_handles_an_app_that_is_not_installed
+
+dock_refuses_a_missing_profile() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  dock_state "$tmp/state"
+  rm "$tmp/machine"
+  for verb in check apply; do
+    rc=0
+    out=$(dock_run "$tmp" "$verb" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] && [ ! -s "$tmp/writes" ] || {
+      echo "$verb exited $rc or changed the Dock with no machine profile: $out"
+      return 1
+    }
+  done
+  case "$out" in
+    *"no machine profile"*) ;;
+    *)
+      echo "did not say the profile is missing: $out"
+      return 1
+      ;;
+  esac
+}
+check "no machine profile is a broken checker, and the Dock is left alone" dock_refuses_a_missing_profile
+
+# `while read` drops a last line with no newline after it, and an editor that
+# does not add one is common. The validator reads with awk, which keeps it,
+# so the two would disagree in silence.
+dock_reads_an_unterminated_last_line() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  printf '%s/Applications/Google Chrome.app\n%s/Applications/Ghostty.app' "$tmp" "$tmp" > "$tmp/machines/test/dock.txt"
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app"
+  if out=$(dock_run "$tmp" check); then
+    echo "check ignored the last line, the one with no newline"
+    return 1
+  fi
+}
+check "the last line counts without a newline after it" dock_reads_an_unterminated_last_line
+
+# dockutil missing, or failing to list, is a broken checker -- exit 2, which
+# drift.sh reports as such -- and not an empty Dock that `apply` would then
+# "fix". PATH is cut to the system directories so the real dockutil in
+# Homebrew's cannot answer instead.
+dock_refuses_a_missing_or_failing_dockutil() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app" "$tmp/Applications/Ghostty.app"
+  rm "$tmp/bin/dockutil"
+  for verb in check apply; do
+    rc=0
+    out=$(STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" PATH="$tmp/bin:/usr/bin:/bin" \
+      MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" /bin/bash macos/dock.sh "$verb" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] || {
+      echo "$verb exited $rc without dockutil, want 2: $out"
+      return 1
+    }
+  done
+  dock_stub "$tmp"
+  rc=0
+  out=$(LIST_FAILS=1 dock_run "$tmp" check 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "check exited $rc when dockutil --list failed, want 2: $out"
+    return 1
+  }
+  rc=0
+  out=$(LIST_FAILS=1 dock_run "$tmp" apply 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] && [ ! -s "$tmp/writes" ] && [ ! -s "$tmp/killed" ] || {
+    echo "apply exited $rc or changed the Dock when dockutil --list failed: $out"
+    return 1
+  }
+}
+check "a missing or failing dockutil is a broken checker, not an empty Dock" dock_refuses_a_missing_or_failing_dockutil
+
+# Shapes the plain case does not cover. Observed with dockutil 3.1.3 on
+# 2026-10-03: Safari, whose /Applications path is a symlink into the system
+# cryptex, listed as that cryptex path, bare, with no file:// and no slash;
+# and five fields, the bundle id last. Not observed, guarded against: an
+# accented name stored decomposed (NFD) while the manifest is typed composed
+# (NFC) -- macOS file APIs commonly hand back NFD, and the two would never
+# compare equal as strings.
+dock_matches_symlinked_and_accented_apps() {
+  local tmp nfc
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  # "Cafe" with an acute e, written as bytes: composed (C3 A9) in the
+  # manifest, decomposed (65 CC 81) and percent-encoded in the Dock's URL.
+  nfc=$(printf 'Caf\xc3\xa9')
+  mkdir -p "$tmp/Cryptex/Safari.app" "$tmp/Applications/$nfc.app"
+  ln -s "$tmp/Cryptex/Safari.app" "$tmp/Applications/Safari.app"
+  printf '%s/Applications/Safari.app\n%s/Applications/%s.app\n' "$tmp" "$tmp" "$nfc" > "$tmp/machines/test/dock.txt"
+  {
+    printf 'Safari\t%s/Cryptex/Safari.app\tpersistentApps\t/p.plist\tcom.apple.Safari\n' "$(cd -P "$tmp" && pwd)"
+    printf '%s\tfile://%s/Applications/Cafe%%CC%%81.app/\tpersistentApps\t/p.plist\tcom.example.cafe\n' "$nfc" "${tmp// /%20}"
+  } > "$tmp/state"
+  dock_run "$tmp" check > "$tmp/out" 2>&1 || {
+    echo "check reported a difference for the same two apps:"
+    cat "$tmp/out"
+    return 1
+  }
+  dock_run "$tmp" apply > "$tmp/out" 2>&1 || return 1
+  [ ! -s "$tmp/writes" ] && [ ! -s "$tmp/out" ] || {
+    echo "apply rebuilt a Dock that already matched:"
+    cat "$tmp/writes" "$tmp/out"
+    return 1
+  }
+}
+check "a symlinked app and a decomposed accent match their manifest lines" dock_matches_symlinked_and_accented_apps
+
+# A spacer in the app section has an empty label and an empty URL. The
+# manifest cannot declare one, so it is drift: check names it, apply removes
+# it. Two empty fields in a row are the trap -- split on IFS, tabs collapse
+# and the section lands in the wrong field.
+dock_reports_and_removes_a_spacer() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  dock_state "$tmp/state" "$tmp/Applications/Google Chrome.app" "$tmp/Applications/Ghostty.app"
+  printf '\t\tpersistentApps\t/p.plist\t\n' >> "$tmp/state"
+  if out=$(dock_run "$tmp" check); then
+    echo "check exited 0 with a spacer in the app section"
+    return 1
+  fi
+  diff - <(printf '%s\n' "$out") << 'EOF' || return 1
+Dock: want Google Chrome, Ghostty
+Dock: have Google Chrome, Ghostty, spacer
+EOF
+  dock_run "$tmp" apply > /dev/null || return 1
+  grep -qx -- '--remove spacer-tiles --no-restart' "$tmp/writes" || {
+    echo "apply did not remove the spacer:"
+    cat "$tmp/writes"
+    return 1
+  }
+}
+check "a spacer in the app section is reported by check and removed by apply" dock_reports_and_removes_a_spacer
+
+# A Mac with a profile but no dock.txt in it has a Dock nobody declared: not
+# a broken checker, but not a match either. check says so until one is
+# written; apply leaves the Dock alone.
+machine_without_a_dock_manifest_is_reported() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  dock_stub "$tmp"
+  rm "$tmp/machines/test/dock.txt"
+  dock_state "$tmp/state" "$tmp/Applications/Ghostty.app"
+  rc=0
+  out=$(STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" PATH="$tmp/bin:$PATH" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/dock.sh check) || rc=$?
+  [ "$rc" -eq 1 ] || {
+    echo "check exited $rc with no dock.txt for this machine, want 1: $out"
+    return 1
+  }
+  [ "$out" = "no dock.txt for machine test: the Dock is not declared" ] || {
+    echo "unexpected report: $out"
+    return 1
+  }
+  STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" PATH="$tmp/bin:$PATH" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/dock.sh apply 2> /dev/null || return 1
+  [ ! -s "$tmp/writes" ] || {
+    echo "apply changed a Dock no manifest declares"
+    return 1
+  }
+  printf '%s/Applications/Ghostty.app\n' "$tmp" > "$tmp/machines/test/dock.txt"
+  out=$(STATE="$tmp/state" WRITES="$tmp/writes" KILLED="$tmp/killed" PATH="$tmp/bin:$PATH" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/dock.sh check) || {
+    echo "check did not read the machine's dock.txt: $out"
+    return 1
+  }
+}
+check "the Dock is read from the machine's dock.txt, and its absence is reported" machine_without_a_dock_manifest_is_reported
+
+# ── macOS file handlers ──────────────────────────────────────────────────────
+# macos/handlers.sh sets the default app per file extension through duti. The
+# stub answers `-x ext` from $STATE ("ext bundle_id" lines) in duti's
+# three-line shape, failing like the real one for an extension with no
+# handler, records every `-s` to $WRITES, and fails a `-s` for any bundle id
+# listed in $MISSING -- what the real duti does for an app that is not
+# installed (error -50, exit 2, seen here on 2026-10-03).
+printf '\n%smacOS file handlers%s\n' "$DIM" "$OFF"
+
+handlers_manifest() {
+  local bad f
+  [ -f macos/handlers.txt ] || {
+    echo "macos/handlers.txt missing"
+    return 1
+  }
+  # Checked per pair, shared plus one machine, which is what a machine reads:
+  # an extension in both would be set twice, and the last write would win.
+  bad=$(for f in macos/handlers.txt macos/machines/*/handlers.txt; do
+    [ -f "$f" ] || continue
+    if [ "$f" = macos/handlers.txt ]; then
+      set -- macos/handlers.txt
+    else
+      set -- macos/handlers.txt "$f"
+    fi
+    awk '
+    { sub(/#.*/, "") }
+    NF == 0 { next }
+    NF != 2 { print FILENAME":"FNR": want two fields, extension and bundle id"; next }
+    $1 !~ /^[a-z0-9]+$/ { print FILENAME":"FNR": extension is lowercase, without the dot: "$1; next }
+    $2 !~ /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/ { print FILENAME":"FNR": not a bundle id: "$2; next }
+    seen[$1]++ { print FILENAME":"FNR": "$1" is also in an earlier file, or twice in this one" }
+  ' "$@"
+  done)
+  [ -z "$bad" ] || {
+    printf '%s\n' "$bad"
+    return 1
+  }
+}
+check "every handlers manifest is extension and bundle id per line, none in two" handlers_manifest
+
+handlers_stub() {
+  local dir=$1
+  mkdir -p "$dir/bin"
+  cat > "$dir/bin/duti" << 'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  -x)
+    b=$(awk -v e="$2" '$1 == e { print $2; exit }' "$STATE")
+    [ -n "$b" ] || { echo "Failed to get default application for extension '$2'" >&2; exit 2; }
+    printf 'Some App\n/Applications/Some App.app\n%s\n' "$b" ;;
+  -s)
+    if grep -qx "$2" "$MISSING" 2> /dev/null; then
+      echo "failed to set $2 as handler for x (error -50)" >&2
+      exit 2
+    fi
+    echo "$*" >> "$WRITES" ;;
+  *) echo "duti stub: unexpected call: $*" >&2; exit 99 ;;
+esac
+STUB
+  chmod +x "$dir/bin/duti"
+  cat > "$dir/handlers.txt" << 'EOF'
+# comment
+md    abnerworks.Typora     # trailing comment
+sh    com.microsoft.VSCode
+EOF
+  : > "$dir/writes"
+  : > "$dir/missing"
+  machine_fixture "$dir"
+}
+
+handlers_run() {
+  local tmp=$1
+  shift
+  STATE="$tmp/state" WRITES="$tmp/writes" MISSING="$tmp/missing" \
+    PATH="$tmp/bin:$PATH" MANIFEST="$tmp/handlers.txt" \
+    MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" bash macos/handlers.sh "$@"
+}
+
+handlers_apply_is_a_noop_when_matching() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  printf 'md abnerworks.Typora\nsh com.microsoft.VSCode\n' > "$tmp/state"
+  handlers_run "$tmp" apply > "$tmp/out" 2>&1 || {
+    cat "$tmp/out"
+    return 1
+  }
+  [ ! -s "$tmp/writes" ] || {
+    echo "set a handler although everything matched:"
+    cat "$tmp/writes"
+    return 1
+  }
+  [ ! -s "$tmp/out" ] || {
+    echo "printed output although nothing changed:"
+    cat "$tmp/out"
+    return 1
+  }
+}
+check "apply sets nothing when every handler already matches" handlers_apply_is_a_noop_when_matching
+
+handlers_apply_sets_only_the_difference() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  # md matches; sh opens in a terminal, which runs the script.
+  printf 'md abnerworks.Typora\nsh com.mitchellh.ghostty\n' > "$tmp/state"
+  handlers_run "$tmp" apply > "$tmp/out" || return 1
+  diff <(echo "-s com.microsoft.VSCode .sh all") "$tmp/writes" || return 1
+  diff <(echo "sh -> com.microsoft.VSCode") "$tmp/out" || return 1
+}
+check "apply sets exactly the differing extensions, for every role" handlers_apply_sets_only_the_difference
+
+handlers_check_reports_and_never_writes() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  # sh has a different handler; md has none at all.
+  printf 'sh com.mitchellh.ghostty\n' > "$tmp/state"
+  if out=$(handlers_run "$tmp" check); then
+    echo "check exited 0 with differences present"
+    return 1
+  fi
+  diff - <(printf '%s\n' "$out") << 'EOF' || return 1
+md: want abnerworks.Typora, have unset
+sh: want com.microsoft.VSCode, have com.mitchellh.ghostty
+EOF
+  [ ! -s "$tmp/writes" ] || {
+    echo "check set a handler"
+    return 1
+  }
+  printf 'md abnerworks.Typora\nsh com.microsoft.VSCode\n' > "$tmp/state"
+  out=$(handlers_run "$tmp" check) || {
+    echo "check exited non-zero with every handler matching: $out"
+    return 1
+  }
+  [ -z "$out" ] || {
+    echo "check printed with every handler matching: $out"
+    return 1
+  }
+}
+check "check reports each difference, exits 0 on a match, and never writes" handlers_check_reports_and_never_writes
+
+# Same contract as the Dock: an app that is not installed yet must not stop
+# install.sh, and must not be silent either. The other lines still apply.
+handlers_apply_survives_an_app_that_is_not_installed() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  echo abnerworks.Typora > "$tmp/missing"
+  printf 'md com.apple.TextEdit\nsh com.mitchellh.ghostty\n' > "$tmp/state"
+  handlers_run "$tmp" apply > "$tmp/out" 2> "$tmp/err" || {
+    echo "apply failed on an app that is not installed"
+    cat "$tmp/err"
+    return 1
+  }
+  diff <(echo "-s com.microsoft.VSCode .sh all") "$tmp/writes" || return 1
+  diff <(echo "sh -> com.microsoft.VSCode") "$tmp/out" || return 1
+  diff <(echo "md: could not set abnerworks.Typora, left as is (duti: failed to set abnerworks.Typora as handler for x (error -50))") "$tmp/err" || return 1
+}
+check "apply skips a handler whose app is not installed and sets the rest" handlers_apply_survives_an_app_that_is_not_installed
+
+handlers_refuses_a_missing_manifest() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  rc=0
+  out=$(STATE="$tmp/state" WRITES="$tmp/writes" MISSING="$tmp/missing" PATH="$tmp/bin:$PATH" \
+    MANIFEST="$tmp/nope/handlers.txt" bash macos/handlers.sh check 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || {
+    echo "exited $rc on a missing manifest, want 2: $out"
+    return 1
+  }
+  case "$out" in
+    *"no manifest at $tmp/nope/handlers.txt"*) ;;
+    *)
+      echo "did not name the missing manifest: $out"
+      return 1
+      ;;
+  esac
+}
+check "check refuses a missing manifest instead of reading it as a match" handlers_refuses_a_missing_manifest
+
+handlers_refuses_a_missing_duti() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  rm "$tmp/bin/duti"
+  printf 'md abnerworks.Typora\n' > "$tmp/state"
+  for verb in check apply; do
+    rc=0
+    out=$(STATE="$tmp/state" WRITES="$tmp/writes" MISSING="$tmp/missing" PATH="$tmp/bin:/usr/bin:/bin" \
+      MANIFEST="$tmp/handlers.txt" MACHINE_FILE="$tmp/machine" MACHINES="$tmp/machines" \
+      /bin/bash macos/handlers.sh "$verb" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] || {
+      echo "$verb exited $rc without duti, want 2: $out"
+      return 1
+    }
+  done
+}
+check "a missing duti is a broken checker, not every handler unset" handlers_refuses_a_missing_duti
+
+handlers_reads_the_machine_overlay() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  printf 'pdf com.adobe.Acrobat.Pro\n' > "$tmp/machines/test/handlers.txt"
+  printf 'md abnerworks.Typora\nsh com.microsoft.VSCode\n' > "$tmp/state"
+  if out=$(handlers_run "$tmp" check); then
+    echo "check exited 0 with the machine's line unmet"
+    return 1
+  fi
+  [ "$out" = "pdf: want com.adobe.Acrobat.Pro, have unset" ] || {
+    echo "unexpected report: $out"
+    return 1
+  }
+}
+check "the machine's handlers.txt is read after the shared one" handlers_reads_the_machine_overlay
+
+handlers_refuses_a_missing_profile() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  printf 'md com.apple.TextEdit\n' > "$tmp/state"
+  rm "$tmp/machine"
+  for verb in check apply; do
+    rc=0
+    out=$(handlers_run "$tmp" "$verb" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] && [ ! -s "$tmp/writes" ] || {
+      echo "$verb exited $rc or set a handler with no machine profile: $out"
+      return 1
+    }
+  done
+}
+check "no machine profile is a broken checker, and no handler is set" handlers_refuses_a_missing_profile
+
+handlers_reads_an_unterminated_last_line() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  handlers_stub "$tmp"
+  printf 'pdf com.adobe.Acrobat.Pro' > "$tmp/machines/test/handlers.txt"
+  printf 'md abnerworks.Typora\nsh com.microsoft.VSCode\n' > "$tmp/state"
+  if out=$(handlers_run "$tmp" check); then
+    echo "check ignored the machine's last line, the one with no newline"
+    return 1
+  fi
+}
+check "the last line counts without a newline after it" handlers_reads_an_unterminated_last_line
+
+# ── Touch ID for sudo ────────────────────────────────────────────────────────
+# macos/touchid.sh turns on Touch ID for sudo through /etc/pam.d/sudo_local,
+# the file Apple keeps across system updates. Same contract as power.sh:
+# check never reaches sudo, apply reaches it once and only for a difference.
+# PAM_DIR points both at a fixture holding Apple's template, and the sudo
+# stub records its arguments and then runs them, so `tee` really writes the
+# fixture file.
+printf '\n%sTouch ID for sudo%s\n' "$DIM" "$OFF"
+
+touchid_stub() {
+  local dir=$1
+  mkdir -p "$dir/bin" "$dir/pam.d"
+  cat > "$dir/bin/sudo" << 'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$WRITES"
+exec "$@"
+STUB
+  chmod +x "$dir/bin/sudo"
+  # Apple's template as macOS 27.0 ships it, read 2026-10-03.
+  cat > "$dir/pam.d/sudo_local.template" << 'EOF'
+# sudo_local: local config file which survives system update and is included for sudo
+# uncomment following line to enable Touch ID for sudo
+#auth       sufficient     pam_tid.so
+EOF
+  : > "$dir/writes"
+}
+
+touchid_run() {
+  local tmp=$1
+  shift
+  WRITES="$tmp/writes" PATH="$tmp/bin:$PATH" PAM_DIR="$tmp/pam.d" bash macos/touchid.sh "$@"
+}
+
+touchid_check_reports_and_never_sudos() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  touchid_stub "$tmp"
+  rc=0
+  out=$(touchid_run "$tmp" check) || rc=$?
+  [ "$rc" -eq 1 ] && [ "$out" = "Touch ID for sudo is off: no pam_tid.so line in $tmp/pam.d/sudo_local" ] || {
+    echo "check exited $rc with no sudo_local: $out"
+    return 1
+  }
+  # The template's own line is commented out, which is still off.
+  cp "$tmp/pam.d/sudo_local.template" "$tmp/pam.d/sudo_local"
+  rc=0
+  touchid_run "$tmp" check > /dev/null || rc=$?
+  [ "$rc" -eq 1 ] || {
+    echo "check exited $rc with the line commented out, want 1"
+    return 1
+  }
+  [ ! -s "$tmp/writes" ] || {
+    echo "check called sudo:"
+    cat "$tmp/writes"
+    return 1
+  }
+}
+check "check reports Touch ID off, commented line included, and never calls sudo" touchid_check_reports_and_never_sudos
+
+touchid_apply_writes_the_template_once() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  touchid_stub "$tmp"
+  out=$(touchid_run "$tmp" apply) || return 1
+  [ "$out" = "Touch ID for sudo -> on" ] || {
+    echo "unexpected output: $out"
+    return 1
+  }
+  diff - "$tmp/pam.d/sudo_local" << 'EOF' || return 1
+# sudo_local: local config file which survives system update and is included for sudo
+# uncomment following line to enable Touch ID for sudo
+auth       sufficient     pam_tid.so
+EOF
+  [ "$(wc -l < "$tmp/writes")" -eq 1 ] || {
+    echo "apply called sudo more than once:"
+    cat "$tmp/writes"
+    return 1
+  }
+  : > "$tmp/writes"
+  out=$(touchid_run "$tmp" apply) || return 1
+  [ -z "$out" ] && [ ! -s "$tmp/writes" ] || {
+    echo "a second apply called sudo or printed: $out"
+    return 1
+  }
+  touchid_run "$tmp" check > /dev/null || {
+    echo "check did not see the line apply wrote"
+    return 1
+  }
+}
+check "apply writes Apple's template with the line uncommented, once, through sudo" touchid_apply_writes_the_template_once
+
+# A sudo_local someone already wrote -- another PAM module, a comment -- is
+# theirs: apply adds the one line and keeps the rest.
+touchid_apply_keeps_an_existing_file() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  touchid_stub "$tmp"
+  printf '# mine\nauth       optional       pam_example.so\n' > "$tmp/pam.d/sudo_local"
+  touchid_run "$tmp" apply > /dev/null || return 1
+  diff - "$tmp/pam.d/sudo_local" << 'EOF' || return 1
+# mine
+auth       optional       pam_example.so
+auth       sufficient     pam_tid.so
+EOF
+}
+check "apply adds the line to an existing sudo_local and keeps what was there" touchid_apply_keeps_an_existing_file
+
+touchid_refuses_without_a_template() {
+  local tmp rc out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  touchid_stub "$tmp"
+  rm "$tmp/pam.d/sudo_local.template"
+  for verb in check apply; do
+    rc=0
+    out=$(touchid_run "$tmp" "$verb" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] && [ ! -s "$tmp/writes" ] || {
+      echo "$verb exited $rc or called sudo with no template and no sudo_local: $out"
+      return 1
+    }
+  done
+}
+check "no template and no sudo_local is a broken checker, not a file to invent" touchid_refuses_without_a_template
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A
