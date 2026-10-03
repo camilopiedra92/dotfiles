@@ -66,6 +66,19 @@ zstyle ':fzf-tab:*' switch-group '<' '>'
 # mise manages node, python, go... per the mise.toml of each project
 eval "$(mise activate zsh)"
 
+# Claude Code runs every command with the PATH it inherited at launch, frozen.
+# Read from the claude 2.1.282 binary on 2026-09-24: its shell snapshot writes
+# `export PATH=` from its own process environment plus plugin dirs, and the
+# snapshot shell sources no rc file (it looks for $HOME/.zshrc, which ZDOTDIR
+# means does not exist). So activate's install dirs for the launch directory
+# stayed ahead of the shims, and `node --version` printed v26 in a project whose
+# mise.toml pins 24. Deactivating for the launch leaves the shims from .zshenv,
+# which resolve per directory at exec time; the subshell keeps this shell
+# activated. A bare `mise deactivate` is enough because after activate `mise`
+# is a shell function whose deactivate branch evals the binary's output itself
+# (checked with `type mise` and `functions mise`, 2026-09-24). Claude launched from an IDE does not come through here: not tested.
+claude() { (mise deactivate && command claude "$@") }
+
 # ---------- Prompt ----------
 eval "$(starship init zsh)"
 
