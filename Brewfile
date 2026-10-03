@@ -7,6 +7,12 @@ brew "bat"
 # Resource monitor. Not a development tool in the strict sense, and here anyway:
 # what you reach for when a build pins a core or a container eats the machine.
 brew "btop"
+# Edits the Dock from the command line, so its layout can be scripted instead of
+# dragged into place by hand on a new machine.
+brew "dockutil"
+# Sets the default app per file type or URL scheme, which System Settings only
+# does one Finder "Get Info" at a time.
+brew "duti"
 # Modern, maintained replacement for ls
 brew "eza"
 # Like neofetch, but much faster because written mostly in C
@@ -39,6 +45,12 @@ brew "git-filter-repo"
 brew "go-task"
 # Lightweight and flexible command-line JSON processor
 brew "jq"
+# Apple Silicon monitor: GPU, power draw and E-core vs P-core load, none of which
+# btop shows.
+brew "mactop"
+# Mac App Store CLI: lists, installs and updates App Store apps from the
+# terminal, and is what lets a Brewfile declare one with a `mas` line.
+brew "mas"
 # Polyglot runtime manager (asdf rust clone)
 brew "mise"
 # Object-relational database system. Keg-only: zsh/.zshrc puts it on PATH.
@@ -65,6 +77,9 @@ brew "taplo"
 # and `brew bundle check` reported it as missing forever. tlrc is the same
 # project's official client and still installs the `tldr` command.
 brew "tlrc"
+# Disk health. macOS only reports SMART as "Verified"; smartctl reads the NVMe
+# log behind it -- wear (Percentage Used), total writes, spare, errors.
+brew "smartmontools"
 # Terminal multiplexer
 brew "tmux"
 # Rust toolchain installer
