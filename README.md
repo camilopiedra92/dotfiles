@@ -213,7 +213,21 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   deprecated. Same intent, the key that still exists.
 - **`enabledPlugins` lists only the ones that are on.** A `false` entry is a
   plugin someone tried and turned off, and reproducing it on a new machine would
-  mean installing it in order to disable it.
+  mean installing it in order to disable it. Removing a line here does not
+  disable anything on a machine — the merge keeps live keys — so a plugin is
+  dropped with `claude plugin uninstall` as well.
+- **Spec Kit is the only process plugin, so superpowers is gone** (2026-10-05).
+  Its SessionStart hook re-injected "a 1% chance a skill applies means you MUST
+  invoke it" on every start, clear and compaction, and its brainstorming gate
+  hands off only to its own plan format: 15 repos under `~/Development` had
+  grown `docs/superpowers/` against 1 with `.specify/`. It cannot be trimmed —
+  plugin skills ignore `skillOverrides`, and upstream declined an opt-out in
+  #645 and #1456. The alternative on record is keeping it beside Spec Kit with
+  a bridge extension; it lost because the hook keeps pulling either way. Also
+  removed the same day: `security-guidance` (an extra LLM review on every
+  Stop, commit and push; `/security-review` is built in), `claude-md-management`
+  (overlaps `/doctor`), and `chrome-devtools-mcp` (~800 tokens in every session
+  for a tool only web projects use; enable it in those projects instead).
 - **`extraKnownMarketplaces` is not versioned at all.** Every enabled plugin
   comes from `claude-plugins-official`, so declaring the extra marketplaces adds
   surface and no reproducibility.
@@ -222,8 +236,18 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   all of them into every terminal session as `<name>@synced`, which added
   hundreds of skills to each one and three servers failing authentication at
   every start. A plugin wanted in the terminal is declared above instead.
-  Synced skills are a separate switch, `syncClaudeAiSkills`, left unset, so
-  they still load.
+  Synced skills are a separate switch, `syncClaudeAiSkills`, also `false`
+  since 2026-10-05: the 19 it brought (docx, pptx, morning, todoist-tasks…)
+  are for claude.ai, and their descriptions sat in every coding session. The
+  key is missing from the published schema, so it was checked by effect: the
+  skills were listed in a session before the change and absent from a fresh
+  `claude -p` session after it.
+- **`deniedMcpServers` blocks the claude.ai connectors that never belong in a
+  terminal** — travel and music. By URL, because `serverName` only accepts
+  `[a-zA-Z0-9_-]` and connector names carry a space and a dot. Not
+  `disableClaudeAiConnectors`: Context7 arrives as a connector, and so do the
+  market-data ones the investing repos use. Each blocked server prints a
+  warning at startup in `-p` mode; that is the cost of the block.
 - **`permissions` has split ownership.** The repo owns `deny`, which is the same
   everywhere. `allow` accumulates per project — domains, MCP tools — and stays
   out, which is why `deny` is an array the merge replaces whole while `allow` is
