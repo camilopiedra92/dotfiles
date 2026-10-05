@@ -99,10 +99,11 @@ whether a repo has it.
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
 never read it, so a decision that binds them moves out before the feature's
-PR opens: a rule becomes a constitution principle; anything else becomes
-`docs/decisions/NNNN-slug.md` in MADR's shape — context, options, outcome and
-its consequences — linking its research.md entry, and the project CLAUDE.md
-points there. Only a decision a later feature would otherwise reopen.
+PR opens: a rule every change must meet becomes a constitution principle;
+anything else becomes `docs/decisions/NNNN-slug.md` in MADR's shape —
+context, options, outcome and its consequences — linking its research.md
+entry, and the project CLAUDE.md points there. Only a decision a later
+feature would otherwise reopen.
 
 ## Toolchain
 
