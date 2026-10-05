@@ -252,8 +252,9 @@ import os
 LOCAL_ONLY = {
     # Command strings holding absolute paths that exist on this machine only.
     'hooks',
-    # One entry points at a local directory, and no enabled plugin comes from
-    # the other two, so versioning them would add surface and no reproducibility.
+    # Every enabled plugin comes from claude-plugins-official, which Claude Code
+    # knows without being told, so versioning this adds surface and no
+    # reproducibility.
     'extraKnownMarketplaces',
     # Split ownership: the repo owns `deny`, while `allow` accumulates per
     # project (domains, MCP tools) and does not transfer to another machine.
@@ -264,9 +265,10 @@ LOCAL_ONLY = {
     # exists to prevent. The policy lives in permissions.disableBypassPermissionsMode
     # instead, where it is a decision rather than a record of a click.
     'skipDangerousModePermissionPrompt',
-    # Written by `/effort` and the /model picker on every use since v2.1.251,
-    # one entry per model, so it records the last choice made in a session
-    # rather than a policy. The policy -- no pinned effort -- is in the README.
+    # Written by `/effort`, the /model picker and `/autocompact` whenever a
+    # level or window is saved as the default (v2.1.251+), one entry per model,
+    # so it records choices made in sessions rather than a policy. The policy
+    # -- no pinned effort -- is in the README.
     'modelSettings',
 }
 
@@ -319,7 +321,7 @@ for key in sorted(set(repo) & set(live)):
 PY
 }
 report "settings.json declares every choice" \
-  "add it to claude/settings.json, or drop it with /config" \
+  "add it to claude/settings.json, or drop it with /config; a key the repo declares that is missing or different here: ./install.sh" \
   "$(claude_settings_drift)"
 
 # `hooks` sits in LOCAL_ONLY above because most of it is command strings with

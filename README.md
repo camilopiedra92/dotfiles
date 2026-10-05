@@ -185,14 +185,15 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   subscription. Nothing surfaces this on a machine that is already signed in,
   which is what makes it worth writing down.
 - **`effortLevel` is absent on purpose.** Each model ships its own default —
-  `medium` on Opus 5.5, which Anthropic recommends starting from rather than
-  carrying over Opus 5's `high` — and writing a level down would freeze it: a
+  `medium` on Opus 5.5, where the model-config docs say to start rather than
+  carry over Opus 5's `high` — and writing a level down would freeze it: a
   future model shipping a better default would be overridden by a line nobody
   revisits. It is the same argument as `node = "lts"` rather than a number.
-  `/effort` changes it, and since v2.1.251 it also saves the level per model
-  under `modelSettings`; `drift.sh` leaves that key alone for this reason, as a
-  record of the last choice rather than a policy. `max` and `ultracode` are
-  reachable only there — the settings file does not accept them.
+  `/effort` changes it, and since v2.1.251 saving a level as the default
+  writes it per model under `modelSettings`; `drift.sh` leaves that key alone
+  for this reason, as a record of a choice made in a session rather than a
+  policy. `max` is accepted by neither key: it is reached with `/effort`,
+  `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`.
 - **`model` is not set.** The default on this plan is already Opus 5.5 with
   the 1M context window, so the `opus[1m]` that used to be here selected
   nothing the default did not; it only kept a newer default from applying.
@@ -451,7 +452,9 @@ The wrapper also supplies the token, from a `ynab-mcp` item in the login
 Keychain, so that no file holds it. It used to be in the registration's `env`,
 which is plain text in `~/.claude.json`. Store or replace it with
 `security add-generic-password -U -s ynab-mcp -a ynab -w`, which prompts for
-it rather than taking it as an argument that would land in shell history.
+it rather than taking it as an argument that would land in shell history. Do
+that before `./install.sh` on a Mac still registered the old way: the install
+replaces the registration, and its `env` block goes with it.
 
 Not a `.gitignore` entry, which is where this ends up by default. In one
 repository it is a workaround for a bug in another program; in the global ignore
