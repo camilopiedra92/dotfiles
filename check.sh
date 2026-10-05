@@ -3063,6 +3063,121 @@ drift_uv_pin_direction() {
 }
 check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
 
+# ── Spec Kit ─────────────────────────────────────────────────────────────────
+printf '\n%sSpec Kit%s\n' "$DIM" "$OFF"
+
+# The preset is data the specify CLI reads at install time, and the CLI fails
+# on a listed file that is missing only when someone runs it in a repo. Whether
+# the composition itself works is the CLI's job and needs the CLI; that was
+# verified by hand (see spec-kit/preset/preset.yml).
+preset_manifest() {
+  python3 - << 'PY'
+import os, re, sys
+path = 'spec-kit/preset/preset.yml'
+text = open(path, encoding='utf-8').read()
+files = re.findall(r'^\s+file:\s*"([^"]+)"', text, re.M)
+if not files:
+    sys.exit('%s lists no files' % path)
+missing = [f for f in files if not os.path.isfile(os.path.join('spec-kit/preset', f))]
+if missing:
+    sys.exit('%s lists missing files: %s' % (path, ', '.join(missing)))
+# Templates compose at runtime through a bash script that imports PyYAML from
+# whatever python3 is on PATH, which this machine's does not have (seen on
+# 1.1.0, 2026-10-05). Commands compose at install time inside the CLI.
+if re.search(r'type:\s*"template"', text):
+    sys.exit('%s overrides a template; only commands compose without PyYAML' % path)
+# An appended command's frontmatter replaces the core skill's, description
+# included, and the description is what Claude reads to decide when to invoke
+# the skill (seen on 1.1.0: speckit-tasks came out described as the fragment).
+fronted = [f for f in files
+           if open(os.path.join('spec-kit/preset', f), encoding='utf-8').read().startswith('---')]
+if fronted:
+    sys.exit('frontmatter would replace the core skill description: %s' % ', '.join(fronted))
+PY
+}
+check "the Spec Kit preset lists only files that exist, no templates, no frontmatter" preset_manifest
+
+# sdd-init against a `specify` that records its arguments and writes the two
+# directories the real one writes. What is under test is the script's own
+# contract: what it refuses, what it calls, and what lands in its commit.
+sdd_init() {
+  local tmp repo out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/specify" << FAKE
+#!/bin/sh
+printf '%s\n' "\$*" >> "$tmp/calls"
+case "\$1" in
+  init) mkdir -p .specify/memory .claude/skills/speckit-tasks
+        echo x > .specify/memory/constitution.md
+        echo x > .claude/skills/speckit-tasks/SKILL.md ;;
+esac
+FAKE
+  chmod +x "$tmp/bin/specify"
+
+  fresh() {
+    repo="$tmp/repo-$1"
+    git init -q "$repo"
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+    echo keep > "$repo/notes.txt"
+    : > "$tmp/calls"
+  }
+  run() {
+    (cd "$repo" && PATH="$tmp/bin:$PATH" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
+      GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t ../sdd-init 2>&1)
+  }
+  ln -s "$PWD/bin/sdd-init.sh" "$tmp/sdd-init"
+
+  # The happy path: two calls, one commit holding only what init wrote.
+  fresh ok
+  out=$(run) || {
+    echo "refused a clean repo: $out"
+    return 1
+  }
+  printf 'init --here --force --integration claude\npreset add --dev %s/spec-kit/preset\n' \
+    "$PWD" > "$tmp/want"
+  diff -u "$tmp/want" "$tmp/calls" || return 1
+  [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
+    ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {
+    echo "the commit holds something else:"
+    git -C "$repo" show --stat HEAD
+    return 1
+  }
+  git -C "$repo" status --porcelain | grep -qx '?? notes.txt' || {
+    echo "an unrelated file did not stay out of the commit"
+    return 1
+  }
+
+  # Something already staged would ride along in the commit, so it refuses
+  # before calling anything.
+  fresh staged
+  git -C "$repo" add notes.txt
+  if out=$(run); then
+    echo "accepted a repo with staged changes: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify before refusing:"
+    cat "$tmp/calls"
+    return 1
+  }
+
+  # A second run would re-init over a constitution that has been written.
+  fresh twice
+  run > /dev/null || return 1
+  : > "$tmp/calls"
+  if out=$(run); then
+    echo "ran again over an existing .specify/: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify over an existing .specify/"
+    return 1
+  }
+}
+check "sdd-init refuses staged work and a second run, and commits only what init wrote" sdd_init
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
