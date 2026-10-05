@@ -545,7 +545,14 @@ def version(rev):
     """A release tag or PyPI pin as a comparable tuple, or None for a branch,
     a commit, or anything else that has no order."""
     match = re.fullmatch(r'v?(\d+(?:\.\d+)*)', rev or '')
-    return tuple(int(part) for part in match.group(1).split('.')) if match else None
+    if not match:
+        return None
+    parts = [int(part) for part in match.group(1).split('.')]
+    # v1.2 and v1.2.0 name the same release; without this, the longer one
+    # would read as ahead of the shorter.
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
 
 
 for name in sorted(set(want) & set(have)):

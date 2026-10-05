@@ -3011,38 +3011,49 @@ drift_uv_pin_direction() {
   mkdir -p "$tmp/repo" "$tmp/bin" "$tmp/tools/demo"
   printf '#!/bin/sh\necho %s/tools\n' "$tmp" > "$tmp/bin/uv"
   chmod +x "$tmp/bin/uv"
-  echo 'demo  git+https://example.invalid/demo.git@v1.0.7' > "$tmp/repo/uv-tools.txt"
+  echo 'demo  git+https://example.invalid/demo.git@v1.9.0' > "$tmp/repo/uv-tools.txt"
 
   receipt() {
-    printf '[tool]\nrequirements = [{ name = "demo", git = "https://example.invalid/demo.git?rev=%s" }]\n' "$1" \
+    printf '[tool]\nrequirements = [{ name = "demo", git = "%s?rev=%s" }]\n' "$1" "$2" \
       > "$tmp/tools/demo/uv-receipt.toml"
   }
-
-  receipt v1.1.0
-  # shellcheck disable=SC2016  # expanded by the inner shell
-  out=$(cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn") || return 1
-  case "$out" in
-    *'this machine is ahead'*'uv-tools.txt'*) ;;
-    *)
-      echo "machine ahead of the pin, expected the pin moved, got: ${out:-nothing}"
-      return 1
-      ;;
-  esac
-  case "$out" in
-    *'./install.sh'*'downgrade'* | *'downgrade'*'./install.sh'*) ;;
-    *)
-      echo "machine ahead of the pin, expected a warning that install downgrades, got: $out"
-      return 1
-      ;;
-  esac
-
-  receipt v1.0.6
-  # shellcheck disable=SC2016  # expanded by the inner shell
-  out=$(cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn") || return 1
-  [ "$out" = 'demo: uv-tools.txt says git+https://example.invalid/demo.git@v1.0.7, this machine has git+https://example.invalid/demo.git@v1.0.6: ./install.sh' ] || {
-    echo "machine behind the pin, expected ./install.sh, got: ${out:-nothing}"
-    return 1
+  drift() {
+    # shellcheck disable=SC2016  # expanded by the inner shell
+    (cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn")
   }
+
+  # 1.10 against 1.9: ahead by number, behind as a string, so this is the case
+  # that tells the two comparisons apart.
+  receipt https://example.invalid/demo.git v1.10.0
+  out=$(drift) || return 1
+  case "$out" in
+    *'this machine is ahead'*'uv-tools.txt'*'downgrade'*) ;;
+    *)
+      echo "machine ahead of the pin, expected the pin moved and a downgrade warning, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+
+  # Behind, the same tag spelled shorter, and a higher tag from another
+  # repository all close with an install: only the same source can be ahead.
+  for case in 'https://example.invalid/demo.git v1.8.0' \
+    'https://example.invalid/demo.git v1.9.0.0' \
+    'https://example.invalid/fork.git v2.0.0'; do
+    # shellcheck disable=SC2086  # two words on purpose
+    receipt $case
+    out=$(drift) || return 1
+    case "$out" in
+      *'is ahead'*)
+        echo "$case: expected ./install.sh, got: $out"
+        return 1
+        ;;
+      *': ./install.sh') ;;
+      *)
+        echo "$case: expected ./install.sh, got: ${out:-nothing}"
+        return 1
+        ;;
+    esac
+  done
 }
 check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
 
