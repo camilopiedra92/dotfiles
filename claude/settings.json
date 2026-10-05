@@ -4,15 +4,13 @@
   "theme": "dark-ansi",
   "tui": "fullscreen",
   "outputStyle": "Concise",
-  "model": "opus[1m]",
   "fallbackModel": [
-    "opus",
     "sonnet"
   ],
   "teammateMode": "auto",
   "alwaysThinkingEnabled": true,
   "spinnerTipsEnabled": false,
-  "autoUpdatesChannel": "latest",
+  "autoUpdatesChannel": "stable",
   "cleanupPeriodDays": 60,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
@@ -24,12 +22,15 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "enabledPlugins": {
+    "chrome-devtools-mcp@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true
   },
+  "syncClaudeAiPlugins": false,
   "permissions": {
     "defaultMode": "auto",
     "disableBypassPermissionsMode": "disable",

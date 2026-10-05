@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aware": {
+      "type": "stdio",
+      "command": "aware",
+      "args": ["mcp"]
+    }
+  }
+}

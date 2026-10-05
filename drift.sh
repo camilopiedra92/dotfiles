@@ -252,8 +252,9 @@ import os
 LOCAL_ONLY = {
     # Command strings holding absolute paths that exist on this machine only.
     'hooks',
-    # One entry points at a local directory, and no enabled plugin comes from
-    # the other two, so versioning them would add surface and no reproducibility.
+    # Every enabled plugin comes from claude-plugins-official, which Claude Code
+    # knows without being told, so versioning this adds surface and no
+    # reproducibility.
     'extraKnownMarketplaces',
     # Split ownership: the repo owns `deny`, while `allow` accumulates per
     # project (domains, MCP tools) and does not transfer to another machine.
@@ -264,6 +265,11 @@ LOCAL_ONLY = {
     # exists to prevent. The policy lives in permissions.disableBypassPermissionsMode
     # instead, where it is a decision rather than a record of a click.
     'skipDangerousModePermissionPrompt',
+    # Written by `/effort`, the /model picker and `/autocompact` whenever a
+    # level or window is saved as the default (v2.1.251+), one entry per model,
+    # so it records choices made in sessions rather than a policy. The policy
+    # -- no pinned effort -- is in the README.
+    'modelSettings',
 }
 
 live_path = os.path.expanduser('~/.claude/settings.json')
@@ -281,6 +287,13 @@ with open('claude/settings.json', encoding='utf-8') as handle:
 for key in sorted(set(live) - set(repo) - LOCAL_ONLY):
     value = json.dumps(live[key])
     print('%s = %s' % (key, value if len(value) <= 60 else value[:57] + '...'))
+
+# The reverse direction. The merge only ever adds, so a declared key can still
+# disappear afterwards -- `/model` clearing `model` is how one did.
+# `$schema` is for editors, not for Claude Code, so its absence is no drift.
+for key in sorted(set(repo) - set(live) - LOCAL_ONLY - {'$schema'}):
+    print('%s: repo says %s, this machine does not set it'
+          % (key, json.dumps(repo[key])[:40]))
 
 
 def enabled(plugins):
@@ -308,7 +321,7 @@ for key in sorted(set(repo) & set(live)):
 PY
 }
 report "settings.json declares every choice" \
-  "add it to claude/settings.json, or drop it with /config" \
+  "add it to claude/settings.json, or drop it with /config; a key the repo declares that is missing or different here: ./install.sh" \
   "$(claude_settings_drift)"
 
 # `hooks` sits in LOCAL_ONLY above because most of it is command strings with
@@ -368,6 +381,13 @@ except (OSError, ValueError) as err:
 with open('claude/mcp.json', encoding='utf-8') as handle:
     repo = json.load(handle)['mcpServers']
 
+# install.sh adds the profile's own manifest on top, so it counts as declared.
+# No profile means only the shared servers: the profile check reports that.
+profile = os.path.join(os.environ.get('machine_dir', ''), 'mcp.json')
+if os.environ.get('machine_dir') and os.path.exists(profile):
+    with open(profile, encoding='utf-8') as handle:
+        repo.update(json.load(handle)['mcpServers'])
+
 for name in sorted(set(live) - set(repo)):
     print('registered but not declared: %s' % name)
 for name in sorted(set(repo) - set(live)):
@@ -378,8 +398,10 @@ for name in sorted(set(repo) & set(live)):
               % (name, json.dumps(repo[name])[:40], json.dumps(live[name])[:40]))
 MCP
 }
-report "user-scope MCP servers match claude/mcp.json" \
-  "declare it in claude/mcp.json, or drop it with claude mcp remove; run ./install.sh for the rest" \
+machine_dir=$(macos/machine.sh dir 2> /dev/null) || machine_dir=
+export machine_dir
+report "user-scope MCP servers match claude/mcp.json and this profile's" \
+  "declare it in claude/mcp.json or the profile's mcp.json, or drop it with claude mcp remove; run ./install.sh for the rest" \
   "$(mcp_servers_drift)"
 
 printf '\n%suv tools%s\n' "$DIM" "$OFF"

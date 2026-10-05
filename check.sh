@@ -260,15 +260,26 @@ check "claude settings" python3 -c "import json; json.load(open('claude/settings
 # The same shape as a project's .mcp.json, checked for the two things install.sh
 # relies on: a `mcpServers` object, and a `type` on every entry, because
 # `claude mcp add-json` infers nothing and stores what it is given.
+# The profiles' manifests are held to the same shape, and may not name a server
+# the shared one already does: install.sh merges them with the profile winning,
+# so a duplicate would silently replace the shared definition on one Mac.
 check "claude mcp manifest" python3 -c "
+import glob
 import json
-m = json.load(open('claude/mcp.json'))
-servers = m['mcpServers']
-assert isinstance(servers, dict) and servers, 'mcpServers must be a non-empty object'
-for name, server in servers.items():
-    assert server.get('type') in ('http', 'sse', 'stdio', 'ws'), f'{name}: type missing or unknown'
-    assert ('url' in server) == (server['type'] != 'stdio'), f'{name}: url and type disagree'
-    assert ('command' in server) == (server['type'] == 'stdio'), f'{name}: command and type disagree'
+shared = json.load(open('claude/mcp.json'))['mcpServers']
+assert isinstance(shared, dict) and shared, 'mcpServers must be a non-empty object'
+manifests = {'claude/mcp.json': shared}
+for path in sorted(glob.glob('macos/machines/*/mcp.json')):
+    servers = json.load(open(path))['mcpServers']
+    assert isinstance(servers, dict) and servers, f'{path}: mcpServers must be a non-empty object'
+    clash = sorted(set(servers) & set(shared))
+    assert not clash, f'{path}: also declared in claude/mcp.json: {clash}'
+    manifests[path] = servers
+for path, servers in manifests.items():
+    for name, server in servers.items():
+        assert server.get('type') in ('http', 'sse', 'stdio', 'ws'), f'{path} {name}: type missing or unknown'
+        assert ('url' in server) == (server['type'] != 'stdio'), f'{path} {name}: url and type disagree'
+        assert ('command' in server) == (server['type'] == 'stdio'), f'{path} {name}: command and type disagree'
 "
 
 # VS Code settings are JSONC: comments and trailing commas are legal there and
@@ -795,13 +806,14 @@ PY
 }
 check "step 7 and the manifest agree on every declared tool" uv_tools_real_manifest
 
-# Step 8 has the same split as step 7: whether `claude mcp` registers a server
+# Step 8b has the same split as step 7: whether `claude mcp` registers a server
 # is Claude Code's problem, but which servers it is asked to add, remove, or
 # leave alone is decided here, from a comparison against ~/.claude.json. So it
 # runs with HOME pointed at a fixture state file and a `claude` that records
 # its arguments, and the fixture covers each branch of that decision once: a
 # server already registered as declared, one registered differently, one not
-# registered at all, and one registered that the manifest does not name.
+# registered at all, one registered that the manifest does not name, and one
+# that only this machine's profile declares.
 mcp_step() {
   local tmp steps
   tmp=$(mktemp -d) || return 1
@@ -810,15 +822,22 @@ mcp_step() {
 
   {
     echo 'log() { :; }'
-    sed -n '/^# --- 8\. Claude Code MCP servers/,/^# --- 8b\./p' install.sh
+    sed -n '/^# --- 8b\. Claude Code MCP servers/,/^# --- 9\./p' install.sh
   } > "$steps"
   grep -qF 'claude mcp add-json' "$steps" || {
-    echo "could not extract step 8 from install.sh"
+    echo "could not extract step 8b from install.sh"
     return 1
   }
   one_step_only "$steps" || return 1
 
-  mkdir -p "$tmp/claude" "$tmp/home" "$tmp/bin"
+  mkdir -p "$tmp/claude" "$tmp/home" "$tmp/bin" "$tmp/machine"
+  cat > "$tmp/machine/mcp.json" << 'FIXTURE'
+{
+  "mcpServers": {
+    "local": { "type": "stdio", "command": "local-mcp", "args": [] }
+  }
+}
+FIXTURE
   cat > "$tmp/claude/mcp.json" << 'FIXTURE'
 {
   "mcpServers": {
@@ -842,7 +861,7 @@ FIXTURE
   chmod +x "$tmp/bin/claude"
   : > "$tmp/calls"
 
-  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" machine_dir="$tmp/machine" \
     bash -euo pipefail "$steps" > /dev/null || return 1
 
   # Order is by name, which is what `jq keys` yields, so the expectation is
@@ -850,18 +869,20 @@ FIXTURE
   cat > "$tmp/want" << 'WANT'
 mcp remove changed --scope user
 mcp add-json changed {"type":"http","url":"https://changed.invalid/v2"} --scope user
+mcp add-json local {"type":"stdio","command":"local-mcp","args":[]} --scope user
 mcp add-json missing {"type":"stdio","command":"missing-mcp","args":[]} --scope user
 WANT
   diff -u "$tmp/want" "$tmp/calls" || return 1
 
   # A state file that does not exist yet -- a machine on its first run -- must
-  # be created rather than tripped over, and every server then added.
-  rm "$tmp/home/.claude.json"
+  # be created rather than tripped over, and every server then added. Without
+  # a manifest of its own the profile adds nothing: most profiles have none.
+  rm "$tmp/home/.claude.json" "$tmp/machine/mcp.json"
   : > "$tmp/calls"
-  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" \
+  HOME="$tmp/home" PATH="$tmp/bin:$PATH" DOTFILES="$tmp" machine_dir="$tmp/machine" \
     bash -euo pipefail "$steps" > /dev/null || return 1
   [ "$(grep -c 'mcp add-json' "$tmp/calls")" -eq 3 ] || {
-    echo "first run did not add every declared server:"
+    echo "first run did not add exactly the shared servers:"
     cat "$tmp/calls"
     return 1
   }
@@ -871,6 +892,50 @@ WANT
   }
 }
 check "install.sh registers the MCP servers the manifest declares" mcp_step
+
+# The YNAB token comes from the Keychain so that no file holds it -- it used to
+# sit in plain text in ~/.claude.json. Both branches: a token found reaches the
+# server, and a token missing stops the wrapper before the server starts, since
+# a server started without one fails later with an error about YNAB rather
+# than about the Keychain.
+ynab_token_from_keychain() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  # shellcheck disable=SC2016  # expanded when the stub runs
+  printf '#!/bin/sh\nprintf "%%s %%s\\n" "$YNAB_API_TOKEN" "$*" > "%s/started"\n' "$tmp" > "$tmp/bin/mise"
+  printf '#!/bin/sh\necho token-from-keychain\n' > "$tmp/bin/security"
+  chmod +x "$tmp/bin/mise" "$tmp/bin/security"
+
+  PATH="$tmp/bin:$PATH" XDG_STATE_HOME="$tmp/state" ./bin/ynab-mcp.sh > /dev/null 2>&1 || {
+    echo "the wrapper failed with a token in the Keychain"
+    return 1
+  }
+  [ "$(cat "$tmp/started" 2> /dev/null)" = 'token-from-keychain x -- npx -y ynab-mcp-server' ] || {
+    echo "the server did not start with the Keychain token: $(cat "$tmp/started" 2> /dev/null)"
+    return 1
+  }
+
+  rm "$tmp/started"
+  printf '#!/bin/sh\nexit 44\n' > "$tmp/bin/security"
+  if out=$(PATH="$tmp/bin:$PATH" XDG_STATE_HOME="$tmp/state" ./bin/ynab-mcp.sh 2>&1); then
+    echo "the wrapper succeeded with no token in the Keychain"
+    return 1
+  fi
+  [ ! -e "$tmp/started" ] || {
+    echo "the server started without a token"
+    return 1
+  }
+  case "$out" in
+    *add-generic-password*) ;;
+    *)
+      echo "the failure does not say how to store the token: $out"
+      return 1
+      ;;
+  esac
+}
+check "the YNAB wrapper takes its token from the Keychain" ynab_token_from_keychain
 
 # Step 4b generates a key, registers it with gh and points config.local at it.
 # Each of those has an "already done" branch, and the test is that a second
@@ -1313,10 +1378,10 @@ install_machine_step() {
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
-    sed -n '/^# --- 8b\. Machine profile/,/^# --- 9\./p' install.sh
+    sed -n '/^# --- 8\. Machine profile/,/^# --- 8b\./p' install.sh
   } > "$tmp/step.sh"
   grep -qF 'machine.sh' "$tmp/step.sh" || {
-    echo "could not extract step 8b from install.sh"
+    echo "could not extract step 8 from install.sh"
     return 1
   }
   one_step_only "$tmp/step.sh" || return 1
@@ -1358,7 +1423,7 @@ install_machine_prompt() {
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
-    sed -n '/^# --- 8b\. Machine profile/,/^# --- 9\./p' install.sh
+    sed -n '/^# --- 8\. Machine profile/,/^# --- 8b\./p' install.sh
   } > "$tmp/step.sh"
   mkdir -p "$tmp/machines/personal"
   rc=0
@@ -2850,6 +2915,79 @@ JSON
   }
 }
 check "installing keeps hooks this repo does not own" install_preserves_foreign_hooks
+
+# The merge never deletes, so a key the repo declares can still vanish from the
+# live file afterwards -- `/model` clearing `model` did exactly that, and drift.sh
+# reported nothing because it only looked at keys present on both sides. Run its
+# settings check against fixtures: one key missing from the live file, one
+# missing key the check excludes on purpose, and one that matches.
+drift_reports_missing_settings() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  # Up to the heredoc terminator: the Python inside closes its own braces at
+  # column 0, so the function's `}` is not the first one.
+  {
+    sed -n '/^claude_settings_drift() {$/,/^PY$/p' drift.sh
+    echo '}'
+  } > "$fn"
+  grep -qF 'LOCAL_ONLY' "$fn" || {
+    echo "could not extract claude_settings_drift from drift.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/repo/claude" "$tmp/home/.claude"
+  echo '{"theme": "dark", "model": "opus", "hooks": {}}' > "$tmp/repo/claude/settings.json"
+  echo '{"theme": "dark"}' > "$tmp/home/.claude/settings.json"
+
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && HOME="$tmp/home" bash -c '. "$1" && claude_settings_drift' _ "$fn") || return 1
+  [ "$out" = 'model: repo says "opus", this machine does not set it' ] || {
+    echo "expected one line about model, got: ${out:-nothing}"
+    return 1
+  }
+}
+check "drift.sh reports a declared setting missing from this machine" drift_reports_missing_settings
+
+# A server only one profile declares is declared all the same. Against fixtures:
+# registered servers matching both manifests report nothing, and one the
+# profile declares but this machine lacks is named.
+drift_counts_profile_mcp_servers() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  {
+    sed -n '/^mcp_servers_drift() {$/,/^MCP$/p' drift.sh
+    echo '}'
+  } > "$fn"
+  grep -qF 'mcpServers' "$fn" || {
+    echo "could not extract mcp_servers_drift from drift.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/repo/claude" "$tmp/machine" "$tmp/home"
+  echo '{"mcpServers": {"shared": {"type": "http", "url": "https://s.invalid"}}}' > "$tmp/repo/claude/mcp.json"
+  echo '{"mcpServers": {"local": {"type": "stdio", "command": "l", "args": []}}}' > "$tmp/machine/mcp.json"
+  echo '{"mcpServers": {"shared": {"type": "http", "url": "https://s.invalid"}, "local": {"type": "stdio", "command": "l", "args": []}}}' > "$tmp/home/.claude.json"
+
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && HOME="$tmp/home" machine_dir="$tmp/machine" bash -c '. "$1" && mcp_servers_drift' _ "$fn") || return 1
+  [ -z "$out" ] || {
+    echo "expected no drift with both manifests registered, got: $out"
+    return 1
+  }
+
+  echo '{"mcpServers": {"shared": {"type": "http", "url": "https://s.invalid"}}}' > "$tmp/home/.claude.json"
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && HOME="$tmp/home" machine_dir="$tmp/machine" bash -c '. "$1" && mcp_servers_drift' _ "$fn") || return 1
+  [ "$out" = 'declared but not registered: local' ] || {
+    echo "expected the profile's server reported missing, got: ${out:-nothing}"
+    return 1
+  }
+}
+check "drift.sh counts the profile's MCP servers as declared" drift_counts_profile_mcp_servers
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
