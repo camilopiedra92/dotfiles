@@ -98,8 +98,8 @@ first, citing the requirement IDs it implements; `specify preset list` shows
 which presets a repo has.
 
 Once the repo has a test suite, `sdd-gate <test command>` from the root
-commits a Stop hook that blocks a Claude turn ending on a red suite, once per
-turn, so an unattended run cannot finish red without saying so.
+commits a Stop hook: a Claude turn that ends on a red suite is blocked once,
+with the failure, so even an unattended run has been shown it before it ends.
 
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features

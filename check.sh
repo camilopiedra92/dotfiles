@@ -31,18 +31,23 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
-# git hands a hook GIT_INDEX_FILE and, run from a linked worktree, GIT_DIR as
-# well, both absolute (measured with git 2.55: a pre-commit hook that printed
-# its environment, from the main checkout and from `git worktree add`). Most
-# checks build throwaway repositories, and an inherited GIT_DIR sends their git
-# calls to this one: committed from a worktree, the sdd-init check committed
-# into the branch being committed and its `git init` set core.bare in this
-# repository's config. So none of these reach the checks. The index is kept in
-# THIS_INDEX for the two calls about this repository, which must read what is
-# being committed (this_repo_git).
+# git hands a hook GIT_INDEX_FILE -- the relative .git/index for a plain commit
+# from the main checkout, an absolute path otherwise -- and, run from a linked
+# worktree, GIT_DIR; `git -c` and `--literal-pathspecs` add GIT_CONFIG_PARAMETERS
+# and GIT_LITERAL_PATHSPECS (all measured with git 2.55, hooks that printed
+# their environment). Most checks build throwaway repositories, and an inherited
+# GIT_DIR sends their git calls to this one: committed from a worktree, the
+# sdd-init check committed into the branch being committed and its `git init`
+# set core.bare in this repository's config. So no GIT_ variable reaches the
+# checks -- every one of them, not a list, since a list is what missed GIT_DIR.
+# The index is kept in THIS_INDEX for the two calls about this repository,
+# which must read what is being committed (this_repo_git).
 drop_hook_git_env() {
+  local name
   THIS_INDEX=${GIT_INDEX_FILE:-}
-  unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
+  for name in $(compgen -e); do
+    case "$name" in GIT_*) unset "$name" ;; esac
+  done
 }
 drop_hook_git_env
 this_repo_git() {
@@ -2885,10 +2890,14 @@ hook_git_env_dropped() {
   # A file, not process substitution: macOS's bash 3.2 cannot source the latter.
   sed -n '/^drop_hook_git_env() {/,/^}/p' check.sh > "$tmp/drop.sh"
   before=$(cd "$tmp/decoy" && git config --list --local && git for-each-ref && cksum < "$wt/index")
-  out=$(GIT_DIR=$wt GIT_INDEX_FILE=$wt/index bash -c '
+  # Also two of the variables git hands a hook for `git -c ... commit` and
+  # `git --literal-pathspecs commit`, which change what a pathspec means.
+  out=$(GIT_DIR=$wt GIT_INDEX_FILE=$wt/index GIT_LITERAL_PATHSPECS=1 \
+    GIT_CONFIG_PARAMETERS="'core.bare'='true'" bash -c '
     . "'"$tmp"'/drop.sh"
     drop_hook_git_env
     [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
+    env | grep "^GIT_" | sed "s/^/still set: /"
     git init -q "'"$tmp"'/throwaway"
     echo x > "'"$tmp"'/throwaway/f"
     git -C "'"$tmp"'/throwaway" add f
@@ -2909,6 +2918,16 @@ hook_git_env_dropped() {
     echo "check.sh never calls drop_hook_git_env"
     return 1
   }
+  # And the kept index has to be the one the calls about this repository read:
+  # an index in which install.sh lost its executable bit, as a `chmod -x` then
+  # `commit -a` would leave it, must fail exec_bits. Only the scratch index is
+  # written; read-tree and --chmod touch nothing else.
+  GIT_INDEX_FILE=$tmp/commit-index git read-tree HEAD &&
+    GIT_INDEX_FILE=$tmp/commit-index git update-index --chmod=-x install.sh || return 1
+  if THIS_INDEX=$tmp/commit-index exec_bits > /dev/null; then
+    echo "exec_bits did not read the commit's index"
+    return 1
+  fi
 }
 check "checks that build throwaway repositories ignore a linked worktree hook's git environment" hook_git_env_dropped
 
@@ -3398,6 +3417,11 @@ FAKE
     echo "the block does not show the suite's output: $out"
     return 1
   }
+  # Fingerprinting the tree goes through a scratch index, never the real one.
+  [ -z "$(git -C "$repo" diff --cached --name-only)" ] || {
+    echo "the hook staged files in the real index: $(git -C "$repo" diff --cached --name-only)"
+    return 1
+  }
   # The second stop of the same turn goes through without running anything:
   # Claude has seen the failure and reports it rather than forcing it green.
   : > "$tmp/runs"
@@ -3409,6 +3433,38 @@ FAKE
     echo "ran the suite on the second stop of a turn"
     return 1
   }
+  # The next turn, nothing changed and the suite still red: blocked again. Only
+  # a green run may write the stamp that lets an unchanged tree through.
+  if out=$(stop false); then
+    echo "let an unchanged red tree through on the next turn: $out"
+    return 1
+  fi
+
+  # The fingerprint cannot see inside a submodule or past a skip-worktree
+  # entry, so with either in the repository every stop runs the suite.
+  echo green > "$tmp/verdict"
+  stop false > /dev/null || return 1
+  git -C "$repo" update-index --skip-worktree .claude/settings.json
+  echo ' ' >> "$repo/.claude/settings.json"
+  echo red > "$tmp/verdict"
+  if out=$(stop false); then
+    echo "a skip-worktree edit let a red suite through: $out"
+    return 1
+  fi
+  git -C "$repo" update-index --no-skip-worktree .claude/settings.json
+  git -C "$repo" checkout -q -- .claude/settings.json
+  git init -q "$tmp/sub"
+  git -C "$tmp/sub" -c user.name=t -c user.email=t@t commit -q --allow-empty -m sub
+  git -C "$repo" -c protocol.file.allow=always submodule add -q "$tmp/sub" lib 2> /dev/null
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m "add lib"
+  echo green > "$tmp/verdict"
+  stop false > /dev/null || return 1
+  echo dirty > "$repo/lib/inside.txt"
+  echo red > "$tmp/verdict"
+  if out=$(stop false); then
+    echo "an edit inside a submodule let a red suite through: $out"
+    return 1
+  fi
 
   # A second run would add a second hook. Green, so only that can refuse it.
   echo green > "$tmp/verdict"
@@ -3425,6 +3481,50 @@ FAKE
     echo "accepted a repo with staged changes: $out"
     return 1
   fi
+
+  # An unstaged edit to settings.json would ride into the gate's commit.
+  fresh unstaged
+  echo '{"permissions": {"allow": ["Bash(curl:*)"]}}' > "$repo/.claude/settings.json"
+  if out=$(run); then
+    echo "committed an unstaged settings.json edit: $out"
+    return 1
+  fi
+
+  # A failure after the checks leaves nothing behind, so fixing the cause and
+  # running again works.
+  fresh broken
+  echo '{not json' > "$repo/.claude/settings.json"
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "break settings"
+  if out=$(run); then
+    echo "accepted an invalid settings.json: $out"
+    return 1
+  fi
+  [ -z "$(git -C "$repo" status --porcelain)" ] || {
+    echo "a refused run left files behind: $(git -C "$repo" status --porcelain)"
+    return 1
+  }
+  echo '{}' > "$repo/.claude/settings.json"
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "fix settings"
+  out=$(run) || {
+    echo "refused a re-run after the cause was fixed: $out"
+    return 1
+  }
+  fresh ignored
+  echo .claude/ > "$repo/.gitignore"
+  git -C "$repo" add .gitignore
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m "ignore .claude"
+  if out=$(run); then
+    echo "gated a repo that ignores .claude/: $out"
+    return 1
+  fi
+  echo "$out" | grep -q "ignores" || {
+    echo "refused an ignored .claude/ for another reason: $out"
+    return 1
+  }
+  [ -z "$(git -C "$repo" status --porcelain --ignored -- .claude/hooks)" ] || {
+    echo "a refused run left the hook behind"
+    return 1
+  }
 }
 check "sdd-gate refuses a red suite, staged work and a second run; its hook blocks a red stop once and skips an unchanged tree" sdd_gate
 
