@@ -31,6 +31,29 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
+# git hands a hook GIT_INDEX_FILE -- the relative .git/index for a plain commit
+# from the main checkout, an absolute path otherwise -- and, run from a linked
+# worktree, GIT_DIR; `git -c` and `--literal-pathspecs` add GIT_CONFIG_PARAMETERS
+# and GIT_LITERAL_PATHSPECS (all measured with git 2.55, hooks that printed
+# their environment). Most checks build throwaway repositories, and an inherited
+# GIT_DIR sends their git calls to this one: committed from a worktree, the
+# sdd-init check committed into the branch being committed and its `git init`
+# set core.bare in this repository's config. So no GIT_ variable reaches the
+# checks -- every one of them, not a list, since a list is what missed GIT_DIR.
+# The index is kept in THIS_INDEX for the two calls about this repository,
+# which must read what is being committed (this_repo_git).
+drop_hook_git_env() {
+  local name
+  THIS_INDEX=${GIT_INDEX_FILE:-}
+  for name in $(compgen -e); do
+    case "$name" in GIT_*) unset "$name" ;; esac
+  done
+}
+drop_hook_git_env
+this_repo_git() {
+  if [ -n "$THIS_INDEX" ]; then GIT_INDEX_FILE=$THIS_INDEX git "$@"; else git "$@"; fi
+}
+
 # Every CI system sets CI, so the strict path needs no wiring in the workflow
 # and cannot be forgotten there. --strict reproduces it locally, which is the
 # only way to test this behaviour without pushing.
@@ -152,7 +175,7 @@ exec_bits() {
         fi
         ;;
     esac
-  done < <(git ls-files -s)
+  done < <(this_repo_git ls-files -s)
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits
@@ -441,7 +464,7 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # schema to satisfy the rule would break that comparison and the validation
 # both, to police text nobody here wrote.
 english_only() {
-  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
+  ! this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
 }
 check "english only" english_only
 
@@ -2722,9 +2745,11 @@ GUARD=$PWD/claude/git-guard.sh
 # tree reads as dirty and the guard blocks. Plain `git commit` passes a
 # relative `.git/index`, which resolves inside the temp directory by accident
 # -- every commit here since the guard tests landed was a plain one, and the
-# first `-a` was refused. GIT_DIR and GIT_WORK_TREE are not exported by git
-# (measured with a hook that printed its environment); they are cleared for
-# the shell that might. The checks must mean the same thing run by hand, by
+# first `-a` was refused. From the main checkout git exports neither GIT_DIR
+# nor GIT_WORK_TREE; from a linked worktree it exports GIT_DIR (both measured
+# with a hook that printed its environment). drop_hook_git_env clears all of
+# them for the whole script; this clears them again at each call, for the
+# check below that sets one at the call. The checks must mean the same thing run by hand, by
 # the hook and in CI, so every git call that is about the throwaway
 # repository goes through here -- and only those: `git ls-files` and `git
 # grep` above are about this repository and must read the index the commit
@@ -2809,8 +2834,8 @@ check "reset --hard is blocked when it would discard work" guard_reset_dirty_tre
 
 # The same verdict with the `git commit -a` hook environment in place: an
 # absolute GIT_INDEX_FILE set at the call, which is what the hook does to this
-# whole script. Only that variable -- git does not export GIT_DIR to a hook,
-# measured with a hook that printed its environment -- and the index belongs
+# whole script. Only that variable -- the GIT_DIR a linked worktree's hook also
+# gets is covered by hook_git_env_dropped below -- and the index belongs
 # to a decoy repository built here, never to this one. The first version of
 # this check set GIT_DIR to this repository's own .git, and while it was red
 # the fixture's `commit --allow-empty -m init` landed three empty commits on
@@ -2847,6 +2872,73 @@ guard_tests_under_hook() {
   }
 }
 check "the guard tests ignore the git environment a hook exports" guard_tests_under_hook
+
+# The variables git hands a hook from a linked worktree -- GIT_DIR and an
+# absolute GIT_INDEX_FILE -- pointed at a decoy repository's worktree, then a
+# throwaway repository built and committed to, as the sdd-init and sdd-gate
+# checks do. After drop_hook_git_env the decoy must be untouched and the
+# index kept for the calls about this repository. Never this repository: a
+# check that mutates what it checks when it fails is worse than none.
+hook_git_env_dropped() {
+  local tmp wt before after
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  git init -q "$tmp/decoy"
+  git -C "$tmp/decoy" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+  git -C "$tmp/decoy" worktree add -q "$tmp/wt" 2> /dev/null
+  wt=$(git -C "$tmp/wt" rev-parse --absolute-git-dir)
+  # A file, not process substitution: macOS's bash 3.2 cannot source the latter.
+  sed -n '/^drop_hook_git_env() {/,/^}/p' check.sh > "$tmp/drop.sh"
+  before=$(cd "$tmp/decoy" && git config --list --local && git for-each-ref && cksum < "$wt/index")
+  # Also two of the variables git hands a hook for `git -c ... commit` and
+  # `git --literal-pathspecs commit`, which change what a pathspec means.
+  # And one no git version sets yet: the rule is every GIT_ variable, not a list.
+  out=$(GIT_DIR=$wt GIT_INDEX_FILE=$wt/index GIT_LITERAL_PATHSPECS=1 \
+    GIT_CONFIG_PARAMETERS="'core.bare'='true'" GIT_NOT_YET_INVENTED=1 bash -c '
+    . "'"$tmp"'/drop.sh"
+    drop_hook_git_env
+    [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
+    env | grep "^GIT_" | sed "s/^/still set: /"
+    git init -q "'"$tmp"'/throwaway"
+    echo x > "'"$tmp"'/throwaway/f"
+    git -C "'"$tmp"'/throwaway" add f
+    git -C "'"$tmp"'/throwaway" -c user.name=t -c user.email=t@t commit -q -m x
+  ' 2>&1)
+  after=$(cd "$tmp/decoy" && git config --list --local && git for-each-ref && cksum < "$wt/index")
+  [ -z "$out" ] || {
+    echo "$out"
+    return 1
+  }
+  [ "$before" = "$after" ] || {
+    echo "a throwaway repository's git calls reached the decoy:"
+    diff <(echo "$before") <(echo "$after")
+    return 1
+  }
+  # The function is only half of it: this script has to run it, at top level.
+  grep -qx 'drop_hook_git_env' check.sh || {
+    echo "check.sh never calls drop_hook_git_env"
+    return 1
+  }
+  # And the kept index has to be the one the calls about this repository read:
+  # an index in which install.sh lost its executable bit, as a `chmod -x` then
+  # `commit -a` would leave it, must fail exec_bits. Only the scratch index is
+  # written; read-tree and --chmod touch nothing else.
+  GIT_INDEX_FILE=$tmp/commit-index git read-tree HEAD &&
+    GIT_INDEX_FILE=$tmp/commit-index git update-index --chmod=-x install.sh || return 1
+  if THIS_INDEX=$tmp/commit-index exec_bits > /dev/null; then
+    echo "exec_bits did not read the commit's index"
+    return 1
+  fi
+  # Every other call about this repository goes through this_repo_git too:
+  # no bare `git ls-files` or `git grep` outside a comment or a `git -C`.
+  out=$(grep -nE '^[^#]*(^|[^_-])git (ls-files|grep)' check.sh | grep -v -- 'git -C' || true)
+  [ -z "$out" ] || {
+    echo "a call about this repository bypasses this_repo_git:"
+    echo "$out"
+    return 1
+  }
+}
+check "checks that build throwaway repositories ignore a linked worktree hook's git environment" hook_git_env_dropped
 
 # A guard that is not wired runs never, and because it fails open that costs
 # nothing visible: no error, no warning, just no guard. The tests above prove
@@ -3237,6 +3329,277 @@ FAKE
   }
 }
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
+
+# sdd-gate against a fake suite whose verdict a file sets, which logs each run
+# with its arguments and its directory, and which stages a file when told to.
+# Under test: what the script refuses, that a refused or failed run leaves
+# nothing behind, what lands in its commit, and what the Stop hook it writes
+# does on each kind of stop -- exit 2 with the failure on stderr is what makes
+# Claude Code block and show it; any other code lets the stop through.
+sdd_gate() {
+  local tmp repo out rc
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/suite" << FAKE
+#!/bin/sh
+printf '%s|' "\$@" >> "$tmp/runs"
+echo >> "$tmp/runs"
+pwd -P > "$tmp/cwd"
+[ ! -e "$tmp/stage" ] || { echo x > snapshot.txt; git add snapshot.txt; }
+echo "suite says \$(cat "$tmp/verdict")"
+[ "\$(cat "$tmp/verdict")" = green ]
+FAKE
+  chmod +x "$tmp/bin/suite"
+  ln -s "$PWD/bin/sdd-gate.sh" "$tmp/sdd-gate"
+  # A repository with a committed settings.json, or with no .claude/ at all.
+  fresh() {
+    repo="$tmp/repo-$1"
+    git init -q "$repo"
+    if [ "${2:-}" != bare ]; then
+      mkdir -p "$repo/.claude"
+      echo '{"permissions": {"deny": ["Read(./.env)"]}}' > "$repo/.claude/settings.json"
+      git -C "$repo" add .claude/settings.json
+    fi
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+    echo green > "$tmp/verdict"
+    rm -f "$tmp/stage"
+    : > "$tmp/runs"
+  }
+  # Arguments a shell would rewrite if the hook quoted them carelessly: a
+  # space, a single quote, a leading tilde, a tilde after `=` (zsh leaves that
+  # one alone).
+  run() {
+    (cd "$repo" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t \
+      GIT_COMMITTER_EMAIL=t@t ../sdd-gate "$tmp/bin/suite" "two words" "it's" '~' 'a=~/x' 2>&1)
+  }
+  # A refused or failed run must leave .claude/ and the status as they were.
+  snapshot() {
+    (cd "$repo" && git status --porcelain --ignored && find .claude -print 2> /dev/null | sort &&
+      cat .claude/settings.json 2> /dev/null)
+  }
+  # The hook as Claude Code calls it: event JSON on stdin, project dir in env,
+  # started from somewhere else. Leaves rc and the two streams in files.
+  stop() {
+    (cd / && CLAUDE_PROJECT_DIR=$repo "$repo/.claude/hooks/stop-gate.sh" \
+      <<< "{\"hook_event_name\":\"Stop\",\"stop_hook_active\":$1}") \
+      > "$tmp/stdout" 2> "$tmp/stderr"
+    rc=$?
+  }
+
+  # A gate over a red suite would block every turn, so it refuses one.
+  fresh red
+  echo red > "$tmp/verdict"
+  local before
+  before=$(snapshot)
+  if out=$(run); then
+    echo "gated a red suite: $out"
+    return 1
+  fi
+  [ "$(snapshot)" = "$before" ] || {
+    echo "refusing a red suite left something behind"
+    return 1
+  }
+
+  # The happy path: one commit with the hook and the settings, keeping what
+  # the settings already held, and nothing else -- not an untracked file, an
+  # unstaged edit, or what the suite itself staged.
+  fresh ok
+  echo old > "$repo/tracked.txt"
+  git -C "$repo" add tracked.txt
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m tracked
+  echo new > "$repo/tracked.txt"
+  echo x > "$repo/notes.txt"
+  : > "$tmp/stage"
+  out=$(run) || {
+    echo "refused a green suite: $out"
+    return 1
+  }
+  rm -f "$tmp/stage"
+  [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
+    ".claude/hooks/stop-gate.sh .claude/settings.json " ] || {
+    echo "the commit holds something else:"
+    git -C "$repo" show --stat HEAD
+    return 1
+  }
+  jq -e '.permissions.deny == ["Read(./.env)"] and
+    (.hooks.Stop | length) == 1 and
+    .hooks.Stop[0].hooks[0].command == "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-gate.sh" and
+    .hooks.Stop[0].hooks[0].timeout == 600' \
+    "$repo/.claude/settings.json" > /dev/null || {
+    echo "settings.json is not the old one plus one Stop hook:"
+    cat "$repo/.claude/settings.json"
+    return 1
+  }
+
+  # Green: the stop goes through, and the suite ran once, from the project,
+  # with its arguments exactly as given.
+  : > "$tmp/runs"
+  stop false
+  [ "$rc" -eq 0 ] || {
+    echo "blocked a green stop (rc $rc): $(cat "$tmp/stderr")"
+    return 1
+  }
+  [ "$(cat "$tmp/runs")" = "two words|it's|~|a=~/x|" ] || {
+    echo "the suite did not run once with its arguments as given: $(cat "$tmp/runs")"
+    return 1
+  }
+  [ "$(cat "$tmp/cwd")" = "$(cd "$repo" && pwd -P)" ] || {
+    echo "the suite ran in $(cat "$tmp/cwd"), not the project"
+    return 1
+  }
+  # Red: exit 2, the suite's output on stderr, even though nothing changed
+  # since the green run. Every stop runs the suite.
+  echo red > "$tmp/verdict"
+  stop false
+  [ "$rc" -eq 2 ] || {
+    echo "a red stop exited $rc, which Claude Code does not treat as a block"
+    return 1
+  }
+  grep -q "suite says red" "$tmp/stderr" || {
+    echo "the failure is not on stderr, where Claude Code shows it: $(cat "$tmp/stdout")"
+    return 1
+  }
+  # The second stop of the same turn goes through without running anything:
+  # Claude has seen the failure and reports it rather than forcing it green.
+  : > "$tmp/runs"
+  stop true
+  [ "$rc" -eq 0 ] && [ ! -s "$tmp/runs" ] || {
+    echo "the second stop of a turn was blocked or ran the suite (rc $rc)"
+    return 1
+  }
+
+  # A second run would add a second hook. Green, so only that can refuse it.
+  echo green > "$tmp/verdict"
+  if out=$(run); then
+    echo "ran again over an existing gate: $out"
+    return 1
+  fi
+  # Nothing is written through a symlink, at the hook's path or the settings'.
+  fresh symlink
+  mkdir -p "$repo/.claude/hooks"
+  ln -s "$tmp/elsewhere" "$repo/.claude/hooks/stop-gate.sh"
+  if out=$(run); then
+    echo "wrote the hook through a dangling symlink: $out"
+    return 1
+  fi
+  fresh linked-settings bare
+  echo '{}' > "$tmp/shared.json"
+  mkdir -p "$repo/.claude"
+  ln -s "$tmp/shared.json" "$repo/.claude/settings.json"
+  git -C "$repo" add .claude/settings.json
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m link
+  if out=$(run); then
+    echo "wrote settings.json through a symlink: $out"
+    return 1
+  fi
+  [ "$(cat "$tmp/shared.json")" = '{}' ] || {
+    echo "changed the file a symlinked settings.json points to"
+    return 1
+  }
+
+  # Anything uncommitted in what it commits would ride along: staged work, an
+  # unstaged or untracked settings.json, or one git is told not to look at.
+  fresh staged
+  echo x > "$repo/notes.txt"
+  git -C "$repo" add notes.txt
+  if out=$(run); then
+    echo "accepted a repo with staged changes: $out"
+    return 1
+  fi
+  fresh unstaged
+  echo '{"permissions": {"allow": ["Bash(curl:*)"]}}' > "$repo/.claude/settings.json"
+  if out=$(run); then
+    echo "committed an unstaged settings.json edit: $out"
+    return 1
+  fi
+  fresh untracked bare
+  mkdir -p "$repo/.claude"
+  echo '{"permissions": {"allow": ["Bash(curl:*)"]}}' > "$repo/.claude/settings.json"
+  if out=$(run); then
+    echo "committed an untracked settings.json: $out"
+    return 1
+  fi
+  for flag in --assume-unchanged --skip-worktree; do
+    fresh "flag$flag"
+    git -C "$repo" update-index "$flag" .claude/settings.json
+    if out=$(run); then
+      echo "accepted a settings.json marked $flag: $out"
+      return 1
+    fi
+    echo "$out" | grep -q "is marked" || {
+      echo "refused a settings.json marked $flag for another reason: $out"
+      return 1
+    }
+  done
+
+  # A settings.json that is not a JSON object stops it before anything is
+  # written, and once fixed a re-run works.
+  for bad in '{not json' '' '[]'; do
+    fresh "bad-settings"
+    printf '%s' "$bad" > "$repo/.claude/settings.json"
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "bad settings"
+    before=$(snapshot)
+    if out=$(run); then
+      echo "accepted a settings.json of '$bad': $out"
+      return 1
+    fi
+    [ "$(snapshot)" = "$before" ] || {
+      echo "refusing a settings.json of '$bad' left something behind"
+      return 1
+    }
+  done
+  echo '{}' > "$repo/.claude/settings.json"
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "fix settings"
+  out=$(run) || {
+    echo "refused a re-run after the cause was fixed: $out"
+    return 1
+  }
+
+  # An ignored .claude/ is refused up front, for that reason.
+  fresh ignored
+  echo .claude/ > "$repo/.gitignore"
+  git -C "$repo" add .gitignore
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m "ignore .claude"
+  if out=$(run); then
+    echo "gated a repo that ignores .claude/: $out"
+    return 1
+  fi
+  echo "$out" | grep -q "ignored" || {
+    echo "refused an ignored .claude/ for another reason: $out"
+    return 1
+  }
+
+  # A failure at the commit itself puts everything back -- a repository with
+  # no .claude/, and one whose .claude/ already held files and an empty hooks/
+  # directory -- and a re-run then works.
+  for kind in bare full; do
+    if [ "$kind" = bare ]; then fresh rollback bare; else
+      fresh rollback-full
+      mkdir -p "$repo/.claude/agents" "$repo/.claude/hooks"
+      echo x > "$repo/.claude/agents/x.md"
+    fi
+    mkdir -p "$repo/.git/hooks"
+    printf '#!/bin/sh\nexit 1\n' > "$repo/.git/hooks/pre-commit"
+    chmod +x "$repo/.git/hooks/pre-commit"
+    before=$(snapshot)
+    if out=$(run); then
+      echo "reported success when the commit was refused: $out"
+      return 1
+    fi
+    [ "$(snapshot)" = "$before" ] || {
+      echo "a refused commit in a $kind repository left it changed:"
+      diff <(echo "$before") <(snapshot)
+      return 1
+    }
+    rm "$repo/.git/hooks/pre-commit"
+    out=$(run) || {
+      echo "refused a re-run after a failed commit: $out"
+      return 1
+    }
+  done
+}
+check "sdd-gate refuses a red suite and anything uncommitted, leaves nothing behind when it stops, and its hook blocks a red stop once with exit 2 and the failure on stderr" sdd_gate
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

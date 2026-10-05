@@ -97,6 +97,11 @@ test-first preset is what keeps each task to one behaviour with its test
 first, citing the requirement IDs it implements; `specify preset list` shows
 which presets a repo has.
 
+Once the repo has a test suite, `sdd-gate <test command>` from the root
+commits a Stop hook: a Claude turn that ends on a red suite is blocked once,
+with the failure, so even an unattended run has been shown it before it ends.
+It runs at every stop, so the command is one quick enough for that.
+
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
 never read it, so a decision that binds them moves out before the feature's
