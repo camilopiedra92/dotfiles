@@ -3066,6 +3066,62 @@ check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
 # ── Spec Kit ─────────────────────────────────────────────────────────────────
 printf '\n%sSpec Kit%s\n' "$DIM" "$OFF"
 
+# The override in zsh/.zshenv exists until upstream ships its own PyYAML
+# fallback, and drift.sh is what notices either end of that: the override
+# broken while still needed, or still set once the CLI no longer needs it.
+# Run against a fake `uv tool dir` holding a common.sh with or without the
+# fallback, and fake pythons that do or do not import yaml.
+drift_speckit_python() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  {
+    sed -n '/^speckit_python_drift() {$/,/^}$/p' drift.sh
+  } > "$fn"
+  grep -qF 'core_pack/scripts/bash/common.sh' "$fn" || {
+    echo "could not extract speckit_python_drift from drift.sh"
+    return 1
+  }
+
+  local scripts="$tmp/tools/specify-cli/lib/python3.12/site-packages/specify_cli/core_pack/scripts/bash"
+  mkdir -p "$scripts" "$tmp/bin"
+  printf '#!/bin/sh\necho %s/tools\n' "$tmp" > "$tmp/bin/uv"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/py-yaml"
+  printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/py-bare"
+  chmod +x "$tmp/bin/uv" "$tmp/bin/py-yaml" "$tmp/bin/py-bare"
+  drift() {
+    # shellcheck disable=SC2016  # expanded by the inner shell
+    PATH="$tmp/bin:$PATH" SPECKIT_PYTHON_EXECUTABLE="$1" bash -c '. "$1" && speckit_python_drift' _ "$fn"
+  }
+
+  echo 'python3 -c "import yaml"' > "$scripts/common.sh"
+  out=$(drift "$tmp/bin/py-yaml") || return 1
+  [ -z "$out" ] || {
+    echo "needed and working, expected silence, got: $out"
+    return 1
+  }
+  out=$(drift "$tmp/bin/py-bare") || return 1
+  case "$out" in
+    *'not a python with PyYAML'*) ;;
+    *)
+      echo "needed and broken, expected a report, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+
+  echo 'uv run --isolated --no-project --with pyyaml==6.0.3 python' >> "$scripts/common.sh"
+  out=$(drift "$tmp/bin/py-yaml") || return 1
+  case "$out" in
+    *'no longer needed'*) ;;
+    *)
+      echo "fallback shipped, expected the override reported as removable, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+}
+check "drift.sh tracks SPECKIT_PYTHON_EXECUTABLE until upstream's fallback ships" drift_speckit_python
+
 # sdd-init against a `specify` that records its arguments and writes the two
 # directories the real one writes. What is under test is the script's own
 # contract: what it refuses, what it calls, and what lands in its commit.

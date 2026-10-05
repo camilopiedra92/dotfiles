@@ -55,11 +55,13 @@ path=(
 # per command in the shell you actually type in.
 path=("${XDG_DATA_HOME:-$HOME/.local/share}/mise/shims" $path)
 
-# Spec Kit's bash scripts resolve templates with the first python3 on PATH, and
-# once a repo has any preset that needs PyYAML, which mise's python lacks: every
-# script behind specify, plan and tasks failed with "PyYAML is required" (1.1.0,
-# 2026-10-05). This is upstream's documented override, pointed at the Python of
-# the CLI's own uv tool environment, which ships PyYAML because the CLI needs it.
-# Not `pip install pyyaml` into mise's python: that is the interpreter-level
-# install this machine never does, and it dies with the next python bump.
-export SPECKIT_PYTHON_EXECUTABLE="${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools/specify-cli/bin/python"
+# Spec Kit's scripts resolve templates with python3, and once a project has a
+# preset they need PyYAML, which mise's python lacks: every script behind
+# specify, plan and tasks failed with "PyYAML is required" (1.1.0, 2026-10-05).
+# Upstream tracked this as github/spec-kit#4443 and closed it with this
+# override (#4445); it points at the CLI's own uv tool environment, which ships
+# PyYAML because the CLI needs it. #4674 adds an automatic uv fallback, and
+# drift.sh reports when an installed CLI carries it and this line can go.
+# Not `pip install pyyaml` into mise's python: an interpreter-level install,
+# gone at the next python bump.
+export SPECKIT_PYTHON_EXECUTABLE="${UV_TOOL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools}/specify-cli/bin/python"
