@@ -44,11 +44,15 @@ find logs -maxdepth 1 -type f -name 'mcp-server-*.log' -mtime +14 -delete || tru
 # Claude Code rewrites, backs up and reads into sessions. An item created with
 # the `security` command trusts that command, so this reads without a prompt
 # (observed 2026-10-05 with a throwaway item, from a non-interactive shell).
-# An empty password counts as none: `security ... -w` stores one when its prompt
-# reads no input, and the server would then start and fail on every call.
-if ! YNAB_API_TOKEN=$(security find-generic-password -s ynab-mcp -w 2> /dev/null) ||
-  [ -z "$YNAB_API_TOKEN" ]; then
-  echo "ynab-mcp: no token in the 'ynab-mcp' Keychain item. Store it, at a terminal, with:" >&2
+# An empty or whitespace-only password counts as none: `security ... -w` stored
+# an empty one on 2026-10-05, run from a session that could not answer its
+# prompt, and the server then starts and fails on every call. Its stderr is let
+# through because it says why a lookup failed -- for a missing item, "The
+# specified item could not be found in the keychain." (exit 44, observed
+# 2026-10-05) -- while the password only ever goes to stdout.
+if ! YNAB_API_TOKEN=$(security find-generic-password -s ynab-mcp -w) ||
+  [ -z "${YNAB_API_TOKEN//[[:space:]]/}" ]; then
+  echo "ynab-mcp: could not read a token from the 'ynab-mcp' Keychain item. Store it, at a terminal, with:" >&2
   echo "  security add-generic-password -U -s ynab-mcp -a ynab -w" >&2
   exit 1
 fi

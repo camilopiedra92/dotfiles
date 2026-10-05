@@ -917,13 +917,13 @@ ynab_token_from_keychain() {
     return 1
   }
 
-  # No item, and an item holding an empty password -- what `security ... -w`
-  # stores when its prompt reads no input, as it did once from a session that
-  # could not answer it. Both must stop the wrapper, not start the server.
+  # No item, an item holding an empty password -- what `security ... -w` stored
+  # on 2026-10-05 when run from a session that could not answer its prompt --
+  # and one holding only whitespace. All must stop the wrapper, not start the
+  # server.
   rm "$tmp/started"
-  for stub in '#!/bin/sh\nexit 44\n' '#!/bin/sh\necho\n'; do
-    # shellcheck disable=SC2059  # the stub is the format on purpose
-    printf "$stub" > "$tmp/bin/security"
+  for stub in '#!/bin/sh\nexit 44\n' '#!/bin/sh\necho\n' '#!/bin/sh\necho "  "\n'; do
+    printf '%b' "$stub" > "$tmp/bin/security"
     if out=$(PATH="$tmp/bin:$PATH" XDG_STATE_HOME="$tmp/state" ./bin/ynab-mcp.sh 2>&1); then
       echo "the wrapper succeeded with no usable token in the Keychain"
       return 1
