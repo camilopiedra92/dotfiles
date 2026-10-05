@@ -36,8 +36,9 @@ already enforces — those are decided instantly by a tool and slowly by a model
 ## Where things live
 
 <Only the locations the tree does not make obvious: where design work lands,
-where generated files go, what is deliberately not committed. Delete if the
-tree answers it.>
+where generated files go, what is deliberately not committed. Once the repo
+has `docs/decisions/`, say so here: read the record before reopening a decision
+it covers. Delete if the tree answers it.>
 
 ---
 
@@ -46,6 +47,9 @@ it false. A stale line reads as authority: on 2026-08-17 one claimed a tool
 offered a commit around every phase when it had been disabled by config the
 whole time, and three sessions read the claim as fact before anyone ran it.
 
-Keep the whole file under about 150 lines including the global rules it sits on
-top of. Adherence falls off past that, so a rule added after the limit is not a
-rule gained — it is one of the existing rules quietly lost.
+Keep this file under 200 lines, the size Claude Code's memory docs target per
+CLAUDE.md (code.claude.com/docs/en/memory, read 2026-10-05): longer files cost
+context and reduce adherence, and an `@` import does not lower that cost. The
+files loaded together — this one, the global rules, its imports — also have a
+combined limit Claude Code warns about. So a rule added past the limit is not a
+rule gained — it is an existing one diluted.
