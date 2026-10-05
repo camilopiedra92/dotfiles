@@ -2989,6 +2989,63 @@ drift_counts_profile_mcp_servers() {
 }
 check "drift.sh counts the profile's MCP servers as declared" drift_counts_profile_mcp_servers
 
+# A pin and the machine can disagree in two directions, and they close in
+# opposite ways. When `specify self upgrade` moved the machine past the pin,
+# drift.sh said "./install.sh", and running it put the old version back. So:
+# machine ahead -> move the pin; machine behind -> install. Against a stub `uv`
+# whose tool dir holds one receipt.
+drift_uv_pin_direction() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  {
+    sed -n '/^uv_tools_drift() {$/,/^PY$/p' drift.sh
+    echo '}'
+  } > "$fn"
+  grep -qF 'uv-receipt.toml' "$fn" || {
+    echo "could not extract uv_tools_drift from drift.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/repo" "$tmp/bin" "$tmp/tools/demo"
+  printf '#!/bin/sh\necho %s/tools\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  echo 'demo  git+https://example.invalid/demo.git@v1.0.7' > "$tmp/repo/uv-tools.txt"
+
+  receipt() {
+    printf '[tool]\nrequirements = [{ name = "demo", git = "https://example.invalid/demo.git?rev=%s" }]\n' "$1" \
+      > "$tmp/tools/demo/uv-receipt.toml"
+  }
+
+  receipt v1.1.0
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn") || return 1
+  case "$out" in
+    *'this machine is ahead'*'uv-tools.txt'*) ;;
+    *)
+      echo "machine ahead of the pin, expected the pin moved, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+  case "$out" in
+    *'./install.sh'*'downgrade'* | *'downgrade'*'./install.sh'*) ;;
+    *)
+      echo "machine ahead of the pin, expected a warning that install downgrades, got: $out"
+      return 1
+      ;;
+  esac
+
+  receipt v1.0.6
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn") || return 1
+  [ "$out" = 'demo: uv-tools.txt says git+https://example.invalid/demo.git@v1.0.7, this machine has git+https://example.invalid/demo.git@v1.0.6: ./install.sh' ] || {
+    echo "machine behind the pin, expected ./install.sh, got: ${out:-nothing}"
+    return 1
+  }
+}
+check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
