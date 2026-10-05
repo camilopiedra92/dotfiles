@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Puts Spec Kit into the current repository with the test-first preset, as one
-# commit of its own.
+# Puts Spec Kit into the current repository with its presets, test-first and
+# constitution-authoring, as one commit of its own.
 #
 # Usage:  sdd-init        from the root of the repository, at its first feature
 #
@@ -9,13 +9,14 @@
 # --integration, init scaffolds for Copilot; without a TTY it refuses any
 # non-empty directory unless --force (both seen on 1.1.0, 2026-10-05).
 #
-# The preset lives in its own repository, released by tag, and is installed
+# Each preset lives in its own repository, released by tag, and is installed
 # from the tag's archive: each repo then holds a copy of a known version under
-# .specify/presets/, and moving it on is `specify preset update test-first
-# --from <newer tag's zip>`. The URL below is the version new repos get.
+# .specify/presets/, and moving one on is `specify preset update <id> --from
+# <newer tag's zip>`. The URLs below are the versions new repos get.
 set -euo pipefail
 
-PRESET_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.3.0.zip
+PRESET_TEST_FIRST_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.3.0.zip
+PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.0.0.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
   echo "sdd-init: not inside a git repository" >&2
@@ -28,8 +29,9 @@ fi
 if [ -e .specify ]; then
   # Re-running init would put the template back over a constitution that has
   # been written. A preset update is its own command.
-  echo "sdd-init: .specify/ already exists; to move its preset to this version run" >&2
-  echo "          specify preset update test-first --from $PRESET_URL" >&2
+  echo "sdd-init: .specify/ already exists; to move its presets to these versions run" >&2
+  echo "          specify preset update test-first --from $PRESET_TEST_FIRST_URL" >&2
+  echo "          specify preset update constitution-authoring --from $PRESET_CONSTITUTION_AUTHORING_URL" >&2
   exit 1
 fi
 if ! git diff --cached --quiet; then
@@ -46,11 +48,12 @@ if ! "${SPECKIT_PYTHON_EXECUTABLE:-false}" -c 'import yaml' > /dev/null 2>&1; th
 fi
 
 specify init --here --force --integration claude
-specify preset add --from "$PRESET_URL"
+specify preset add --from "$PRESET_TEST_FIRST_URL"
+specify preset add --from "$PRESET_CONSTITUTION_AUTHORING_URL"
 
-# Only what init and the preset wrote. .claude/skills/ is committed whatever
+# Only what init and the presets wrote. .claude/skills/ is committed whatever
 # init's closing advice says about .claude/: that advice is about credentials,
 # and the skills are what makes the workflow the same on every checkout.
 git add .specify .claude/skills
-git commit -q -m "Initialize Spec Kit with the test-first preset"
+git commit -q -m "Initialize Spec Kit with the test-first and constitution-authoring presets"
 echo "sdd-init: committed. Next: /speckit-constitution"

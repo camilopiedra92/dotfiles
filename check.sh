@@ -3164,18 +3164,26 @@ FAKE
     echo "refused a clean repo: $out"
     return 1
   }
-  # The URL is read from the script, so the check pins the call's shape and
-  # leaves the version to the script.
-  url=$(sed -n 's/^PRESET_URL=//p' bin/sdd-init.sh)
-  case "$url" in
-    https://github.com/*/archive/refs/tags/v*.zip) ;;
-    *)
-      echo "PRESET_URL is not a tag archive: ${url:-missing}"
+  # The URLs are read from the script, so the check pins the calls' shape and
+  # order and leaves the versions to the script: one preset add per
+  # PRESET_*_URL, in the order they are declared.
+  echo 'init --here --force --integration claude' > "$tmp/want"
+  while read -r url; do
+    case "$url" in
+      https://github.com/*/archive/refs/tags/v*.zip) ;;
+      *)
+        echo "a PRESET_*_URL is not a tag archive: $url"
+        return 1
+        ;;
+    esac
+    echo "preset add --from $url" >> "$tmp/want"
+  done < <(sed -n 's/^PRESET_[A-Z_]*_URL=//p' bin/sdd-init.sh)
+  for id in test-first constitution-authoring; do
+    grep -q "^PRESET_$(echo "$id" | tr a-z- A-Z_)_URL=https://github.com/[^/]*/spec-kit-preset-$id/" bin/sdd-init.sh || {
+      echo "sdd-init does not install the $id preset"
       return 1
-      ;;
-  esac
-  printf 'init --here --force --integration claude\npreset add --from %s\n' \
-    "$url" > "$tmp/want"
+    }
+  done
   diff -u "$tmp/want" "$tmp/calls" || return 1
   [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
     ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {

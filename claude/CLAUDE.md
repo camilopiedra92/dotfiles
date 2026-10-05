@@ -88,13 +88,14 @@ alongside it. Size the process to what a wrong decision would cost:
   specify from what it taught. A spec is not a way to explore.
 
 A repo without `.specify/` gets it at its first feature: `sdd-init` from the
-root, which commits Spec Kit with the released test-first preset. Then
-`/speckit-constitution` with the rules already true in that project — not
-invented ones — and `@.specify/memory/constitution.md` in its CLAUDE.md, so the
-constitution holds for direct changes too and not only inside the speckit
-skills. The preset is what keeps each task to one behaviour with its test
+root, which commits Spec Kit with the released test-first and
+constitution-authoring presets. Then `/speckit-constitution`, whose preset
+decides what goes in for a new project and an existing one alike, and
+`@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
+holds for direct changes too and not only inside the speckit skills. The
+test-first preset is what keeps each task to one behaviour with its test
 first, citing the requirement IDs it implements; `specify preset list` shows
-whether a repo has it.
+which presets a repo has.
 
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
