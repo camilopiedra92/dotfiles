@@ -201,12 +201,14 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   stopped session rather than a slower one. `opus` is not in it because it is
   the primary model: falling back to the model that is overloaded buys
   nothing.
-- **`autoUpdatesChannel` is `stable`**, described as roughly a week behind and
-  skipping releases with major regressions. Every other tool here is pinned and
-  checksum-verified; following `latest` for the tool doing the work was the
-  inconsistency. It spent 2026-08-25 to 2026-10-05 on `latest`, because the
-  Concise output style needed v2.1.237 while `stable` sat at 2.1.231; `stable`
-  was at 2.1.285 when it came back.
+- **`autoUpdatesChannel` is `latest`, written out although it is the
+  default.** It is a choice, made on 2026-10-05: new releases the day they
+  ship, over `stable`'s week of delay and its skipping of releases with major
+  regressions. Written down so that the choice holds if the default ever
+  changes, and so the merge overwrites a `stable` already on a machine — this
+  one carried it for a few hours that day. The alternative on record is
+  `stable`, which pairs with everything else here being pinned; it lost to
+  getting fixes and features as they ship.
 - **`attribution` replaces `includeCoAuthoredBy`**, which the schema marks
   deprecated. Same intent, the key that still exists.
 - **`enabledPlugins` lists only the ones that are on.** A `false` entry is a

@@ -2989,6 +2989,74 @@ drift_counts_profile_mcp_servers() {
 }
 check "drift.sh counts the profile's MCP servers as declared" drift_counts_profile_mcp_servers
 
+# A pin and the machine can disagree in two directions, and they close in
+# opposite ways. When `specify self upgrade` moved the machine past the pin,
+# drift.sh said "./install.sh", and running it put the old version back. So:
+# machine ahead -> move the pin; machine behind -> install. Against a stub `uv`
+# whose tool dir holds one receipt.
+drift_uv_pin_direction() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  {
+    sed -n '/^uv_tools_drift() {$/,/^PY$/p' drift.sh
+    echo '}'
+  } > "$fn"
+  grep -qF 'uv-receipt.toml' "$fn" || {
+    echo "could not extract uv_tools_drift from drift.sh"
+    return 1
+  }
+
+  mkdir -p "$tmp/repo" "$tmp/bin" "$tmp/tools/demo"
+  printf '#!/bin/sh\necho %s/tools\n' "$tmp" > "$tmp/bin/uv"
+  chmod +x "$tmp/bin/uv"
+  echo 'demo  git+https://example.invalid/demo.git@v1.9.0' > "$tmp/repo/uv-tools.txt"
+
+  receipt() {
+    printf '[tool]\nrequirements = [{ name = "demo", git = "%s?rev=%s" }]\n' "$1" "$2" \
+      > "$tmp/tools/demo/uv-receipt.toml"
+  }
+  drift() {
+    # shellcheck disable=SC2016  # expanded by the inner shell
+    (cd "$tmp/repo" && PATH="$tmp/bin:$PATH" bash -c '. "$1" && uv_tools_drift' _ "$fn")
+  }
+
+  # 1.10 against 1.9: ahead by number, behind as a string, so this is the case
+  # that tells the two comparisons apart.
+  receipt https://example.invalid/demo.git v1.10.0
+  out=$(drift) || return 1
+  case "$out" in
+    *'this machine is ahead'*'uv-tools.txt'*'downgrade'*) ;;
+    *)
+      echo "machine ahead of the pin, expected the pin moved and a downgrade warning, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+
+  # Behind, the same tag spelled shorter, and a higher tag from another
+  # repository all close with an install: only the same source can be ahead.
+  for case in 'https://example.invalid/demo.git v1.8.0' \
+    'https://example.invalid/demo.git v1.9.0.0' \
+    'https://example.invalid/fork.git v2.0.0'; do
+    # shellcheck disable=SC2086  # two words on purpose
+    receipt $case
+    out=$(drift) || return 1
+    case "$out" in
+      *'is ahead'*)
+        echo "$case: expected ./install.sh, got: $out"
+        return 1
+        ;;
+      *': ./install.sh') ;;
+      *)
+        echo "$case: expected ./install.sh, got: ${out:-nothing}"
+        return 1
+        ;;
+    esac
+  done
+}
+check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"

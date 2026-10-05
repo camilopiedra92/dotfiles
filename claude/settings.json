@@ -10,7 +10,7 @@
   "teammateMode": "auto",
   "alwaysThinkingEnabled": true,
   "spinnerTipsEnabled": false,
-  "autoUpdatesChannel": "stable",
+  "autoUpdatesChannel": "latest",
   "cleanupPeriodDays": 60,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,

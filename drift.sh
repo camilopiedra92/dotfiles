@@ -541,12 +541,35 @@ for name in sorted(set(have) - set(want)):
     problems.append('%s: installed and not declared: add it to uv-tools.txt, '
                     'or: uv tool uninstall %s' % (name, name))
 
+def version(rev):
+    """A release tag or PyPI pin as a comparable tuple, or None for a branch,
+    a commit, or anything else that has no order."""
+    match = re.fullmatch(r'v?(\d+(?:\.\d+)*)', rev or '')
+    if not match:
+        return None
+    parts = [int(part) for part in match.group(1).split('.')]
+    # v1.2 and v1.2.0 name the same release; without this, the longer one
+    # would read as ahead of the shorter.
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
 for name in sorted(set(want) & set(have)):
     ref, _ = have[name]
-    if ref != want[name]:
+    if ref == want[name]:
+        continue
+    line = '%s: uv-tools.txt says %s, this machine has %s' % (
+        name, show(want[name]), show(ref))
+    # Ahead is what `specify self upgrade` leaves, and ./install.sh would
+    # quietly undo it -- which is how it once was undone.
+    mine, pinned = version(ref[2]), version(want[name][2])
+    if ref[:2] == want[name][:2] and mine and pinned and mine > pinned:
         problems.append(
-            '%s: uv-tools.txt says %s, this machine has %s: ./install.sh'
-            % (name, show(want[name]), show(ref)))
+            '%s: this machine is ahead -- move the pin in uv-tools.txt to %s, '
+            'or ./install.sh to downgrade it' % (line, ref[2]))
+    else:
+        problems.append('%s: ./install.sh' % line)
 
 # Every installed tool, declared or not. Whether a command on PATH runs is not a
 # question about this repo's manifest, and scoping it to the declared ones hid
