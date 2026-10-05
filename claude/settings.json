@@ -22,15 +22,26 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "enabledPlugins": {
-    "chrome-devtools-mcp@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "security-guidance@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "superpowers@claude-plugins-official": true
+    "skill-creator@claude-plugins-official": true
   },
   "syncClaudeAiPlugins": false,
+  "syncClaudeAiSkills": false,
+  "deniedMcpServers": [
+    {
+      "serverUrl": "https://mcp.kiwi.com*"
+    },
+    {
+      "serverUrl": "https://www.expedia.com/mcp*"
+    },
+    {
+      "serverUrl": "https://demandapi-mcp.booking.com/*"
+    },
+    {
+      "serverUrl": "https://mcp-gateway-external-pilot.spotify.net/*"
+    }
+  ],
   "permissions": {
     "defaultMode": "auto",
     "disableBypassPermissionsMode": "disable",

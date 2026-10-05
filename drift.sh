@@ -643,6 +643,30 @@ report "no pinned uv tool is behind upstream" \
   "bump the tag in uv-tools.txt, then ./install.sh" \
   "$(stale_uv_pins)"
 
+# SPECKIT_PYTHON_EXECUTABLE in zsh/.zshenv is upstream's own answer to
+# github/spec-kit#4443 (shipped in #4445): its scripts run on python3 and need
+# PyYAML once a project has a preset. #4674 adds a fallback through
+# `uv run --with pyyaml` that makes the override unnecessary. This reports both
+# ends: the override broken while the installed CLI still needs it, and the
+# override still set once the CLI ships the fallback. The bundled common.sh is
+# what every project's scripts are copied from, so it is where to look.
+speckit_python_drift() {
+  local common
+  common=$(find "$(uv tool dir 2> /dev/null)/specify-cli" \
+    -path '*/core_pack/scripts/bash/common.sh' 2> /dev/null | head -n 1)
+  [ -n "$common" ] || return 0
+  if grep -qF -- '--with pyyaml' "$common"; then
+    [ -n "${SPECKIT_PYTHON_EXECUTABLE:-}" ] &&
+      echo "the installed specify CLI falls back to uv for PyYAML; SPECKIT_PYTHON_EXECUTABLE is no longer needed"
+  elif ! "${SPECKIT_PYTHON_EXECUTABLE:-false}" -c 'import yaml' > /dev/null 2>&1; then
+    echo "SPECKIT_PYTHON_EXECUTABLE (${SPECKIT_PYTHON_EXECUTABLE:-unset}) is not a python with PyYAML"
+  fi
+  return 0
+}
+report "Spec Kit's scripts have a python with PyYAML, and only while they need one" \
+  "remove or fix the export in zsh/.zshenv, then open a new shell" \
+  "$(speckit_python_drift)"
+
 printf '\n%sRuntimes%s\n' "$DIM" "$OFF"
 
 # The README states this as a rule -- "Homebrew installs programs, mise installs

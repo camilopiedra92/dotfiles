@@ -3063,6 +3063,173 @@ drift_uv_pin_direction() {
 }
 check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
 
+# ── Spec Kit ─────────────────────────────────────────────────────────────────
+printf '\n%sSpec Kit%s\n' "$DIM" "$OFF"
+
+# The override in zsh/.zshenv exists until upstream ships its own PyYAML
+# fallback, and drift.sh is what notices either end of that: the override
+# broken while still needed, or still set once the CLI no longer needs it.
+# Run against a fake `uv tool dir` holding a common.sh with or without the
+# fallback, and fake pythons that do or do not import yaml.
+drift_speckit_python() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  {
+    sed -n '/^speckit_python_drift() {$/,/^}$/p' drift.sh
+  } > "$fn"
+  grep -qF 'core_pack/scripts/bash/common.sh' "$fn" || {
+    echo "could not extract speckit_python_drift from drift.sh"
+    return 1
+  }
+
+  local scripts="$tmp/tools/specify-cli/lib/python3.12/site-packages/specify_cli/core_pack/scripts/bash"
+  mkdir -p "$scripts" "$tmp/bin"
+  printf '#!/bin/sh\necho %s/tools\n' "$tmp" > "$tmp/bin/uv"
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/py-yaml"
+  printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/py-bare"
+  chmod +x "$tmp/bin/uv" "$tmp/bin/py-yaml" "$tmp/bin/py-bare"
+  drift() {
+    # shellcheck disable=SC2016  # expanded by the inner shell
+    PATH="$tmp/bin:$PATH" SPECKIT_PYTHON_EXECUTABLE="$1" bash -c '. "$1" && speckit_python_drift' _ "$fn"
+  }
+
+  echo 'python3 -c "import yaml"' > "$scripts/common.sh"
+  out=$(drift "$tmp/bin/py-yaml") || return 1
+  [ -z "$out" ] || {
+    echo "needed and working, expected silence, got: $out"
+    return 1
+  }
+  out=$(drift "$tmp/bin/py-bare") || return 1
+  case "$out" in
+    *'not a python with PyYAML'*) ;;
+    *)
+      echo "needed and broken, expected a report, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+
+  echo 'uv run --isolated --no-project --with pyyaml==6.0.3 python' >> "$scripts/common.sh"
+  out=$(drift "$tmp/bin/py-yaml") || return 1
+  case "$out" in
+    *'no longer needed'*) ;;
+    *)
+      echo "fallback shipped, expected the override reported as removable, got: ${out:-nothing}"
+      return 1
+      ;;
+  esac
+}
+check "drift.sh tracks SPECKIT_PYTHON_EXECUTABLE until upstream's fallback ships" drift_speckit_python
+
+# sdd-init against a `specify` that records its arguments and writes the two
+# directories the real one writes. What is under test is the script's own
+# contract: what it refuses, what it calls, and what lands in its commit.
+sdd_init() {
+  local tmp repo out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/specify" << FAKE
+#!/bin/sh
+printf '%s\n' "\$*" >> "$tmp/calls"
+case "\$1" in
+  init) mkdir -p .specify/memory .claude/skills/speckit-tasks
+        echo x > .specify/memory/constitution.md
+        echo x > .claude/skills/speckit-tasks/SKILL.md ;;
+esac
+FAKE
+  chmod +x "$tmp/bin/specify"
+
+  fresh() {
+    repo="$tmp/repo-$1"
+    git init -q "$repo"
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+    echo keep > "$repo/notes.txt"
+    : > "$tmp/calls"
+  }
+  # A python that imports anything, standing in for one that has PyYAML.
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/python-with-yaml"
+  chmod +x "$tmp/bin/python-with-yaml"
+  run() {
+    (cd "$repo" && PATH="$tmp/bin:$PATH" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
+      GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+      SPECKIT_PYTHON_EXECUTABLE="${PYX-$tmp/bin/python-with-yaml}" ../sdd-init 2>&1)
+  }
+  ln -s "$PWD/bin/sdd-init.sh" "$tmp/sdd-init"
+
+  # The happy path: two calls, one commit holding only what init wrote.
+  fresh ok
+  out=$(run) || {
+    echo "refused a clean repo: $out"
+    return 1
+  }
+  # The URL is read from the script, so the check pins the call's shape and
+  # leaves the version to the script.
+  url=$(sed -n 's/^PRESET_URL=//p' bin/sdd-init.sh)
+  case "$url" in
+    https://github.com/*/archive/refs/tags/v*.zip) ;;
+    *)
+      echo "PRESET_URL is not a tag archive: ${url:-missing}"
+      return 1
+      ;;
+  esac
+  printf 'init --here --force --integration claude\npreset add --from %s\n' \
+    "$url" > "$tmp/want"
+  diff -u "$tmp/want" "$tmp/calls" || return 1
+  [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
+    ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {
+    echo "the commit holds something else:"
+    git -C "$repo" show --stat HEAD
+    return 1
+  }
+  git -C "$repo" status --porcelain | grep -qx '?? notes.txt' || {
+    echo "an unrelated file did not stay out of the commit"
+    return 1
+  }
+
+  # Something already staged would ride along in the commit, so it refuses
+  # before calling anything.
+  fresh staged
+  git -C "$repo" add notes.txt
+  if out=$(run); then
+    echo "accepted a repo with staged changes: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify before refusing:"
+    cat "$tmp/calls"
+    return 1
+  }
+
+  # Once a preset is installed every script behind specify, plan and tasks
+  # needs PyYAML through this variable, so without it the repo it leaves behind
+  # cannot run a single phase. It refuses before calling anything.
+  fresh nopython
+  if out=$(PYX='' run); then
+    echo "accepted an unset SPECKIT_PYTHON_EXECUTABLE: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify without a python that has PyYAML"
+    return 1
+  }
+
+  # A second run would re-init over a constitution that has been written.
+  fresh twice
+  run > /dev/null || return 1
+  : > "$tmp/calls"
+  if out=$(run); then
+    echo "ran again over an existing .specify/: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify over an existing .specify/"
+    return 1
+  }
+}
+check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"

@@ -22,7 +22,9 @@ restate them. Delete if nothing differs.>
 something external consumes, a format another system parses. Each one says
 what breaks if it is broken, so it can be checked rather than agreed with.
 Delete this section — most projects have none, and an invented invariant
-teaches that the file can be ignored.>
+teaches that the file can be ignored. In a repo with `.specify/` they live in
+the constitution instead: replace this section with
+`@.specify/memory/constitution.md` rather than restating them.>
 
 ## Conventions
 
