@@ -49,5 +49,7 @@ whole time, and three sessions read the claim as fact before anyone ran it.
 
 Keep this file under 200 lines, the size Claude Code's memory docs target per
 CLAUDE.md (code.claude.com/docs/en/memory, read 2026-10-05): longer files cost
-context and reduce adherence, and an `@` import does not lower that cost. So a
-rule added past the limit is not a rule gained — it is an existing one diluted.
+context and reduce adherence, and an `@` import does not lower that cost. The
+files loaded together — this one, the global rules, its imports — also have a
+combined limit Claude Code warns about. So a rule added past the limit is not a
+rule gained — it is an existing one diluted.

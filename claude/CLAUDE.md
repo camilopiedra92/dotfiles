@@ -74,8 +74,8 @@ alongside it. Size the process to what a wrong decision would cost:
 
 - Bug fixes, changes to one to three files, scripts, docs and configuration go
   direct, without a spec: test first where there is logic of its own, the
-  alternative in the commit. Direct is not unannounced — a change across
-  several files is still proposed before it is written.
+  alternative in the commit. Direct means without a spec; whether to propose
+  first still follows "How to work".
 - A feature with a real design choice, or a changed interface, takes the short
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
   `/speckit-implement`, then `/speckit-converge` until it reports converged.
@@ -98,10 +98,10 @@ whether a repo has it.
 
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
-never read it, so a decision that binds them moves out when the feature
-merges: a rule becomes a constitution principle; anything else becomes
-`docs/decisions/NNNN-slug.md` in MADR's shape — context, options, outcome,
-consequences — linking its research.md entry, and the project CLAUDE.md
+never read it, so a decision that binds them moves out before the feature's
+PR opens: a rule becomes a constitution principle; anything else becomes
+`docs/decisions/NNNN-slug.md` in MADR's shape — context, options, outcome and
+its consequences — linking its research.md entry, and the project CLAUDE.md
 points there. Only a decision a later feature would otherwise reopen.
 
 ## Toolchain
@@ -161,15 +161,16 @@ or something that would surprise the reader.
 
 Write tests for logic of its own: a branch, a computation, a parse, a state
 change. Not for getters, wrappers, wiring or one-line delegations — the same
-line the preset draws. A test you have not watched fail is not a test:
+line the preset draws. Start from a written list of the cases, simplest first,
+and take them one at a time. A test you have not watched fail is not a test:
 write it first, run it, and check it failed for the reason you expected — an
 import or collection error proves the test was collected, not that it exercises
 anything. If the first run errors instead of failing, stub the thing under test
 until it fails from inside. Then write the simplest thing that makes it pass: a
 design document is not a licence to build past the test in front of you. With
-the suite green, refactor — remove the duplication that left, make names say
-what they mean, change no behaviour, run the suite after each step. A case you
-think of along the way goes on the list as its own test, not into this one.
+the suite green, refactor what that cycle left — duplication, names that no
+longer fit — without changing behaviour, running the suite after each step. A
+case you think of along the way goes on the list, not into the test in progress.
 
 When you finish, tell me what actually happened: if a test fails, show me the
 output; if you left something half done, say so. I prefer an uncomfortable
