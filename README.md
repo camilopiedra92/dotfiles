@@ -66,8 +66,8 @@ macos/dock.sh          applies a machine's dock.txt through `dockutil`, or repor
 macos/handlers.txt     the default app per file extension on every Mac, only where it differs from Apple's
 macos/handlers.sh      applies it, plus the machine's own, through `duti`, or reports where the Mac differs
 macos/machine.sh       which profile under macos/machines/ this Mac is (`dir`), or records it (`set`)
-macos/machines/<p>/    what only one Mac has: dock.txt, and defaults.txt / handlers.txt read after the shared ones
-claude/mcp.json                 user-scope MCP servers, applied through `claude mcp`
+macos/machines/<p>/    what only one Mac has: dock.txt, mcp.json, and defaults.txt / handlers.txt read after the shared ones
+claude/mcp.json                 user-scope MCP servers for every Mac, applied through `claude mcp`
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -100,7 +100,7 @@ they are usually installed to:
 | `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see below |
-| `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
+| `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` and the profile's `mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
 
 `install.sh` deletes the pre-XDG paths after linking the new ones. It has to:
 git reads `~/.gitconfig` *and* `~/.config/git/config`, and the legacy file wins,
@@ -184,27 +184,43 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   lets an accidental Console login bill per token instead of drawing on the
   subscription. Nothing surfaces this on a machine that is already signed in,
   which is what makes it worth writing down.
-- **`effortLevel` is absent on purpose, and not set to `high` either.** The
-  model's own default is already `high`, and writing that down would freeze it:
-  a future model shipping a better default would be overridden by a line nobody
+- **`effortLevel` is absent on purpose.** Each model ships its own default —
+  `medium` on Opus 5.5, which Anthropic recommends starting from rather than
+  carrying over Opus 5's `high` — and writing a level down would freeze it: a
+  future model shipping a better default would be overridden by a line nobody
   revisits. It is the same argument as `node = "lts"` rather than a number.
-  Escalate per session with `/effort`, which is also the only place `max` and
-  `ultracode` are reachable — the settings file does not accept them.
-- **`fallbackModel` matters because `model` is pinned.** With one model named
-  and no chain, an overload is a stopped session rather than a slower one.
+  `/effort` changes it, and since v2.1.251 it also saves the level per model
+  under `modelSettings`; `drift.sh` leaves that key alone for this reason, as a
+  record of the last choice rather than a policy. `max` and `ultracode` are
+  reachable only there — the settings file does not accept them.
+- **`model` is not set.** The default on this plan is already Opus 5.5 with
+  the 1M context window, so the `opus[1m]` that used to be here selected
+  nothing the default did not; it only kept a newer default from applying.
+- **`fallbackModel` is only `sonnet`.** Without a chain an overload is a
+  stopped session rather than a slower one. `opus` is not in it because it is
+  the primary model: falling back to the model that is overloaded buys
+  nothing.
 - **`autoUpdatesChannel` is `stable`**, described as roughly a week behind and
   skipping releases with major regressions. Every other tool here is pinned and
   checksum-verified; following `latest` for the tool doing the work was the
-  inconsistency.
+  inconsistency. It spent 2026-08-25 to 2026-10-05 on `latest`, because the
+  Concise output style needed v2.1.237 while `stable` sat at 2.1.231; `stable`
+  was at 2.1.285 when it came back.
 - **`attribution` replaces `includeCoAuthoredBy`**, which the schema marks
   deprecated. Same intent, the key that still exists.
-- **`enabledPlugins` lists only the eight that are on.** A `false` entry is a
+- **`enabledPlugins` lists only the ones that are on.** A `false` entry is a
   plugin someone tried and turned off, and reproducing it on a new machine would
   mean installing it in order to disable it.
 - **`extraKnownMarketplaces` is not versioned at all.** Every enabled plugin
   comes from `claude-plugins-official`, so declaring the extra marketplaces adds
-  surface and no reproducibility. One of them points at a local directory and
-  could not transfer anyway.
+  surface and no reproducibility.
+- **`syncClaudeAiPlugins` is `false`.** The claude.ai account enables plugins
+  for Cowork and the web — sales, legal, finance, zoom — and Claude Code loads
+  all of them into every terminal session as `<name>@synced`, which added
+  hundreds of skills to each one and three servers failing authentication at
+  every start. A plugin wanted in the terminal is declared above instead.
+  Synced skills are a separate switch, `syncClaudeAiSkills`, left unset, so
+  they still load.
 - **`permissions` has split ownership.** The repo owns `deny`, which is the same
   everywhere. `allow` accumulates per project — domains, MCP tools — and stays
   out, which is why `deny` is an array the merge replaces whole while `allow` is
@@ -428,8 +444,14 @@ repository, not one.
 There is no environment variable for it and no `cwd` field for a stdio server in
 Claude Code's configuration, which leaves the working directory itself as the
 only thing that can be changed. `bin/ynab-mcp.sh` sets it to
-`~/.local/state/ynab-mcp` and execs the server; `~/.claude.json` points at the
-wrapper instead of at `npx`.
+`~/.local/state/ynab-mcp` and execs the server; the registration in
+`macos/machines/personal/mcp.json` points at the wrapper instead of at `npx`.
+
+The wrapper also supplies the token, from a `ynab-mcp` item in the login
+Keychain, so that no file holds it. It used to be in the registration's `env`,
+which is plain text in `~/.claude.json`. Store or replace it with
+`security add-generic-password -U -s ynab-mcp -a ynab -w`, which prompts for
+it rather than taking it as an argument that would land in shell history.
 
 Not a `.gitignore` entry, which is where this ends up by default. In one
 repository it is a workaround for a bug in another program; in the global ignore
@@ -747,7 +769,9 @@ The same repo runs on a personal Mac and a work Mac, which share most
 settings and differ in a few: the Dock's apps, an app one of them does not
 have. What every Mac gets stays where it was — `macos/defaults.txt`,
 `macos/handlers.txt`. What only one gets lives under
-`macos/machines/<profile>/`: `dock.txt`, which is only ever per machine, and
+`macos/machines/<profile>/`: `dock.txt`, which is only ever per machine;
+`mcp.json`, the MCP servers only that Mac has — YNAB on the personal one,
+`aware` on the work one — added on top of `claude/mcp.json`; and
 `defaults.txt` and `handlers.txt`, read after the shared file of the same
 name. A key or an extension is in the shared file or a machine's, never
 both, which `check.sh` enforces: in both, it would be written twice and the

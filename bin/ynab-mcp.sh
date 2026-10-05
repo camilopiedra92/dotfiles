@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Runs the YNAB MCP server with a working directory of its own.
 #
-# Usage:  configured as the `command` of the ynab server in ~/.claude.json.
+# Usage:  configured as the `command` of the ynab server in
+#         macos/machines/personal/mcp.json.
 #         Not meant to be run by hand.
 #
 # The server is built on mcp-framework, whose logger opens "logs" as a relative
@@ -37,6 +38,18 @@ cd "$STATE"
 # clean up by hand. Never fatal: a failed cleanup must not stop the server from
 # starting, and the editor would report that as the server being broken.
 find logs -maxdepth 1 -type f -name 'mcp-server-*.log' -mtime +14 -delete || true
+
+# The token is read from the login Keychain rather than passed in by the MCP
+# registration, whose `env` block is plain text in ~/.claude.json -- a file
+# Claude Code rewrites, backs up and reads into sessions. An item created with
+# the `security` command trusts that command, so this reads without a prompt
+# (observed 2026-10-05 with a throwaway item, from a non-interactive shell).
+if ! YNAB_API_TOKEN=$(security find-generic-password -s ynab-mcp -w 2> /dev/null); then
+  echo "ynab-mcp: no 'ynab-mcp' item in the login Keychain. Store the token with:" >&2
+  echo "  security add-generic-password -U -s ynab-mcp -a ynab -w" >&2
+  exit 1
+fi
+export YNAB_API_TOKEN
 
 # `mise x` and not a bare npx, for the reason bin/aware.sh gives at more length:
 # the server is spawned by the editor, which does not read .zshenv, so the mise

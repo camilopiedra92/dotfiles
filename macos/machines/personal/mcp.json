@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ynab": {
+      "type": "stdio",
+      "command": "ynab-mcp",
+      "args": []
+    }
+  }
+}

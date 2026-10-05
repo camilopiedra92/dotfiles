@@ -403,38 +403,7 @@ done < <(sed 's/#.*//' "$DOTFILES/uv-tools.txt")
 # VS Code extensions need no step of their own: the Brewfile declares them with
 # `vscode "..."` entries and `brew bundle install` installs them in step 2.
 
-# --- 8. Claude Code MCP servers ---
-# User-scope servers live in ~/.claude.json, a file Claude Code owns and rewrites
-# freely, so they are neither symlinked nor merged in: the CLI is the interface
-# that file is meant to be changed through, and claude/mcp.json is what the CLI
-# is told. The file uses the same shape as a project's .mcp.json, so an entry
-# moves between the two without translation.
-#
-# Converges on the manifest the way step 7 does. A server already registered
-# with the same definition is left alone; one that differs is removed and added
-# back, because `claude mcp add-json` refuses to overwrite and that pair is the
-# only edit the CLI offers. Servers the manifest does not name are not touched:
-# drift.sh is what reports those.
-#
-# The comparison reads ~/.claude.json directly rather than parsing `claude mcp
-# get`, whose output is prose for a person. Reading is safe where writing would
-# not be: Claude Code rewrites this file underneath anything that edits it.
-log "Registering Claude Code MCP servers"
-CLAUDE_STATE="$HOME/.claude.json"
-[ -f "$CLAUDE_STATE" ] || echo '{}' > "$CLAUDE_STATE"
-for name in $(jq -r '.mcpServers | keys[]' "$DOTFILES/claude/mcp.json"); do
-  want=$(jq -c --arg n "$name" '.mcpServers[$n]' "$DOTFILES/claude/mcp.json")
-  if jq -e --arg n "$name" --argjson want "$want" '.mcpServers[$n] == $want' \
-    "$CLAUDE_STATE" > /dev/null; then
-    continue
-  fi
-  if jq -e --arg n "$name" '.mcpServers[$n] != null' "$CLAUDE_STATE" > /dev/null; then
-    claude mcp remove "$name" --scope user
-  fi
-  claude mcp add-json "$name" "$want" --scope user
-done
-
-# --- 8b. Machine profile ---
+# --- 8. Machine profile ---
 # Which macos/machines/<profile> this Mac is, recorded once outside the repo
 # in ~/.config/dotfiles/machine; the steps below read their per-machine
 # manifests from it. Asked at a terminal; anywhere else -- CI, a piped run --
@@ -455,6 +424,48 @@ if ! why=$("$DOTFILES/macos/machine.sh" dir 2>&1 > /dev/null); then
 fi
 machine_dir=$("$DOTFILES/macos/machine.sh" dir)
 log "Machine profile: ${machine_dir##*/}"
+
+# --- 8b. Claude Code MCP servers ---
+# User-scope servers live in ~/.claude.json, a file Claude Code owns and rewrites
+# freely, so they are neither symlinked nor merged in: the CLI is the interface
+# that file is meant to be changed through, and claude/mcp.json is what the CLI
+# is told. The file uses the same shape as a project's .mcp.json, so an entry
+# moves between the two without translation.
+#
+# Converges on the manifest the way step 7 does. A server already registered
+# with the same definition is left alone; one that differs is removed and added
+# back, because `claude mcp add-json` refuses to overwrite and that pair is the
+# only edit the CLI offers. Servers the manifest does not name are not touched:
+# drift.sh is what reports those.
+#
+# The comparison reads ~/.claude.json directly rather than parsing `claude mcp
+# get`, whose output is prose for a person. Reading is safe where writing would
+# not be: Claude Code rewrites this file underneath anything that edits it.
+#
+# Two manifests feed it: claude/mcp.json for every machine, and the profile's
+# own mcp.json for servers that exist on one Mac only -- a work tool on the
+# work Mac, a personal one on the personal Mac. Before the split, a server
+# declared for one Mac was registered on both and failed to connect on the
+# other at every start. This step runs after 8 so the profile is known.
+log "Registering Claude Code MCP servers"
+CLAUDE_STATE="$HOME/.claude.json"
+[ -f "$CLAUDE_STATE" ] || echo '{}' > "$CLAUDE_STATE"
+mcp_files=("$DOTFILES/claude/mcp.json")
+if [ -f "$machine_dir/mcp.json" ]; then
+  mcp_files+=("$machine_dir/mcp.json")
+fi
+mcp_manifest=$(jq -s '{mcpServers: (map(.mcpServers) | add)}' "${mcp_files[@]}")
+for name in $(jq -r '.mcpServers | keys[]' <<< "$mcp_manifest"); do
+  want=$(jq -c --arg n "$name" '.mcpServers[$n]' <<< "$mcp_manifest")
+  if jq -e --arg n "$name" --argjson want "$want" '.mcpServers[$n] == $want' \
+    "$CLAUDE_STATE" > /dev/null; then
+    continue
+  fi
+  if jq -e --arg n "$name" '.mcpServers[$n] != null' "$CLAUDE_STATE" > /dev/null; then
+    claude mcp remove "$name" --scope user
+  fi
+  claude mcp add-json "$name" "$want" --scope user
+done
 
 # --- 9. macOS defaults ---
 # The system layer this repo used to leave to hand: Finder, Dock, keyboard,
