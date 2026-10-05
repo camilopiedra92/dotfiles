@@ -97,6 +97,7 @@ link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
 link "$DOTFILES/bin/aware.sh" "$HOME/.local/bin/aware"
 # Same, and it finds the preset next to it by resolving this link.
 link "$DOTFILES/bin/sdd-init.sh" "$HOME/.local/bin/sdd-init"
+link "$DOTFILES/bin/sdd-gate.sh" "$HOME/.local/bin/sdd-gate"
 # Not a command you run: it is what ~/.claude.json points the ynab MCP server
 # at, so the server logs into its own directory instead of into whichever
 # repository the editor was started in. See the file.

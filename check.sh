@@ -3302,6 +3302,132 @@ FAKE
 }
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 
+# sdd-gate against a fake suite whose verdict a file sets and which logs each
+# run with its arguments. Under test: what the script refuses, what lands in
+# its commit, and what the Stop hook it writes does on each kind of stop.
+sdd_gate() {
+  local tmp repo out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/suite" << FAKE
+#!/bin/sh
+printf '%s\n' "\$1" >> "$tmp/runs"
+echo "suite says \$(cat "$tmp/verdict")"
+[ "\$(cat "$tmp/verdict")" = green ]
+FAKE
+  chmod +x "$tmp/bin/suite"
+  ln -s "$PWD/bin/sdd-gate.sh" "$tmp/sdd-gate"
+  fresh() {
+    repo="$tmp/repo-$1"
+    git init -q "$repo"
+    mkdir -p "$repo/.claude"
+    echo '{"permissions": {"deny": ["Read(./.env)"]}}' > "$repo/.claude/settings.json"
+    git -C "$repo" add .claude/settings.json
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m root
+    echo green > "$tmp/verdict"
+    : > "$tmp/runs"
+  }
+  run() {
+    (cd "$repo" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t \
+      GIT_COMMITTER_EMAIL=t@t ../sdd-gate "$tmp/bin/suite" "two words" 2>&1)
+  }
+  # The hook as Claude Code calls it: event JSON on stdin, project dir in env.
+  stop() {
+    (cd "$repo" && CLAUDE_PROJECT_DIR=$repo .claude/hooks/stop-gate.sh <<< "{\"hook_event_name\":\"Stop\",\"stop_hook_active\":$1}" 2>&1)
+  }
+
+  # A gate over a red suite would block every turn, so it refuses one.
+  fresh red
+  echo red > "$tmp/verdict"
+  if out=$(run); then
+    echo "gated a red suite: $out"
+    return 1
+  fi
+  [ ! -e "$repo/.claude/hooks/stop-gate.sh" ] || {
+    echo "wrote the hook over a red suite"
+    return 1
+  }
+
+  # The happy path: one commit with the hook and the settings, keeping what
+  # the settings already held, and the command's arguments intact.
+  fresh ok
+  out=$(run) || {
+    echo "refused a green suite: $out"
+    return 1
+  }
+  [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
+    ".claude/hooks/stop-gate.sh .claude/settings.json " ] || {
+    echo "the commit holds something else:"
+    git -C "$repo" show --stat HEAD
+    return 1
+  }
+  jq -e '.permissions.deny == ["Read(./.env)"] and
+    (.hooks.Stop | length) == 1 and
+    .hooks.Stop[0].hooks[0].command == "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-gate.sh"' \
+    "$repo/.claude/settings.json" > /dev/null || {
+    echo "settings.json is not the old one plus one Stop hook:"
+    cat "$repo/.claude/settings.json"
+    return 1
+  }
+
+  # Green: the stop goes through, and the suite ran with its arguments.
+  : > "$tmp/runs"
+  out=$(stop false) || {
+    echo "blocked a green stop: $out"
+    return 1
+  }
+  [ "$(cat "$tmp/runs")" = "two words" ] || {
+    echo "the suite did not run once with its arguments: $(cat "$tmp/runs")"
+    return 1
+  }
+  # Nothing changed since that green run: the suite is not run again.
+  out=$(stop false) || return 1
+  [ "$(wc -l < "$tmp/runs")" -eq 1 ] || {
+    echo "re-ran the suite on an unchanged tree"
+    return 1
+  }
+  # A new untracked file and a red suite: blocked, with the suite's output.
+  echo change > "$repo/new.txt"
+  echo red > "$tmp/verdict"
+  if out=$(stop false); then
+    echo "let a red stop through: $out"
+    return 1
+  fi
+  echo "$out" | grep -q "suite says red" || {
+    echo "the block does not show the suite's output: $out"
+    return 1
+  }
+  # The second stop of the same turn goes through without running anything:
+  # Claude has seen the failure and reports it rather than forcing it green.
+  : > "$tmp/runs"
+  out=$(stop true) || {
+    echo "blocked the second stop of a turn: $out"
+    return 1
+  }
+  [ ! -s "$tmp/runs" ] || {
+    echo "ran the suite on the second stop of a turn"
+    return 1
+  }
+
+  # A second run would add a second hook. Green, so only that can refuse it.
+  echo green > "$tmp/verdict"
+  if out=$(run); then
+    echo "ran again over an existing gate: $out"
+    return 1
+  fi
+
+  # Something already staged would ride along in the commit.
+  fresh staged
+  echo x > "$repo/notes.txt"
+  git -C "$repo" add notes.txt
+  if out=$(run); then
+    echo "accepted a repo with staged changes: $out"
+    return 1
+  fi
+}
+check "sdd-gate refuses a red suite, staged work and a second run; its hook blocks a red stop once and skips an unchanged tree" sdd_gate
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
