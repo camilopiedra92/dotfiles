@@ -917,23 +917,29 @@ ynab_token_from_keychain() {
     return 1
   }
 
+  # No item, an item holding an empty password -- what `security ... -w` stored
+  # on 2026-10-05 when run from a session that could not answer its prompt --
+  # and one holding only whitespace. All must stop the wrapper, not start the
+  # server.
   rm "$tmp/started"
-  printf '#!/bin/sh\nexit 44\n' > "$tmp/bin/security"
-  if out=$(PATH="$tmp/bin:$PATH" XDG_STATE_HOME="$tmp/state" ./bin/ynab-mcp.sh 2>&1); then
-    echo "the wrapper succeeded with no token in the Keychain"
-    return 1
-  fi
-  [ ! -e "$tmp/started" ] || {
-    echo "the server started without a token"
-    return 1
-  }
-  case "$out" in
-    *add-generic-password*) ;;
-    *)
-      echo "the failure does not say how to store the token: $out"
+  for stub in '#!/bin/sh\nexit 44\n' '#!/bin/sh\necho\n' '#!/bin/sh\necho "  "\n'; do
+    printf '%b' "$stub" > "$tmp/bin/security"
+    if out=$(PATH="$tmp/bin:$PATH" XDG_STATE_HOME="$tmp/state" ./bin/ynab-mcp.sh 2>&1); then
+      echo "the wrapper succeeded with no usable token in the Keychain"
       return 1
-      ;;
-  esac
+    fi
+    [ ! -e "$tmp/started" ] || {
+      echo "the server started without a token"
+      return 1
+    }
+    case "$out" in
+      *add-generic-password*) ;;
+      *)
+        echo "the failure does not say how to store the token: $out"
+        return 1
+        ;;
+    esac
+  done
 }
 check "the YNAB wrapper takes its token from the Keychain" ynab_token_from_keychain
 
