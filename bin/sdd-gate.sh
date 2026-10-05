@@ -48,6 +48,12 @@ if [ -e "$hook" ] || [ -L "$hook" ]; then
   echo "sdd-gate: $hook already exists; edit its TEST_COMMAND to change the command" >&2
   exit 1
 fi
+# Written through, a symlinked settings.json would change a file outside this
+# repository and leave the one git tracks, the link, as it was.
+if [ -L "$settings" ]; then
+  echo "sdd-gate: $settings is a symlink; the gate needs a settings.json of its own" >&2
+  exit 1
+fi
 if ! git diff --cached --quiet; then
   echo "sdd-gate: something is already staged, and it would land in this commit" >&2
   exit 1
@@ -70,7 +76,7 @@ if ! git diff --quiet -- "$settings"; then
 fi
 # One path per call: check-ignore takes --quiet with a single pathname only.
 if git check-ignore -q "$hook" || git check-ignore -q "$settings"; then
-  echo "sdd-gate: .gitignore ignores $hook or $settings, so the gate could not be committed" >&2
+  echo "sdd-gate: $hook or $settings is ignored by git (.gitignore, info/exclude or core.excludesFile), so the gate could not be committed" >&2
   exit 1
 fi
 # Read and merged before anything is written: an unreadable settings.json
@@ -78,10 +84,13 @@ fi
 # shellcheck disable=SC2016  # $CLAUDE_PROJECT_DIR is expanded by Claude Code, not here
 entry='{"hooks": [{"type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-gate.sh", "timeout": 600}]}'
 if [ -e "$settings" ]; then
-  merged=$(jq --argjson entry "$entry" '.hooks.Stop += [$entry]' "$settings") || {
-    echo "sdd-gate: $settings is not valid JSON" >&2
+  # An object, checked first: jq reads an empty file as no input and prints
+  # nothing, which would commit an empty settings.json.
+  if ! jq -e 'type == "object"' "$settings" > /dev/null 2>&1 ||
+    ! merged=$(jq --argjson entry "$entry" '.hooks.Stop += [$entry]' "$settings"); then
+    echo "sdd-gate: $settings is not a JSON object" >&2
     exit 1
-  }
+  fi
 else
   merged=$(jq -n --argjson entry "$entry" \
     '{"$schema": "https://json.schemastore.org/claude-code-settings.json", hooks: {Stop: [$entry]}}')
@@ -129,7 +138,20 @@ mkdir -p .claude/hooks
 set -uo pipefail
 
 EOF
-  printf 'TEST_COMMAND=(%s)\n' "$(printf '%q ' "$@" | sed 's/ $//')"
+  # Each argument in single quotes, a quote inside one closed and reopened
+  # around an escaped quote: nothing in it is expanded when the hook runs.
+  # printf %q is not used because bash 3.2 leaves a leading ~ unquoted, and
+  # the quote and its replacement sit in variables because bash 3.2 misparses
+  # quotes written inside ${var//...}.
+  quote="'"
+  escaped="'\\''"
+  printf 'TEST_COMMAND=('
+  sep=
+  for arg in "$@"; do
+    printf "%s'%s'" "$sep" "${arg//$quote/$escaped}"
+    sep=' '
+  done
+  printf ')\n'
   cat << 'EOF'
 
 cd "${CLAUDE_PROJECT_DIR:?}" || exit 0
@@ -148,8 +170,11 @@ EOF
 chmod +x "$hook"
 printf '%s\n' "$merged" > "$settings"
 
+# Only these two paths, whatever else is staged by now (the suite ran since
+# the staged check).
 git add "$hook" "$settings"
 git commit -q -m "Gate the end of every Claude turn on the test suite" \
-  -m "Written by sdd-gate: a Stop hook runs \`$*\` and blocks a red turn once."
+  -m "Written by sdd-gate: a Stop hook runs \`$*\` and blocks a red turn once." \
+  -- "$hook" "$settings"
 committed=1
 echo "sdd-gate: committed $hook and $settings"
