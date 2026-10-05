@@ -84,7 +84,7 @@ decision would cost:
   specify from what it taught. A spec is not a way to explore.
 
 A repo without `.specify/` gets it at its first feature: `sdd-init` from the
-root, which commits Spec Kit with the test-first preset from `~/dotfiles`. Then
+root, which commits Spec Kit with the released test-first preset. Then
 `/speckit-constitution` with the rules already true in that project — not
 invented ones — and `@.specify/memory/constitution.md` in its CLAUDE.md, so the
 constitution holds for direct changes too and not only inside the speckit

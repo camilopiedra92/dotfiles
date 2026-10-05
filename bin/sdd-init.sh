@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Puts Spec Kit into the current repository with the test-first preset from
-# this repo, as one commit of its own.
+# Puts Spec Kit into the current repository with the test-first preset, as one
+# commit of its own.
 #
 # Usage:  sdd-init        from the root of the repository, at its first feature
 #
@@ -9,13 +9,13 @@
 # --integration, init scaffolds for Copilot; without a TTY it refuses any
 # non-empty directory unless --force (both seen on 1.1.0, 2026-10-05).
 #
-# The preset is copied into the repo, not linked: `--dev` writes it under
-# .specify/presets/ (seen on 1.1.0). A repo keeps the version it was given until
-# `specify preset add --dev` is run there again.
+# The preset lives in its own repository, released by tag, and is installed
+# from the tag's archive: each repo then holds a copy of a known version under
+# .specify/presets/, and moving it on is `specify preset update test-first
+# --from <newer tag's zip>`. The URL below is the version new repos get.
 set -euo pipefail
 
-DOTFILES="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-PRESET="$DOTFILES/spec-kit/preset"
+PRESET_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.0.0.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
   echo "sdd-init: not inside a git repository" >&2
@@ -28,8 +28,8 @@ fi
 if [ -e .specify ]; then
   # Re-running init would put the template back over a constitution that has
   # been written. A preset update is its own command.
-  echo "sdd-init: .specify/ already exists; to refresh the preset run" >&2
-  echo "          specify preset add --dev $PRESET" >&2
+  echo "sdd-init: .specify/ already exists; to move its preset to this version run" >&2
+  echo "          specify preset update test-first --from $PRESET_URL" >&2
   exit 1
 fi
 if ! git diff --cached --quiet; then
@@ -46,7 +46,7 @@ if ! "${SPECKIT_PYTHON_EXECUTABLE:-false}" -c 'import yaml' > /dev/null 2>&1; th
 fi
 
 specify init --here --force --integration claude
-specify preset add --dev "$PRESET"
+specify preset add --from "$PRESET_URL"
 
 # Only what init and the preset wrote. .claude/skills/ is committed whatever
 # init's closing advice says about .claude/: that advice is about credentials,

@@ -3066,36 +3066,6 @@ check "drift.sh says which way a moved uv pin closes" drift_uv_pin_direction
 # ── Spec Kit ─────────────────────────────────────────────────────────────────
 printf '\n%sSpec Kit%s\n' "$DIM" "$OFF"
 
-# The preset is data the specify CLI reads at install time, and the CLI fails
-# on a listed file that is missing only when someone runs it in a repo. Whether
-# the composition itself works is the CLI's job and needs the CLI; that was
-# verified by hand (see spec-kit/preset/preset.yml).
-preset_manifest() {
-  python3 - << 'PY'
-import os, re, sys
-path = 'spec-kit/preset/preset.yml'
-text = open(path, encoding='utf-8').read()
-files = re.findall(r'^\s+file:\s*"([^"]+)"', text, re.M)
-if not files:
-    sys.exit('%s lists no files' % path)
-missing = [f for f in files if not os.path.isfile(os.path.join('spec-kit/preset', f))]
-if missing:
-    sys.exit('%s lists missing files: %s' % (path, ', '.join(missing)))
-# Commands are the composition path that was tested on 1.1.0; templates
-# compose at runtime in the bash scripts and were not.
-if re.search(r'type:\s*"template"', text):
-    sys.exit('%s overrides a template; only command composition is tested' % path)
-# An appended command's frontmatter replaces the core skill's, description
-# included, and the description is what Claude reads to decide when to invoke
-# the skill (seen on 1.1.0: speckit-tasks came out described as the fragment).
-fronted = [f for f in files
-           if open(os.path.join('spec-kit/preset', f), encoding='utf-8').read().startswith('---')]
-if fronted:
-    sys.exit('frontmatter would replace the core skill description: %s' % ', '.join(fronted))
-PY
-}
-check "the Spec Kit preset lists only files that exist, no templates, no frontmatter" preset_manifest
-
 # sdd-init against a `specify` that records its arguments and writes the two
 # directories the real one writes. What is under test is the script's own
 # contract: what it refuses, what it calls, and what lands in its commit.
@@ -3138,8 +3108,18 @@ FAKE
     echo "refused a clean repo: $out"
     return 1
   }
-  printf 'init --here --force --integration claude\npreset add --dev %s/spec-kit/preset\n' \
-    "$PWD" > "$tmp/want"
+  # The URL is read from the script, so the check pins the call's shape and
+  # leaves the version to the script.
+  url=$(sed -n 's/^PRESET_URL=//p' bin/sdd-init.sh)
+  case "$url" in
+    https://github.com/*/archive/refs/tags/v*.zip) ;;
+    *)
+      echo "PRESET_URL is not a tag archive: ${url:-missing}"
+      return 1
+      ;;
+  esac
+  printf 'init --here --force --integration claude\npreset add --from %s\n' \
+    "$url" > "$tmp/want"
   diff -u "$tmp/want" "$tmp/calls" || return 1
   [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
     ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {
