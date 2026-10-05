@@ -3081,11 +3081,10 @@ if not files:
 missing = [f for f in files if not os.path.isfile(os.path.join('spec-kit/preset', f))]
 if missing:
     sys.exit('%s lists missing files: %s' % (path, ', '.join(missing)))
-# Templates compose at runtime through a bash script that imports PyYAML from
-# whatever python3 is on PATH, which this machine's does not have (seen on
-# 1.1.0, 2026-10-05). Commands compose at install time inside the CLI.
+# Commands are the composition path that was tested on 1.1.0; templates
+# compose at runtime in the bash scripts and were not.
 if re.search(r'type:\s*"template"', text):
-    sys.exit('%s overrides a template; only commands compose without PyYAML' % path)
+    sys.exit('%s overrides a template; only command composition is tested' % path)
 # An appended command's frontmatter replaces the core skill's, description
 # included, and the description is what Claude reads to decide when to invoke
 # the skill (seen on 1.1.0: speckit-tasks came out described as the fragment).
@@ -3123,9 +3122,13 @@ FAKE
     echo keep > "$repo/notes.txt"
     : > "$tmp/calls"
   }
+  # A python that imports anything, standing in for one that has PyYAML.
+  printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/python-with-yaml"
+  chmod +x "$tmp/bin/python-with-yaml"
   run() {
     (cd "$repo" && PATH="$tmp/bin:$PATH" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t \
-      GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t ../sdd-init 2>&1)
+      GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+      SPECKIT_PYTHON_EXECUTABLE="${PYX-$tmp/bin/python-with-yaml}" ../sdd-init 2>&1)
   }
   ln -s "$PWD/bin/sdd-init.sh" "$tmp/sdd-init"
 
@@ -3163,6 +3166,19 @@ FAKE
     return 1
   }
 
+  # Once a preset is installed every script behind specify, plan and tasks
+  # needs PyYAML through this variable, so without it the repo it leaves behind
+  # cannot run a single phase. It refuses before calling anything.
+  fresh nopython
+  if out=$(PYX='' run); then
+    echo "accepted an unset SPECKIT_PYTHON_EXECUTABLE: $out"
+    return 1
+  fi
+  [ ! -s "$tmp/calls" ] || {
+    echo "called specify without a python that has PyYAML"
+    return 1
+  }
+
   # A second run would re-init over a constitution that has been written.
   fresh twice
   run > /dev/null || return 1
@@ -3176,7 +3192,7 @@ FAKE
     return 1
   }
 }
-check "sdd-init refuses staged work and a second run, and commits only what init wrote" sdd_init
+check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

@@ -36,6 +36,14 @@ if ! git diff --cached --quiet; then
   echo "sdd-init: something is already staged, and it would land in this commit" >&2
   exit 1
 fi
+# With a preset installed, every script behind specify, plan and tasks resolves
+# templates through this python and PyYAML; without it each phase fails with
+# "PyYAML is required" (1.1.0). zsh/.zshenv sets it.
+if ! "${SPECKIT_PYTHON_EXECUTABLE:-false}" -c 'import yaml' > /dev/null 2>&1; then
+  echo "sdd-init: SPECKIT_PYTHON_EXECUTABLE is not a python with PyYAML;" >&2
+  echo "          open a new shell, or see zsh/.zshenv" >&2
+  exit 1
+fi
 
 specify init --here --force --integration claude
 specify preset add --dev "$PRESET"

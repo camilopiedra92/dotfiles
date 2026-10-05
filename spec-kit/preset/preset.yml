@@ -7,9 +7,10 @@ schema_version: "1.0"
 # fragments carry no frontmatter: a description there replaced the skill's own,
 # which is what Claude reads to decide when to invoke it.
 #
-# No template overrides. Templates compose at runtime through a bash script
-# that imports PyYAML from the python3 on PATH, and resolution failed with
-# "PyYAML is required" on this machine. Commands compose at install time.
+# No template overrides: commands are the path that was tested. Note that any
+# installed preset, this one included, sends every template the scripts resolve
+# through PyYAML, which mise's python lacks; SPECKIT_PYTHON_EXECUTABLE in
+# zsh/.zshenv supplies one, and sdd-init refuses to run without it.
 preset:
   id: "test-first"
   name: "Test-first"
