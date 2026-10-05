@@ -76,10 +76,9 @@ decision would cost:
   direct: test first where there is real logic, the alternative in the commit.
 - A feature with a real design choice, or a changed interface, takes the short
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
-  `/speckit-implement`, a review from a context that did not write the code,
-  then `/speckit-converge` until it reports converged. The review tries wrong
-  versions of the code against the tests: a suite that passes a plausible bug
-  does not pin the behaviour, and neither analyze nor converge checks that.
+  `/speckit-implement`, then `/speckit-converge` until it reports converged.
+  The preset makes implement end each user story with a review from a fresh
+  context that tries wrong versions of the code against the tests.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan and
   `/speckit-checklist` and `/speckit-analyze` before implementing.
