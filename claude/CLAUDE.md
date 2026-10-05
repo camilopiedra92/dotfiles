@@ -69,25 +69,31 @@ name outlives them.
 
 ## Spec-driven development
 
-Feature-sized work goes through Spec Kit: new behaviour with a real design
-choice, or a changed interface. Small or exploratory work does not. The CLI is
-pinned in `~/dotfiles/uv-tools.txt`; the rest lives in each repo.
+Spec Kit is the only development process here. Size the process to what a wrong
+decision would cost:
 
-A project without `.specify/` gets it at its first feature, in its own commit:
-`specify init --here --force --integration claude`. Without a TTY, init refuses
-any non-empty directory unless `--force`, and without `--integration` it
-scaffolds for Copilot (both seen on 1.1.0, 2026-10-05). Commit `.specify/` and
-`.claude/skills/`, whatever init's closing advice says about `.claude/`.
+- Bug fixes, changes to one to three files, scripts, docs and configuration go
+  direct: test first where there is real logic, the alternative in the commit.
+- A feature with a real design choice, or a changed interface, takes the short
+  path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
+  `/speckit-implement`, then `/speckit-converge` until it reports converged.
+- Domain or money logic, a contract something external consumes, or work across
+  more than three or four modules adds `/speckit-clarify` before the plan and
+  `/speckit-checklist` and `/speckit-analyze` before implementing.
+- When the way to do something is unknown, spike on a throwaway branch and
+  specify from what it taught. A spec is not a way to explore.
 
-Then `/speckit-constitution`, carrying test-first over from these rules. The
-tasks skill writes test tasks only on request, so check `tasks.md` has them;
-the plan's Constitution Check and `/speckit-analyze` are what read the
-constitution against the work, not the workflow's approval gates.
+A repo without `.specify/` gets it at its first feature: `sdd-init` from the
+root, which commits Spec Kit with the test-first preset from `~/dotfiles`. Then
+`/speckit-constitution` with the rules already true in that project — not
+invented ones — and `@.specify/memory/constitution.md` in its CLAUDE.md, so the
+constitution holds for direct changes too and not only inside the speckit
+skills. The preset is what keeps each task to one behaviour with its test
+first, citing the requirement IDs it implements; `specify preset list` shows
+whether a repo has it.
 
-`superpowers:brainstorming` decides what to build, in chat, and on every path
-hands off to `/speckit-specify`: no design doc, no `writing-plans`, no direct
-implementation. Then clarify, plan, tasks, analyze, implement.
-`specs/<n>-<slug>/spec.md` is the source of truth.
+`specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
+`research.md` is where its decisions and their alternatives go.
 
 ## Toolchain
 
