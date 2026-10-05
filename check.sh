@@ -479,7 +479,7 @@ english_only() {
     0) return 1 ;;
     1) return 0 ;;
     *)
-      echo "git grep exited $rc"
+      echo "the search exited $rc"
       return 1
       ;;
   esac
@@ -517,15 +517,31 @@ english_only_contract() {
       return 1
     }
   done
+  # The commit's index, not the default one: a Spanish file staged only in an
+  # index of its own, as `git commit -a` or `git commit <paths>` hands one
+  # to the hook, is found through THIS_INDEX and not without it.
+  printf 'a\xc3\xb1o\n' > "$tmp/repo/staged-only.txt"
+  git -C "$tmp/repo" rm -q --cached spanish.txt
+  rm "$tmp/repo/spanish.txt"
+  cp "$tmp/repo/.git/index" "$tmp/commit-index"
+  GIT_INDEX_FILE=$tmp/commit-index git -C "$tmp/repo" add staged-only.txt
+  out=$(cd "$tmp/repo" && THIS_INDEX='' english_only 2>&1) || {
+    echo "found a file only the commit's index holds without being given that index: $out"
+    return 1
+  }
+  if out=$(cd "$tmp/repo" && THIS_INDEX=$tmp/commit-index english_only 2>&1); then
+    echo "missed a Spanish file staged in the commit's index"
+    return 1
+  fi
   mkdir "$tmp/bin"
   printf '#!/bin/sh\necho "fatal: grep broke" >&2\nexit 128\n' > "$tmp/bin/git"
   chmod +x "$tmp/bin/git"
   if out=$(cd "$tmp/repo" && THIS_INDEX='' PATH="$tmp/bin:$PATH" english_only 2>&1); then
-    echo "a git grep that exited 128 read as a clean tree"
+    echo "a search that exited 128 read as a clean tree"
     return 1
   fi
 }
-check "english only finds Spanish whatever the locale, and fails when git grep fails" english_only_contract
+check "english only finds Spanish whatever the locale, reads the commit's index, and fails when its grep fails" english_only_contract
 
 # ── Statusline behaviour ─────────────────────────────────────────────────────
 # These are pure functions from a JSON payload to a line of text, which makes
@@ -2989,13 +3005,12 @@ hook_git_env_dropped() {
     return 1
   fi
   # Every other call about this repository goes through this_repo_git too:
-  # no `git ls-files` or `git grep` where a command starts -- the line's
-  # start, after `!`, `;`, `&`, `|`, `(`, `$(` or `<(`, or after variable
-  # assignments -- except the `git -C` calls about throwaway repositories.
-  # Command position, not anywhere on the line: a check's title that names
-  # git grep is not a call.
-  out=$(grep -nE '(^|[!;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git (ls-files|grep)' check.sh |
-    grep -vE '^[0-9]+:[[:space:]]*#' || true)
+  # no bare `git ls-files` or `git grep` outside a comment or a `git -C`.
+  # Matched anywhere on a line on purpose. A pattern for where a command
+  # starts was tried and missed `if git grep`, `while`, `{` and backticks --
+  # a silent miss; anywhere-on-the-line can only err loudly, on prose such as
+  # a check's title, which then names the thing another way.
+  out=$(grep -nE '^[^#]*(^|[^_-])git (ls-files|grep)' check.sh | grep -v -- 'git -C' || true)
   [ -z "$out" ] || {
     echo "a call about this repository bypasses this_repo_git:"
     echo "$out"
