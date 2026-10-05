@@ -31,6 +31,24 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
+# git hands a hook GIT_INDEX_FILE and, run from a linked worktree, GIT_DIR as
+# well, both absolute (measured with git 2.55: a pre-commit hook that printed
+# its environment, from the main checkout and from `git worktree add`). Most
+# checks build throwaway repositories, and an inherited GIT_DIR sends their git
+# calls to this one: committed from a worktree, the sdd-init check committed
+# into the branch being committed and its `git init` set core.bare in this
+# repository's config. So none of these reach the checks. The index is kept in
+# THIS_INDEX for the two calls about this repository, which must read what is
+# being committed (this_repo_git).
+drop_hook_git_env() {
+  THIS_INDEX=${GIT_INDEX_FILE:-}
+  unset GIT_INDEX_FILE GIT_DIR GIT_WORK_TREE GIT_PREFIX
+}
+drop_hook_git_env
+this_repo_git() {
+  if [ -n "$THIS_INDEX" ]; then GIT_INDEX_FILE=$THIS_INDEX git "$@"; else git "$@"; fi
+}
+
 # Every CI system sets CI, so the strict path needs no wiring in the workflow
 # and cannot be forgotten there. --strict reproduces it locally, which is the
 # only way to test this behaviour without pushing.
@@ -152,7 +170,7 @@ exec_bits() {
         fi
         ;;
     esac
-  done < <(git ls-files -s)
+  done < <(this_repo_git ls-files -s)
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits
@@ -441,7 +459,7 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # schema to satisfy the rule would break that comparison and the validation
 # both, to police text nobody here wrote.
 english_only() {
-  ! git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
+  ! this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
 }
 check "english only" english_only
 
@@ -2722,9 +2740,11 @@ GUARD=$PWD/claude/git-guard.sh
 # tree reads as dirty and the guard blocks. Plain `git commit` passes a
 # relative `.git/index`, which resolves inside the temp directory by accident
 # -- every commit here since the guard tests landed was a plain one, and the
-# first `-a` was refused. GIT_DIR and GIT_WORK_TREE are not exported by git
-# (measured with a hook that printed its environment); they are cleared for
-# the shell that might. The checks must mean the same thing run by hand, by
+# first `-a` was refused. From the main checkout git exports neither GIT_DIR
+# nor GIT_WORK_TREE; from a linked worktree it exports GIT_DIR (both measured
+# with a hook that printed its environment). drop_hook_git_env clears all of
+# them for the whole script; this clears them again at each call, for the
+# check below that sets one at the call. The checks must mean the same thing run by hand, by
 # the hook and in CI, so every git call that is about the throwaway
 # repository goes through here -- and only those: `git ls-files` and `git
 # grep` above are about this repository and must read the index the commit
@@ -2809,8 +2829,8 @@ check "reset --hard is blocked when it would discard work" guard_reset_dirty_tre
 
 # The same verdict with the `git commit -a` hook environment in place: an
 # absolute GIT_INDEX_FILE set at the call, which is what the hook does to this
-# whole script. Only that variable -- git does not export GIT_DIR to a hook,
-# measured with a hook that printed its environment -- and the index belongs
+# whole script. Only that variable -- the GIT_DIR a linked worktree's hook also
+# gets is covered by hook_git_env_dropped below -- and the index belongs
 # to a decoy repository built here, never to this one. The first version of
 # this check set GIT_DIR to this repository's own .git, and while it was red
 # the fixture's `commit --allow-empty -m init` landed three empty commits on
@@ -2847,6 +2867,50 @@ guard_tests_under_hook() {
   }
 }
 check "the guard tests ignore the git environment a hook exports" guard_tests_under_hook
+
+# The variables git hands a hook from a linked worktree -- GIT_DIR and an
+# absolute GIT_INDEX_FILE -- pointed at a decoy repository's worktree, then a
+# throwaway repository built and committed to, as the sdd-init and sdd-gate
+# checks do. After drop_hook_git_env the decoy must be untouched and the
+# index kept for the calls about this repository. Never this repository: a
+# check that mutates what it checks when it fails is worse than none.
+hook_git_env_dropped() {
+  local tmp wt before after
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  git init -q "$tmp/decoy"
+  git -C "$tmp/decoy" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+  git -C "$tmp/decoy" worktree add -q "$tmp/wt" 2> /dev/null
+  wt=$(git -C "$tmp/wt" rev-parse --absolute-git-dir)
+  # A file, not process substitution: macOS's bash 3.2 cannot source the latter.
+  sed -n '/^drop_hook_git_env() {/,/^}/p' check.sh > "$tmp/drop.sh"
+  before=$(cd "$tmp/decoy" && git config --list --local && git for-each-ref && cksum < "$wt/index")
+  out=$(GIT_DIR=$wt GIT_INDEX_FILE=$wt/index bash -c '
+    . "'"$tmp"'/drop.sh"
+    drop_hook_git_env
+    [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
+    git init -q "'"$tmp"'/throwaway"
+    echo x > "'"$tmp"'/throwaway/f"
+    git -C "'"$tmp"'/throwaway" add f
+    git -C "'"$tmp"'/throwaway" -c user.name=t -c user.email=t@t commit -q -m x
+  ' 2>&1)
+  after=$(cd "$tmp/decoy" && git config --list --local && git for-each-ref && cksum < "$wt/index")
+  [ -z "$out" ] || {
+    echo "$out"
+    return 1
+  }
+  [ "$before" = "$after" ] || {
+    echo "a throwaway repository's git calls reached the decoy:"
+    diff <(echo "$before") <(echo "$after")
+    return 1
+  }
+  # The function is only half of it: this script has to run it, at top level.
+  grep -qx 'drop_hook_git_env' check.sh || {
+    echo "check.sh never calls drop_hook_git_env"
+    return 1
+  }
+}
+check "checks that build throwaway repositories ignore a linked worktree hook's git environment" hook_git_env_dropped
 
 # A guard that is not wired runs never, and because it fails open that costs
 # nothing visible: no error, no warning, just no guard. The tests above prove
