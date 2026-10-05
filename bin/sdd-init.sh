@@ -15,7 +15,7 @@
 # --from <newer tag's zip>`. The URL below is the version new repos get.
 set -euo pipefail
 
-PRESET_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.2.0.zip
+PRESET_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.2.1.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
   echo "sdd-init: not inside a git repository" >&2
