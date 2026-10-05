@@ -3322,8 +3322,9 @@ FAKE
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 
 # sdd-gate against a fake suite whose verdict a file sets and which logs each
-# run with its arguments. Under test: what the script refuses, what lands in
-# its commit, and what the Stop hook it writes does on each kind of stop.
+# run with its arguments. Under test: what the script refuses, that a refused
+# or failed run leaves nothing behind, what lands in its commit, and what the
+# Stop hook it writes does on each kind of stop.
 sdd_gate() {
   local tmp repo out
   tmp=$(mktemp -d) || return 1
@@ -3337,19 +3338,32 @@ echo "suite says \$(cat "$tmp/verdict")"
 FAKE
   chmod +x "$tmp/bin/suite"
   ln -s "$PWD/bin/sdd-gate.sh" "$tmp/sdd-gate"
+  # A repository with a committed settings.json, or with no .claude/ at all.
   fresh() {
     repo="$tmp/repo-$1"
     git init -q "$repo"
-    mkdir -p "$repo/.claude"
-    echo '{"permissions": {"deny": ["Read(./.env)"]}}' > "$repo/.claude/settings.json"
-    git -C "$repo" add .claude/settings.json
-    git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m root
+    if [ "${2:-}" != bare ]; then
+      mkdir -p "$repo/.claude"
+      echo '{"permissions": {"deny": ["Read(./.env)"]}}' > "$repo/.claude/settings.json"
+      git -C "$repo" add .claude/settings.json
+    fi
+    git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
     echo green > "$tmp/verdict"
     : > "$tmp/runs"
   }
   run() {
     (cd "$repo" && GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t \
       GIT_COMMITTER_EMAIL=t@t ../sdd-gate "$tmp/bin/suite" "two words" 2>&1)
+  }
+  # A refused or failed run must leave the repository exactly as it was.
+  untouched() {
+    [ -z "$(git -C "$repo" status --porcelain --ignored)" ] &&
+      [ "$(cd "$repo" && find .claude -print 2> /dev/null | sort | tr '\n' ' ')" = "$1" ] || {
+      echo "$2 left something behind:"
+      git -C "$repo" status --porcelain --ignored
+      (cd "$repo" && find .claude -print 2> /dev/null)
+      return 1
+    }
   }
   # The hook as Claude Code calls it: event JSON on stdin, project dir in env.
   stop() {
@@ -3363,10 +3377,7 @@ FAKE
     echo "gated a red suite: $out"
     return 1
   fi
-  [ ! -e "$repo/.claude/hooks/stop-gate.sh" ] || {
-    echo "wrote the hook over a red suite"
-    return 1
-  }
+  untouched ".claude .claude/settings.json " "refusing a red suite" || return 1
 
   # The happy path: one commit with the hook and the settings, keeping what
   # the settings already held, and the command's arguments intact.
@@ -3400,14 +3411,8 @@ FAKE
     echo "the suite did not run once with its arguments: $(cat "$tmp/runs")"
     return 1
   }
-  # Nothing changed since that green run: the suite is not run again.
-  out=$(stop false) || return 1
-  [ "$(wc -l < "$tmp/runs")" -eq 1 ] || {
-    echo "re-ran the suite on an unchanged tree"
-    return 1
-  }
-  # A new untracked file and a red suite: blocked, with the suite's output.
-  echo change > "$repo/new.txt"
+  # Red: blocked, with the suite's output, even though nothing in the tree
+  # changed since the green run. Every stop runs the suite.
   echo red > "$tmp/verdict"
   if out=$(stop false); then
     echo "let a red stop through: $out"
@@ -3415,11 +3420,6 @@ FAKE
   fi
   echo "$out" | grep -q "suite says red" || {
     echo "the block does not show the suite's output: $out"
-    return 1
-  }
-  # Fingerprinting the tree goes through a scratch index, never the real one.
-  [ -z "$(git -C "$repo" diff --cached --name-only)" ] || {
-    echo "the hook staged files in the real index: $(git -C "$repo" diff --cached --name-only)"
     return 1
   }
   # The second stop of the same turn goes through without running anything:
@@ -3433,38 +3433,6 @@ FAKE
     echo "ran the suite on the second stop of a turn"
     return 1
   }
-  # The next turn, nothing changed and the suite still red: blocked again. Only
-  # a green run may write the stamp that lets an unchanged tree through.
-  if out=$(stop false); then
-    echo "let an unchanged red tree through on the next turn: $out"
-    return 1
-  fi
-
-  # The fingerprint cannot see inside a submodule or past a skip-worktree
-  # entry, so with either in the repository every stop runs the suite.
-  echo green > "$tmp/verdict"
-  stop false > /dev/null || return 1
-  git -C "$repo" update-index --skip-worktree .claude/settings.json
-  echo ' ' >> "$repo/.claude/settings.json"
-  echo red > "$tmp/verdict"
-  if out=$(stop false); then
-    echo "a skip-worktree edit let a red suite through: $out"
-    return 1
-  fi
-  git -C "$repo" update-index --no-skip-worktree .claude/settings.json
-  git -C "$repo" checkout -q -- .claude/settings.json
-  git init -q "$tmp/sub"
-  git -C "$tmp/sub" -c user.name=t -c user.email=t@t commit -q --allow-empty -m sub
-  git -C "$repo" -c protocol.file.allow=always submodule add -q "$tmp/sub" lib 2> /dev/null
-  git -C "$repo" -c user.name=t -c user.email=t@t commit -q -m "add lib"
-  echo green > "$tmp/verdict"
-  stop false > /dev/null || return 1
-  echo dirty > "$repo/lib/inside.txt"
-  echo red > "$tmp/verdict"
-  if out=$(stop false); then
-    echo "an edit inside a submodule let a red suite through: $out"
-    return 1
-  fi
 
   # A second run would add a second hook. Green, so only that can refuse it.
   echo green > "$tmp/verdict"
@@ -3472,8 +3440,21 @@ FAKE
     echo "ran again over an existing gate: $out"
     return 1
   fi
+  # So would writing through a dangling symlink where the hook goes.
+  fresh symlink
+  mkdir -p "$repo/.claude/hooks"
+  ln -s "$tmp/elsewhere" "$repo/.claude/hooks/stop-gate.sh"
+  if out=$(run); then
+    echo "wrote the hook through a dangling symlink: $out"
+    return 1
+  fi
+  [ ! -e "$tmp/elsewhere" ] || {
+    echo "wrote through the symlink before refusing"
+    return 1
+  }
 
-  # Something already staged would ride along in the commit.
+  # Anything uncommitted would ride along in the commit: staged work, an
+  # unstaged or untracked settings.json, or one git is told not to look at.
   fresh staged
   echo x > "$repo/notes.txt"
   git -C "$repo" add notes.txt
@@ -3481,17 +3462,28 @@ FAKE
     echo "accepted a repo with staged changes: $out"
     return 1
   fi
-
-  # An unstaged edit to settings.json would ride into the gate's commit.
   fresh unstaged
   echo '{"permissions": {"allow": ["Bash(curl:*)"]}}' > "$repo/.claude/settings.json"
   if out=$(run); then
     echo "committed an unstaged settings.json edit: $out"
     return 1
   fi
+  fresh untracked bare
+  mkdir -p "$repo/.claude"
+  echo '{"permissions": {"allow": ["Bash(curl:*)"]}}' > "$repo/.claude/settings.json"
+  if out=$(run); then
+    echo "committed an untracked settings.json: $out"
+    return 1
+  fi
+  fresh flagged
+  git -C "$repo" update-index --assume-unchanged .claude/settings.json
+  if out=$(run); then
+    echo "accepted an assume-unchanged settings.json: $out"
+    return 1
+  fi
 
-  # A failure after the checks leaves nothing behind, so fixing the cause and
-  # running again works.
+  # A settings.json it cannot read stops it before anything is written, and
+  # once fixed a re-run works.
   fresh broken
   echo '{not json' > "$repo/.claude/settings.json"
   git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "break settings"
@@ -3499,16 +3491,15 @@ FAKE
     echo "accepted an invalid settings.json: $out"
     return 1
   fi
-  [ -z "$(git -C "$repo" status --porcelain)" ] || {
-    echo "a refused run left files behind: $(git -C "$repo" status --porcelain)"
-    return 1
-  }
+  untouched ".claude .claude/settings.json " "refusing an invalid settings.json" || return 1
   echo '{}' > "$repo/.claude/settings.json"
   git -C "$repo" -c user.name=t -c user.email=t@t commit -q -am "fix settings"
   out=$(run) || {
     echo "refused a re-run after the cause was fixed: $out"
     return 1
   }
+
+  # An ignored .claude/ is refused up front, for that reason.
   fresh ignored
   echo .claude/ > "$repo/.gitignore"
   git -C "$repo" add .gitignore
@@ -3521,12 +3512,25 @@ FAKE
     echo "refused an ignored .claude/ for another reason: $out"
     return 1
   }
-  [ -z "$(git -C "$repo" status --porcelain --ignored -- .claude/hooks)" ] || {
-    echo "a refused run left the hook behind"
+
+  # A failure at the commit itself puts everything back, directories it made
+  # included, and a re-run then works.
+  fresh rollback bare
+  mkdir -p "$repo/.git/hooks"
+  printf '#!/bin/sh\nexit 1\n' > "$repo/.git/hooks/pre-commit"
+  chmod +x "$repo/.git/hooks/pre-commit"
+  if out=$(run); then
+    echo "reported success when the commit was refused: $out"
+    return 1
+  fi
+  untouched "" "a refused commit" || return 1
+  rm "$repo/.git/hooks/pre-commit"
+  out=$(run) || {
+    echo "refused a re-run after a failed commit: $out"
     return 1
   }
 }
-check "sdd-gate refuses a red suite, staged work and a second run; its hook blocks a red stop once and skips an unchanged tree" sdd_gate
+check "sdd-gate refuses a red suite and anything uncommitted, leaves nothing behind when it stops, and its hook blocks a red stop once" sdd_gate
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

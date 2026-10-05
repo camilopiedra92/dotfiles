@@ -6,6 +6,9 @@
 # Usage:  sdd-gate <test command> [args...]     from the repository root,
 #         e.g. sdd-gate uv run pytest -q        once the project has a suite
 #
+# The suite runs at every stop, so the command should be one that is quick to
+# run every turn; a slow suite gets a fast subset here and stays whole in CI.
+#
 # Why a hook: test-first otherwise rests on instructions and on the per-story
 # review, and the Claude Code docs say an unattended run needs a deterministic
 # gate (code.claude.com/docs/en/best-practices, "Give Claude a way to verify
@@ -18,6 +21,11 @@
 # arXiv 2510.20270); with one, a test that cannot pass honestly gets reported.
 # The hook is written into the repository rather than pointing here, so every
 # clone, on any machine, runs the same gate.
+#
+# It runs the suite every time rather than skipping an unchanged tree. A skip
+# was tried and taken out: two independent reviews found a red suite let
+# through by edits it could not see (submodules, nested repositories,
+# skip-worktree entries), and each fix found another.
 set -euo pipefail
 
 [ "$#" -gt 0 ] || {
@@ -34,7 +42,9 @@ if [ "$top" != "$(pwd -P)" ]; then
 fi
 hook=.claude/hooks/stop-gate.sh
 settings=.claude/settings.json
-if [ -e "$hook" ]; then
+# -L as well: a dangling symlink is not -e, and writing through it would land
+# the hook wherever it points.
+if [ -e "$hook" ] || [ -L "$hook" ]; then
   echo "sdd-gate: $hook already exists; edit its TEST_COMMAND to change the command" >&2
   exit 1
 fi
@@ -43,9 +53,15 @@ if ! git diff --cached --quiet; then
   exit 1
 fi
 # The commit takes settings.json whole, so anything uncommitted in it would
-# ride along under this commit's message.
+# ride along under this commit's message. A skip-worktree or assume-unchanged
+# entry hides such changes from git diff and keeps the new file out of the
+# commit, so it is refused too.
 if [ -e "$settings" ] && ! git ls-files --error-unmatch "$settings" > /dev/null 2>&1; then
   echo "sdd-gate: $settings is not committed; commit or remove it first" >&2
+  exit 1
+fi
+if git ls-files -v -- "$settings" | grep -qE '^([a-z]|S) '; then
+  echo "sdd-gate: $settings is marked skip-worktree or assume-unchanged; clear that first" >&2
   exit 1
 fi
 if ! git diff --quiet -- "$settings"; then
@@ -80,18 +96,24 @@ fi
 
 # From here on a failure (a held index lock, a commit hook that refuses) puts
 # the repository back as it was, so the next run is not refused by a hook file
-# this one left behind.
+# this one left behind. Only directories this run created are removed, deepest
+# first.
 committed=0
+made_dirs=()
+for d in .claude .claude/hooks; do
+  [ -d "$d" ] || made_dirs=("$d" "${made_dirs[@]+"${made_dirs[@]}"}")
+done
 undo() {
+  local d
   [ "$committed" -eq 1 ] && return
   git reset -q -- "$hook" "$settings" 2> /dev/null || true
   rm -f "$hook"
-  rmdir .claude/hooks 2> /dev/null || true
   if git ls-files --error-unmatch "$settings" > /dev/null 2>&1; then
     git checkout -q -- "$settings"
   else
     rm -f "$settings"
   fi
+  for d in "${made_dirs[@]+"${made_dirs[@]}"}"; do rmdir "$d" 2> /dev/null || true; done
 }
 trap undo EXIT
 
@@ -112,32 +134,7 @@ EOF
 
 cd "${CLAUDE_PROJECT_DIR:?}" || exit 0
 grep -Eq '"stop_hook_active"[[:space:]]*:[[:space:]]*true' && exit 0
-
-# The tree as `git add -A` would see it, untracked files included, written
-# through a scratch index. When it matches the last green run there is nothing
-# new to test. It cannot see an ignored file, inside a submodule (only the
-# submodule's commit), or past a skip-worktree or assume-unchanged entry: a
-# change only to an ignored file does not re-run the suite, and a repository
-# with either of the others is never skipped.
-gitdir=$(git rev-parse --absolute-git-dir 2> /dev/null) || gitdir=
-tree=
-if [ -n "$gitdir" ] && [ -z "$(git ls-files -s | awk '$1 == 160000')" ] &&
-  ! git ls-files -v | grep -qE '^([a-z]|S) '; then
-  index=$(mktemp)
-  trap 'rm -f "$index"' EXIT
-  cp "$gitdir/index" "$index" 2> /dev/null || rm -f "$index"
-  tree=$(GIT_INDEX_FILE=$index git add -A 2> /dev/null &&
-    GIT_INDEX_FILE=$index git write-tree 2> /dev/null) || tree=
-fi
-stamp=$gitdir/stop-gate-green
-if [ -n "$tree" ] && [ "$(cat "$stamp" 2> /dev/null)" = "$tree" ]; then
-  exit 0
-fi
-
-if out=$("${TEST_COMMAND[@]}" 2>&1); then
-  [ -z "$tree" ] || printf '%s\n' "$tree" > "$stamp"
-  exit 0
-fi
+out=$("${TEST_COMMAND[@]}" 2>&1) && exit 0
 {
   echo "Stop gate: the test suite is red (${TEST_COMMAND[*]})."
   printf '%s\n' "$out" | tail -n 40
