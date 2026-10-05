@@ -463,10 +463,85 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # the pattern above is, since writing it here would trip this check. Editing the
 # schema to satisfy the rule would break that comparison and the validation
 # both, to police text nobody here wrote.
+#
+# The locale is set here because the pattern needs it: PCRE accepts code points
+# above U+00FF only in UTF mode, which git turns on only under a UTF-8 locale.
+# Under C the pattern is an error (measured, git 2.55: "character code point
+# value in \x{} or \o{} is too large", exit 128), and a run without LANG --
+# `env -i` -- is under C. C.UTF-8 rather than a language's locale, because the
+# check is about bytes, not a language's rules. git grep's exit codes are kept
+# apart: 0 found, 1 none, anything else an error. A leading `!` read the error
+# as "none", so a Spanish file passed whenever the locale was not UTF-8.
 english_only() {
-  ! this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' 2> /dev/null
+  local rc=0
+  LC_ALL=C.UTF-8 this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' || rc=$?
+  case "$rc" in
+    0) return 1 ;;
+    1) return 0 ;;
+    *)
+      echo "the search exited $rc"
+      return 1
+      ;;
+  esac
 }
 check "english only" english_only
+
+# english_only against scratch repositories, under a locale without UTF-8 and
+# one with it: a clean tree passes, a tree with Spanish in it fails naming the
+# line, and a git grep that errors fails instead of reading as a clean tree.
+# THIS_INDEX is emptied so this_repo_git reads each scratch repository's own
+# index, not the one of a commit in progress.
+english_only_contract() {
+  local tmp out loc
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  git init -q "$tmp/repo"
+  echo plain > "$tmp/repo/clean.txt"
+  git -C "$tmp/repo" add clean.txt
+  for loc in C C.UTF-8; do
+    out=$(cd "$tmp/repo" && THIS_INDEX='' LC_ALL=$loc english_only 2>&1) || {
+      echo "a clean tree failed under LC_ALL=$loc: $out"
+      return 1
+    }
+  done
+  # The bytes of a Spanish word, written as escapes so this file stays English.
+  printf 'a\xc3\xb1o\n' > "$tmp/repo/spanish.txt"
+  git -C "$tmp/repo" add spanish.txt
+  for loc in C C.UTF-8; do
+    if out=$(cd "$tmp/repo" && THIS_INDEX='' LC_ALL=$loc english_only 2>&1); then
+      echo "missed spanish.txt under LC_ALL=$loc"
+      return 1
+    fi
+    echo "$out" | grep -q '^spanish.txt:1:' || {
+      echo "under LC_ALL=$loc it failed without naming the line: $out"
+      return 1
+    }
+  done
+  # The commit's index, not the default one: a Spanish file staged only in an
+  # index of its own, as `git commit -a` or `git commit <paths>` hands one
+  # to the hook, is found through THIS_INDEX and not without it.
+  printf 'a\xc3\xb1o\n' > "$tmp/repo/staged-only.txt"
+  git -C "$tmp/repo" rm -q --cached spanish.txt
+  rm "$tmp/repo/spanish.txt"
+  cp "$tmp/repo/.git/index" "$tmp/commit-index"
+  GIT_INDEX_FILE=$tmp/commit-index git -C "$tmp/repo" add staged-only.txt
+  out=$(cd "$tmp/repo" && THIS_INDEX='' english_only 2>&1) || {
+    echo "found a file only the commit's index holds without being given that index: $out"
+    return 1
+  }
+  if out=$(cd "$tmp/repo" && THIS_INDEX=$tmp/commit-index english_only 2>&1); then
+    echo "missed a Spanish file staged in the commit's index"
+    return 1
+  fi
+  mkdir "$tmp/bin"
+  printf '#!/bin/sh\necho "fatal: grep broke" >&2\nexit 128\n' > "$tmp/bin/git"
+  chmod +x "$tmp/bin/git"
+  if out=$(cd "$tmp/repo" && THIS_INDEX='' PATH="$tmp/bin:$PATH" english_only 2>&1); then
+    echo "a search that exited 128 read as a clean tree"
+    return 1
+  fi
+}
+check "english only finds Spanish whatever the locale, reads the commit's index, and fails when its grep fails" english_only_contract
 
 # ── Statusline behaviour ─────────────────────────────────────────────────────
 # These are pure functions from a JSON payload to a line of text, which makes
@@ -2931,6 +3006,10 @@ hook_git_env_dropped() {
   fi
   # Every other call about this repository goes through this_repo_git too:
   # no bare `git ls-files` or `git grep` outside a comment or a `git -C`.
+  # Matched anywhere on a line on purpose. A pattern for where a command
+  # starts was tried and missed `if git grep`, `while`, `{` and backticks --
+  # a silent miss; anywhere-on-the-line can only err loudly, on prose such as
+  # a check's title, which then names the thing another way.
   out=$(grep -nE '^[^#]*(^|[^_-])git (ls-files|grep)' check.sh | grep -v -- 'git -C' || true)
   [ -z "$out" ] || {
     echo "a call about this repository bypasses this_repo_git:"
