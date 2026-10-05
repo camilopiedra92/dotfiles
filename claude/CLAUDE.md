@@ -67,6 +67,28 @@ Do not create files that are not needed. No READMEs, summaries or
 for what they hold, not for the tool that wrote them: tools get replaced and the
 name outlives them.
 
+## Spec-driven development
+
+Feature-sized work goes through Spec Kit: new behaviour with a real design
+choice, or a changed interface. Small or exploratory work does not. The CLI is
+pinned in `~/dotfiles/uv-tools.txt`; the rest lives in each repo.
+
+A project without `.specify/` gets it at its first feature, in its own commit:
+`specify init --here --force --integration claude`. Without a TTY, init refuses
+any non-empty directory unless `--force`, and without `--integration` it
+scaffolds for Copilot (both seen on 1.1.0, 2026-10-05). Commit `.specify/` and
+`.claude/skills/`, whatever init's closing advice says about `.claude/`.
+
+Then `/speckit-constitution`, carrying test-first over from these rules. The
+tasks skill writes test tasks only on request, so check `tasks.md` has them;
+the plan's Constitution Check and `/speckit-analyze` are what read the
+constitution against the work, not the workflow's approval gates.
+
+`superpowers:brainstorming` decides what to build, in chat, and on every path
+hands off to `/speckit-specify`: no design doc, no `writing-plans`, no direct
+implementation. Then clarify, plan, tasks, analyze, implement.
+`specs/<n>-<slug>/spec.md` is the source of truth.
+
 ## Toolchain
 
 Respect the toolchain each project already uses: the package manager the
