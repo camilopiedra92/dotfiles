@@ -28,10 +28,19 @@ additional ones, any other edited here):
 Show it as one short table per repo. Say plainly when a command could not
 run (no remote, no gh auth).
 
+Then what this session started outside git: every background shell or agent
+still running, and any process it left behind (`pgrep -fl` on a distinctive,
+fixed part of its command: the pattern is a regex),
+one line each with what it does and what happens if it keeps running. They
+can outlive the session: two shells were still running after /exit on
+2026-10-06.
+
 ## 2. What is left
 
 From this session's work: unfinished tasks, a red suite, review findings
-not applied, TODOs added, temporary files or branches created for it.
+not applied, TODOs added, temporary files or branches created for it,
+background work still running, each with the user's choice to make: let it
+finish, stop it, or stop it and take over its command.
 Mark what can be closed inside what was agreed, to close in step 4. List
 the rest, each with why it is open and what it needs: a decision from the
 user, or a next session.
@@ -58,6 +67,13 @@ Nothing the repo or git history already records. If there is nothing, say
 so; an empty list is a valid result.
 
 ## 4. Apply, on the user's go
+
+Each background task still running gets the choice the user made in step 2:
+it finishes on its own, it is stopped, or it is stopped and its command is
+handed over for a terminal of their own, so no two copies run. A merge
+waiting on CI follows the global merge rule: `gh pr merge --auto` where a
+ruleset requires the checks, `merge-on-green <n>` where none can. Nothing
+keeps running after the session without the user knowing.
 
 Close the loose ends marked in step 2 and write the agreed learnings.
 Commit and push following each repo's own rules and the global ones: a
