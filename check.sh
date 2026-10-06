@@ -668,6 +668,24 @@ install_is_idempotent() {
   # only ever prove the mode of a directory the step created itself.
   mkdir -p "$tmp/home"
   mkdir -m 755 "$tmp/home/.ssh"
+  # Two dangling links: one left by a skill since deleted from the repo, one
+  # another tool put there. Install must drop the first and keep the second.
+  # The other tool's directory exists and only its skill is gone, so the link
+  # is kept by the path comparison, not by a directory that cannot be entered.
+  mkdir -p "$tmp/home/.claude/skills" "$tmp/elsewhere"
+  ln -s "$tmp/dotfiles/claude/skills/deleted" "$tmp/home/.claude/skills/deleted"
+  ln -s "$tmp/elsewhere/theirs" "$tmp/home/.claude/skills/theirs"
+  # And one into a directory a tool has since uninstalled: its parent cannot
+  # be entered, which must neither stop install nor drop the link.
+  ln -s "$tmp/uninstalled/x" "$tmp/home/.claude/skills/orphan"
+  # The same deleted-skill case, made through a symlinked alias of the repo.
+  ln -s "$tmp/dotfiles" "$tmp/alias"
+  ln -s "$tmp/alias/claude/skills/gone" "$tmp/home/.claude/skills/gone"
+  # A real directory where a skill link goes. Its backup must land outside
+  # ~/.claude/skills, where Claude Code would load it as one more skill.
+  mkdir -p "$tmp/home/.claude/skills/brainstorm"
+  echo old > "$tmp/home/.claude/skills/brainstorm/SKILL.md"
+  echo old > "$tmp/home/.claude/skills/diagnose"
   # The links point into a copy, not into this tree: a step that writes through
   # a link (ln -s without -n onto a linked directory) would otherwise write
   # into the repository being checked.
@@ -732,8 +750,41 @@ install_is_idempotent() {
   # A skill is a directory, and ln -s onto a link that already points at one
   # descends into it unless -n is given: the second run would then leave a
   # stray brainstorm/brainstorm link inside the repo instead of failing.
-  [ -f "$tmp/home/.claude/skills/brainstorm/SKILL.md" ] || {
-    echo "the brainstorm skill is not reachable under ~/.claude/skills"
+  local skill
+  for skill in "$tmp"/dotfiles/claude/skills/*/; do
+    skill=$(basename "$skill")
+    [ -f "$tmp/home/.claude/skills/$skill/SKILL.md" ] || {
+      echo "the $skill skill is not reachable under ~/.claude/skills"
+      return 1
+    }
+  done
+  [ ! -L "$tmp/home/.claude/skills/deleted" ] || {
+    echo "a link to a skill no longer in the repo was kept"
+    return 1
+  }
+  [ -L "$tmp/home/.claude/skills/theirs" ] || {
+    echo "a skill link another tool owns was removed"
+    return 1
+  }
+  [ ! -L "$tmp/home/.claude/skills/gone" ] || {
+    echo "a link to a deleted skill made through an alias of the repo was kept"
+    return 1
+  }
+  [ -L "$tmp/home/.claude/skills/orphan" ] || {
+    echo "a link into an uninstalled tool's directory was removed"
+    return 1
+  }
+  # find, not a glob, so a hidden backup counts as inside too.
+  if find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*' | grep -q .; then
+    echo "something in the way was backed up inside ~/.claude/skills"
+    return 1
+  fi
+  ls "$tmp"/home/.claude/skills.backup.*/brainstorm/SKILL.md > /dev/null 2>&1 || {
+    echo "the directory in the way was not backed up"
+    return 1
+  }
+  ls "$tmp"/home/.claude/skills.backup.*/diagnose > /dev/null 2>&1 || {
+    echo "the file in the way was not backed up"
     return 1
   }
   [ ! -e "$tmp/dotfiles/claude/skills/brainstorm/brainstorm" ] || {
