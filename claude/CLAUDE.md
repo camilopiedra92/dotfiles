@@ -50,6 +50,9 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   is built: what else was considered, and why it lost. Two lines in the commit
   message when the decision dies with the commit, a document only when it
   outlives it.
+- A per-case escape hatch — `# fmt: off`, a linter exclude, a `noqa`, a skipped
+  test — is a workaround until it is justified: first look for the design that
+  needs none, and write down why any that remains has to stay.
 - No fix before the root cause is understood. Read the whole error, reproduce
   it, and find where the bad value comes from rather than where it surfaced.
   One fix at a time, and a third failed fix is not a fourth hypothesis — it
