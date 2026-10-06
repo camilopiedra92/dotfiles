@@ -128,47 +128,47 @@ Setup and lifecycle:
 
 ## Toolchain
 
-- Respect the toolchain each project already uses: the package manager the
-  lockfile points to, the formatter and the linter that are configured. Do not
-  change them or add new config on your own initiative.
+- Respect the toolchain each project already uses: the package manager its
+  lockfile points to, the formatter, linter and type checker the project
+  configures. Do not change them or add new config on your own initiative.
 - In a new project there is nothing to respect yet, so start from this
-  machine's: runtimes come from mise and never from Homebrew; Python packages
-  and virtualenvs from uv (`uv add`, `uv venv`), never `pip install` into the
-  interpreter itself nor `python -m venv`. A project that needs a version other
-  than the global one gets its own `mise.toml` rather than a global change.
-  If a project needs a native library — the kind uv installs a wrapper for and
-  cannot provide, like the pango behind weasyprint — say so, because that
-  dependency is invisible to the lockfile and only surfaces at runtime.
-- A project I will come back to commits its lockfile — `uv.lock`,
-  `package-lock.json`, whatever its manager writes. Without one, the only
-  record of which versions worked is the environment itself, and an
-  environment stops answering the moment its interpreter goes: eight
-  virtualenvs here died that way on 2026-08-17, four of them with nothing
-  written down. Commit it for a library too — what a library publishes are the
-  constraints in its `pyproject.toml`, and the lock is so its own development
-  is reproducible; the two do not compete. A scratch script is not a project
-  and needs none of this.
-- For node it is pnpm, declared in `mise/config.toml` and never installed with
-  `npm i -g` — that directory is named after node's patch version and empties
-  on the next bump. pnpm resolves only what a package declares, which npm's
-  flat `node_modules` does not. Not yarn. Existing npm projects stay on npm;
-  respecting a project's toolchain outranks this.
-- Do not declare `packageManager` in `package.json` on this machine: corepack
-  is what reads that field, and node removed corepack from the distribution —
-  26 ships `node`, `npm` and `npx` and nothing else. The lockfile is what says
-  which manager a project uses, and it cannot be wrong about it, because the
-  manager is what wrote it.
-- The version file has to be one something actually reads. mise leaves
+  machine's: runtimes from mise, never Homebrew; Python packages and virtualenvs
+  from uv (`uv add`, `uv venv`), never `pip install` into the interpreter nor
+  `python -m venv`; a version other than the global one in the project's own
+  `mise.toml`, never a global change. Say so when a project needs a native
+  library uv installs the wrapper for but cannot provide (the pango behind
+  weasyprint): the lockfile cannot see it, and it only surfaces at runtime.
+- A project I will come back to commits its lockfile, whatever its manager
+  writes (`uv.lock`, `package-lock.json`), libraries included: they publish
+  their `pyproject.toml` constraints, the lock makes their own development
+  reproducible; the two do not compete. Without one, only the environment
+  records which versions worked, until its interpreter goes: eight virtualenvs
+  here died that way on 2026-08-17, four with nothing written down.
+- Such a Python, TypeScript or JavaScript project has a formatter, a linter and,
+  outside plain JS, a type checker: dev dependencies, config in the repo, one
+  command CI runs (else a pre-commit hook) and you run before calling work done.
+  Defaults, as in ~/Development: ruff and mypy via `uv add --dev`; prettier and
+  eslint, plus typescript-eslint and `tsc --noEmit` for TypeScript. New projects
+  get them at scaffold; a role an existing one lacks is offered once, as its own
+  change, not mid-task. Scratch scripts need none of this, nor a lockfile.
+- For node it is pnpm, declared in `mise/config.toml`, never `npm i -g` (that
+  directory is named after node's patch version and empties on the next bump).
+  pnpm resolves only what a package declares; npm's flat `node_modules` does
+  not. Not yarn. Existing npm projects stay on npm: a project's toolchain wins.
+- Do not declare `packageManager` in `package.json` on this machine: corepack is
+  what reads that field, and node removed corepack from the distribution — 26
+  ships `node`, `npm` and `npx` and nothing else. The lockfile says which
+  manager a project uses, and cannot be wrong about it: the manager wrote it.
+- The version file has to be one something reads. mise leaves
   `idiomatic_version_file_enable_tools` empty by default, so it reads neither
-  `.nvmrc` nor `.python-version`. For node that settles it: corepack is gone,
-  nothing else reads `.nvmrc`, and a project here asked for node 22 in one, ran
-  on 26 for months, and published from CI on 22. A declaration nothing honours
-  is worse than none, because with none you look.
-- `.python-version` is the exception and it matters: uv reads it, and it is
-  what decides the interpreter `uv venv` builds on. In a uv project that file
-  is the pin, and deleting it because mise ignores it would break the thing it
-  exists for. `mise.toml` is for a version something outside a venv has to
-  resolve — a node project, or a tool that runs before the venv exists.
+  `.nvmrc` nor `.python-version`, and with corepack gone nothing else reads
+  `.nvmrc`: a project here asked for node 22 in one, ran on 26 for months and
+  published from CI on 22. A declaration nothing honours is worse than none,
+  because with none you look: for node, no `.nvmrc`.
+- `.python-version` is the exception: uv reads it to pick the interpreter
+  `uv venv` builds on, so it is a uv project's pin, and deleting it because mise
+  ignores it breaks what it exists for. `mise.toml` is for a version resolved
+  outside a venv: a node project, or a tool that runs before the venv exists.
 
 ## Code
 
