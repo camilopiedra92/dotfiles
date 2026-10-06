@@ -3749,7 +3749,12 @@ repo_rules() {
   state=$tmp/state
   cat > "$tmp/bin/gh" << 'FAKE'
 #!/usr/bin/env bash
+# gh repo list ... (served from $STATE/repo_list.json), or
 # gh api [-X METHOD] PATH [--input FILE|-]
+if [ "$1" = repo ]; then
+  cat "$STATE/repo_list.json" 2> /dev/null || echo '[]'
+  exit 0
+fi
 shift
 method=GET input= path=
 while [ $# -gt 0 ]; do
@@ -3879,6 +3884,29 @@ FAKE
   rc=0 && out=$(run apply o/zz) || rc=$?
   [ "$rc" = 2 ] || {
     echo "apply on an undeclared repository exited $rc"
+    return 1
+  }
+
+  # A public repository under active work that the declaration leaves out is
+  # drift: the rule "every repository I keep working on joins" is checked,
+  # not remembered. Archived ones and ones untouched for 90 days are not.
+  fresh
+  jq -n --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '[
+    {nameWithOwner: "o/a", isArchived: false, pushedAt: $now},
+    {nameWithOwner: "o/new", isArchived: false, pushedAt: $now},
+    {nameWithOwner: "o/archived", isArchived: true, pushedAt: $now},
+    {nameWithOwner: "o/old", isArchived: false, pushedAt: "2020-01-01T00:00:00Z"}
+  ]' > "$state/repo_list.json"
+  echo '[{"id":7,"name":"protect default branch"}]' > "$state/repos_o_a_rulesets.json"
+  cp "$tmp/served" "$state/repos_o_a_rulesets_7.json"
+  rc=0 && out=$(run check) || rc=$?
+  if [ "$rc" != 1 ] || [ "$(grep -c 'not declared' <<< "$out")" != 1 ] ||
+    ! grep -q '^o/new: active public repository not declared' <<< "$out"; then
+    echo "check exited $rc; expected only o/new reported as undeclared: $out"
+    return 1
+  fi
+  out=$(run check o/a) || {
+    echo "check o/a looked beyond the repository named: $out"
     return 1
   }
 }
