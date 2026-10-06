@@ -668,14 +668,18 @@ install_is_idempotent() {
   # only ever prove the mode of a directory the step created itself.
   mkdir -p "$tmp/home"
   mkdir -m 755 "$tmp/home/.ssh"
-  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
-  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  # The links point into a copy, not into this tree: a step that writes through
+  # a link (ln -s without -n onto a linked directory) would otherwise write
+  # into the repository being checked.
+  rsync -a --exclude .git "$PWD/" "$tmp/dotfiles/" || return 1
+  HOME="$tmp/home" DOTFILES="$tmp/dotfiles" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  HOME="$tmp/home" DOTFILES="$tmp/dotfiles" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
 
   [ -L "$tmp/home/.config/zsh/.zshrc" ] || {
     echo ".zshrc was not symlinked"
     return 1
   }
-  [ "$(readlink "$tmp/home/.config/zsh/.zshrc")" = "$PWD/zsh/.zshrc" ] || {
+  [ "$(readlink "$tmp/home/.config/zsh/.zshrc")" = "$tmp/dotfiles/zsh/.zshrc" ] || {
     echo ".zshrc points elsewhere"
     return 1
   }
@@ -723,6 +727,17 @@ install_is_idempotent() {
   fi
   [ -L "$tmp/home/.claude/statusline.sh" ] || {
     echo "statusline was not symlinked"
+    return 1
+  }
+  # A skill is a directory, and ln -s onto a link that already points at one
+  # descends into it unless -n is given: the second run would then leave a
+  # stray brainstorm/brainstorm link inside the repo instead of failing.
+  [ -f "$tmp/home/.claude/skills/brainstorm/SKILL.md" ] || {
+    echo "the brainstorm skill is not reachable under ~/.claude/skills"
+    return 1
+  }
+  [ ! -e "$tmp/dotfiles/claude/skills/brainstorm/brainstorm" ] || {
+    echo "the second run linked the skill inside itself"
     return 1
   }
   # ssh checks the config file's own owner and mode, not the directory's; the
@@ -3073,8 +3088,10 @@ install_preserves_foreign_hooks() {
 }
 JSON
 
-  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
-  HOME="$tmp/home" DOTFILES="$PWD" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  # Into a copy, for the reason given in install_is_idempotent.
+  rsync -a --exclude .git "$PWD/" "$tmp/dotfiles/" || return 1
+  HOME="$tmp/home" DOTFILES="$tmp/dotfiles" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
+  HOME="$tmp/home" DOTFILES="$tmp/dotfiles" bash -euo pipefail "$steps" > /dev/null 2>&1 || return 1
 
   commands=$(jq -r '[.hooks.PreToolUse[]?.hooks[]?.command] | join(" ")' "$live")
   case "$commands" in
