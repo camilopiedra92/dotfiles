@@ -176,10 +176,11 @@ already says, drop it. The ones worth keeping explain a decision, an edge case,
 or something that would surprise the reader.
 
 Write tests for logic of its own: a branch, a computation, a parse, a state
-change. Not for getters, wrappers, wiring or one-line delegations — the same
-line the preset draws. Start from a list of the cases — in the conversation or
-the task list, not a new file — simplest first, and take them one at a time. A
-test you have not watched fail is not a test: write it first, run it, and check
+change. Not for getters, wrappers, wiring or one-line delegations. Where a
+project's constitution draws this line, its line applies there. Start from a
+list of the cases — in the conversation or the task list, not a new file —
+simplest first, and take them one at a time. A test you have not watched fail
+is not a test: write it first, run it, and check
 it failed for the reason you expected — an import or collection error proves the
 test was collected, not that it exercises anything. If the first run errors
 instead of failing, stub the thing under test until it fails from inside. Then
