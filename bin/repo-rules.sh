@@ -177,17 +177,19 @@ while read -r repo; do
 done <<< "$targets"
 
 if [ "$mode" = check ] && [ $# -eq 0 ]; then
-  if ! listed=$(gh repo list --visibility public --limit 1000 \
+  # --source leaves forks out: someone else's project, not one kept here.
+  if ! listed=$(gh repo list --visibility public --source --limit 1000 \
     --json nameWithOwner,isArchived,pushedAt); then
     echo "repo-rules: could not list the public repositories (gh's error is above)"
     exit 2
   fi
-  active=$(jq -r '.[] | select((.isArchived | not)
+  # A repository never pushed to has no pushedAt, and is not under work.
+  active=$(jq -r '.[] | select((.isArchived | not) and .pushedAt != null
     and (.pushedAt | fromdateiso8601) > (now - 90 * 86400)) | .nameWithOwner' <<< "$listed")
   while read -r repo; do
     [ -n "$repo" ] || continue
     grep -qxF "$repo" <<< "$declared" && continue
-    echo "$repo: active public repository not declared in github/repos.json"
+    echo "$repo: active public repository not declared in $declaration (add it there, then apply)"
     [ "$status" = 2 ] || status=1
   done <<< "$active"
 fi

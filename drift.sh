@@ -236,7 +236,7 @@ report "commits here are signed with a key GitHub knows" \
 # github/repos.json. A rule changed by hand on GitHub's site is drift like any
 # other; `repo-rules check` prints each difference. Needs the network.
 report "GitHub rulesets match github/repos.json" \
-  "repo-rules apply (it changes repository permissions: run it yourself)" \
+  "declare a missing repository in github/repos.json; then repo-rules apply (it changes repository permissions: run it yourself)" \
   "$(bin/repo-rules.sh check 2>&1 || true)"
 
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
