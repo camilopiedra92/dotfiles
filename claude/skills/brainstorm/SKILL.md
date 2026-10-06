@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: Shape an open idea into an agreed brief before anything is specified or built - intent questions one at a time, 2-3 approaches with a recommendation, then a hand-off to a direct change, a spike or /speckit-specify.
-when_to_use: The user brings a new feature, tool or project whose intent, scope or approach is still open ("I want to build...", "I have an idea for...", "how should we approach...", "let's think through..."), before /speckit-specify or before writing code. Not for bug fixes, for requests that already say what to build and how, or once the feature has a spec under specs/.
+when_to_use: The user brings a new feature, tool or project whose intent, scope or approach is still open ("I want to build...", "I have an idea for...", "how should we approach...", "let's think through..."), before /speckit-specify or before writing code. Not for bug fixes, for requests that already say what to build and how, inside a /speckit-* command the user started, or once the feature has a spec under specs/.
 argument-hint: "[the idea, in a sentence or two]"
 ---
 
@@ -63,7 +63,7 @@ found later moves the path up, never down.
 - **Spec Kit.** Two blocks, ready to run:
   - the `/speckit-specify` description: what and why only (users, outcome,
     success criteria, scope). No stack, no APIs, no structure:
-    `/speckit-specify`'s quality checklist rejects them.
+    `/speckit-specify`'s quality checklist flags and strips them.
   - the `/speckit-plan` guidance: the chosen approach, the alternatives and
     why each lost. The plan only has to consider its input, so once it has
     run, check that `research.md` records them.
