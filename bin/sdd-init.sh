@@ -16,7 +16,7 @@
 set -euo pipefail
 
 PRESET_TEST_FIRST_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.6.0.zip
-PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.1.0.zip
+PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.2.0.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
   echo "sdd-init: not inside a git repository" >&2
