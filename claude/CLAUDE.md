@@ -95,9 +95,10 @@ constitution-authoring presets. Then `/speckit-constitution`, whose preset
 decides what goes in for a new project and an existing one alike, and
 `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
 holds for direct changes too and not only inside the speckit skills. The
-test-first preset is what keeps each task to one behaviour with its test
-first, citing the requirement IDs it implements; `specify preset list` shows
-which presets a repo has.
+test-first preset is what keeps each task to one behaviour, citing the
+requirement IDs it implements, with a list of cases taken from the spec that
+implement turns into tests one at a time, each seen failing first; `specify
+preset list` shows which presets a repo has.
 
 The first time `/speckit-implement` sees the whole suite green, the test-first
 preset (v1.4.0 and later) commits a Stop hook: from then on a Claude turn that
