@@ -3664,16 +3664,17 @@ printf '%s\n' "$*" >> "$CALLS"
 case "$1 $2" in
   "pr view") echo "$HEAD_SHA" ;;
   "pr checks")
+    # Like gh: with no checks reported, the --watch call itself fails.
+    [ "$CHECKS_EXIT" = 0 ] || exit "$CHECKS_EXIT"
     case " $* " in
       *" --watch "*) exit "$WATCH_EXIT" ;;
     esac
-    [ "$CHECKS_EXIT" = 0 ] || exit "$CHECKS_EXIT"
     all="$*"
     expr=${all##*--jq }
     # Like gh's --jq: an empty result is success, error() is not.
     printf '%s' "$BUCKETS" | jq "$expr" > /dev/null 2>&1 || {
       echo "jq: not green" >&2
-      exit 5
+      exit 1
     }
     ;;
   "pr merge") exit 0 ;;
@@ -3698,9 +3699,29 @@ FAKE
     return 1
   }
 
+  # -R anywhere among the flags names the repository for every call, not
+  # only for the merge: run outside a checkout, the first call needs it.
+  : > "$tmp/calls"
+  PATH="$tmp/bin:$PATH" CALLS="$tmp/calls" HEAD_SHA=abc123 WATCH_EXIT=0 CHECKS_EXIT=0 \
+    BUCKETS='[{"bucket":"pass"}]' bin/merge-on-green.sh 7 -R o/r --rebase > /dev/null 2>&1 || {
+    echo "refused -R o/r"
+    return 1
+  }
+  if grep -v -- '-R o/r' "$tmp/calls" | grep -q .; then
+    echo "a call went out without -R o/r:"
+    cat "$tmp/calls"
+    return 1
+  fi
+  grep -qx 'pr merge 7 --match-head-commit abc123 -R o/r --rebase' "$tmp/calls" || {
+    echo "the merge lost a flag or doubled -R:"
+    cat "$tmp/calls"
+    return 1
+  }
+
   local case
   for case in "failed watch:WATCH_EXIT=1" "cancelled check:BUCKETS=[{\"bucket\":\"pass\"},{\"bucket\":\"cancel\"}]" \
-    "pending check:BUCKETS=[{\"bucket\":\"pending\"}]" "no checks reported:CHECKS_EXIT=1"; do
+    "pending check:BUCKETS=[{\"bucket\":\"pending\"}]" "no checks reported:CHECKS_EXIT=1" \
+    "every check skipped:BUCKETS=[{\"bucket\":\"skipping\"},{\"bucket\":\"skipping\"}]"; do
     if out=$(env "${case#*:}" bash -c "$(declare -f run); $(declare -p tmp); run"); then
       echo "${case%%:*}: exited 0: $out"
       return 1
@@ -3711,7 +3732,7 @@ FAKE
     }
   done
 }
-check "merge-on-green merges the pinned head only when every check passed or was skipped" merge_on_green
+check "merge-on-green merges the pinned head only when its checks passed (some may be skipped)" merge_on_green
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

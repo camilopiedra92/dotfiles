@@ -86,7 +86,9 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   green. Where the platform can require checks, a ruleset on the default
   branch does, and the merge is `gh pr merge --auto`. Where it cannot — a
   private repository on GitHub's free plan — I get the merge as
-  `merge-on-green <n> <merge flags>`, to run in a terminal of its own.
+  `merge-on-green <n> <merge flags>`, to run in a terminal of its own. A
+  repository without CI has no green to wait for: it gets CI first, since its
+  checks belong in one command CI runs (see "Toolchain").
 - A subagent's report is a claim: verify its diff or rerun its command before
   passing it on as done.
 
