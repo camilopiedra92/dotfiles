@@ -3650,6 +3650,69 @@ FAKE
 }
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 
+# merge-on-green against a `gh` that answers from environment variables and
+# records its calls. What is under test is the gate: the merge runs only when
+# every check passed or was skipped, and only for the head the run started on.
+merge_on_green() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  cat > "$tmp/bin/gh" << 'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CALLS"
+case "$1 $2" in
+  "pr view") echo "$HEAD_SHA" ;;
+  "pr checks")
+    case " $* " in
+      *" --watch "*) exit "$WATCH_EXIT" ;;
+    esac
+    [ "$CHECKS_EXIT" = 0 ] || exit "$CHECKS_EXIT"
+    all="$*"
+    expr=${all##*--jq }
+    # Like gh's --jq: an empty result is success, error() is not.
+    printf '%s' "$BUCKETS" | jq "$expr" > /dev/null 2>&1 || {
+      echo "jq: not green" >&2
+      exit 5
+    }
+    ;;
+  "pr merge") exit 0 ;;
+esac
+FAKE
+  chmod +x "$tmp/bin/gh"
+  run() {
+    : > "$tmp/calls"
+    PATH="$tmp/bin:$PATH" CALLS="$tmp/calls" HEAD_SHA=abc123 \
+      WATCH_EXIT="${WATCH_EXIT:-0}" CHECKS_EXIT="${CHECKS_EXIT:-0}" \
+      BUCKETS="${BUCKETS:-[]}" bin/merge-on-green.sh 7 --rebase --delete-branch 2>&1
+  }
+  merged() { grep -q '^pr merge' "$tmp/calls"; }
+
+  BUCKETS='[{"bucket":"pass"},{"bucket":"skipping"}]' out=$(run) || {
+    echo "refused green checks: $out"
+    return 1
+  }
+  grep -qx 'pr merge 7 --match-head-commit abc123 --rebase --delete-branch' "$tmp/calls" || {
+    echo "did not merge the pinned head with the flags given:"
+    cat "$tmp/calls"
+    return 1
+  }
+
+  local case
+  for case in "failed watch:WATCH_EXIT=1" "cancelled check:BUCKETS=[{\"bucket\":\"pass\"},{\"bucket\":\"cancel\"}]" \
+    "pending check:BUCKETS=[{\"bucket\":\"pending\"}]" "no checks reported:CHECKS_EXIT=1"; do
+    if out=$(env "${case#*:}" bash -c "$(declare -f run); $(declare -p tmp); run"); then
+      echo "${case%%:*}: exited 0: $out"
+      return 1
+    fi
+    ! merged || {
+      echo "${case%%:*}: merged anyway"
+      return 1
+    }
+  done
+}
+check "merge-on-green merges the pinned head only when every check passed or was skipped" merge_on_green
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
