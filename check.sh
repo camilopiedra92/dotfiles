@@ -668,6 +668,11 @@ install_is_idempotent() {
   # only ever prove the mode of a directory the step created itself.
   mkdir -p "$tmp/home"
   mkdir -m 755 "$tmp/home/.ssh"
+  # Two dangling links: one left by a skill since deleted from the repo, one
+  # another tool put there. Install must drop the first and keep the second.
+  mkdir -p "$tmp/home/.claude/skills"
+  ln -s "$tmp/dotfiles/claude/skills/deleted" "$tmp/home/.claude/skills/deleted"
+  ln -s "$tmp/elsewhere/theirs" "$tmp/home/.claude/skills/theirs"
   # The links point into a copy, not into this tree: a step that writes through
   # a link (ln -s without -n onto a linked directory) would otherwise write
   # into the repository being checked.
@@ -732,8 +737,20 @@ install_is_idempotent() {
   # A skill is a directory, and ln -s onto a link that already points at one
   # descends into it unless -n is given: the second run would then leave a
   # stray brainstorm/brainstorm link inside the repo instead of failing.
-  [ -f "$tmp/home/.claude/skills/brainstorm/SKILL.md" ] || {
-    echo "the brainstorm skill is not reachable under ~/.claude/skills"
+  local skill
+  for skill in "$tmp"/dotfiles/claude/skills/*/; do
+    skill=$(basename "$skill")
+    [ -f "$tmp/home/.claude/skills/$skill/SKILL.md" ] || {
+      echo "the $skill skill is not reachable under ~/.claude/skills"
+      return 1
+    }
+  done
+  [ ! -L "$tmp/home/.claude/skills/deleted" ] || {
+    echo "a link to a skill no longer in the repo was kept"
+    return 1
+  }
+  [ -L "$tmp/home/.claude/skills/theirs" ] || {
+    echo "a skill link another tool owns was removed"
     return 1
   }
   [ ! -e "$tmp/dotfiles/claude/skills/brainstorm/brainstorm" ] || {

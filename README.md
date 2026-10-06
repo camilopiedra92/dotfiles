@@ -71,7 +71,9 @@ claude/mcp.json                 user-scope MCP servers for every Mac, applied th
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
-claude/skills/brainstorm/       `/brainstorm`: shapes an open idea before Spec Kit or a direct change
+claude/skills/<name>/           personal skills, each linked into ~/.claude/skills by install.sh:
+                                `/brainstorm` (shape an open idea), `/diagnose` (root cause of a bug),
+                                `/wrap-up` (close a session and hand off)
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
 drift.sh               what this machine has that the Brewfile does not say
@@ -217,6 +219,13 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   mean installing it in order to disable it. Removing a line here does not
   disable anything on a machine — the merge keeps live keys — so a plugin is
   dropped with `claude plugin uninstall` as well.
+- **`commit-commands` is gone** (2026-10-06). It had 2 uses in 453 sessions,
+  none in the last 30 days, and `commit-push-pr` commits, pushes and opens a
+  ready PR in one message with no test run and no review before it, which
+  the global CLAUDE.md asks for. `/wrap-up` covers the end of a session
+  following those rules. A ready PR is not wrong in itself: GitHub's drafts
+  exist to share work "without formally requesting reviews", which is what
+  the draft-until-reviewed rule uses them for.
 - **Spec Kit is the only process plugin, so superpowers is gone** (2026-10-05).
   Its SessionStart hook re-injected "a 1% chance a skill applies means you MUST
   invoke it" on every start, clear and compaction, and its brainstorming gate

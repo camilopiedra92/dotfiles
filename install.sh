@@ -89,9 +89,24 @@ link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
 link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
-# The directory, not SKILL.md: Claude Code follows a symlinked skill folder,
-# and a file added to the skill later needs no new link.
-link "$DOTFILES/claude/skills/brainstorm" "$HOME/.claude/skills/brainstorm"
+# Each skill as a directory, not its SKILL.md: Claude Code follows a symlinked
+# skill folder, and a file added to a skill later needs no new link. A link
+# into claude/skills whose target is gone is a skill deleted from the repo;
+# links into anywhere else belong to other tools and are left alone.
+for skill in "$DOTFILES"/claude/skills/*/; do
+  skill=${skill%/}
+  link "$skill" "$HOME/.claude/skills/${skill##*/}"
+done
+for entry in "$HOME"/.claude/skills/*; do
+  if [ -L "$entry" ] && [ ! -e "$entry" ]; then
+    case "$(readlink "$entry")" in
+      "$DOTFILES/claude/skills/"*)
+        rm "$entry"
+        echo "    removed: $entry (skill no longer in the repo)"
+        ;;
+    esac
+  fi
+done
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on
 # PATH, which is what lets the alias be `sudo dev-nuke` and not a path.
 link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
