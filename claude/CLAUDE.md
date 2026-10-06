@@ -55,10 +55,10 @@ The reader cannot tell the two apart, and will build on either.
 
 The one who reviews cannot be the one who wrote. Re-reading your own diff in the
 context that produced it finds the typos and none of the assumptions; what is
-needed is a different context, not a particular tool. A subagent's report is a
-claim too: check its diff or rerun its command before passing it on as done. The
-review comes before the PR is ready: if CI only runs on pull requests, open it
-as a draft and mark it ready once the review is back.
+needed is a different context, not a particular tool. The review comes before
+the PR is ready: if CI only runs on pull requests, open it as a draft and mark
+it ready once the review is back. Separately, a subagent's report is a claim:
+verify its diff or rerun its command before passing it on as done.
 
 No fix before the root cause is understood. Read the whole error, reproduce it,
 and find where the bad value comes from rather than where it surfaced. One fix
@@ -195,5 +195,5 @@ list, not into the test in progress.
 
 When you finish, tell me what actually happened: if a test fails, show me the
 output; if you left something half done, say so. I prefer an uncomfortable
-report to an optimistic one. Close loose ends inside the task's scope instead
-of listing them; pending is only what needs my decision or is out of scope.
+report to an optimistic one. Close loose ends inside what was agreed instead of
+listing them; pending is only what needs my decision or is out of scope.

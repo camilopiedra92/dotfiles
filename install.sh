@@ -90,21 +90,31 @@ link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statuslin
 link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Each skill as a directory, not its SKILL.md: Claude Code follows a symlinked
-# skill folder, and a file added to a skill later needs no new link. A link
-# into claude/skills whose target is gone is a skill deleted from the repo;
-# links into anywhere else belong to other tools and are left alone.
+# skill folder, and a file added to a skill later needs no new link. A real
+# directory in the way is backed up beside ~/.claude/skills rather than inside
+# it, where Claude Code would load the backup as one more skill.
+skills_backup="$HOME/.claude/skills.backup.$(date +%Y%m%d%H%M%S)"
 for skill in "$DOTFILES"/claude/skills/*/; do
+  [ -d "$skill" ] || continue
   skill=${skill%/}
-  link "$skill" "$HOME/.claude/skills/${skill##*/}"
+  dest="$HOME/.claude/skills/${skill##*/}"
+  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
+    mkdir -p "$skills_backup"
+    mv "$dest" "$skills_backup/"
+    echo "    backed up: $dest -> $skills_backup/"
+  fi
+  link "$skill" "$dest"
 done
+# A dangling link whose target sat in claude/skills is a skill deleted from the
+# repo. Paths are compared physically, so a link made through another path to
+# this repo counts too; links into anywhere else belong to other tools.
+skills_dir=$(cd "$DOTFILES/claude/skills" && pwd -P)
 for entry in "$HOME"/.claude/skills/*; do
-  if [ -L "$entry" ] && [ ! -e "$entry" ]; then
-    case "$(readlink "$entry")" in
-      "$DOTFILES/claude/skills/"*)
-        rm "$entry"
-        echo "    removed: $entry (skill no longer in the repo)"
-        ;;
-    esac
+  [ -L "$entry" ] && [ ! -e "$entry" ] || continue
+  parent=$(cd "$HOME/.claude/skills" && cd "$(dirname "$(readlink "$entry")")" 2> /dev/null && pwd -P) || continue
+  if [ "$parent" = "$skills_dir" ]; then
+    rm "$entry"
+    echo "    removed: $entry (skill no longer in the repo)"
   fi
 done
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on

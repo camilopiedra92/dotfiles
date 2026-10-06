@@ -9,8 +9,8 @@ argument-hint: "[anything to carry into the next session]"
 
 Notes from the user: $ARGUMENTS
 
-Report first, change nothing until step 4, and change only what the user
-agrees to.
+Steps 1 to 3 only read and report. Changes happen in step 4, and only the
+ones the user agrees to.
 
 ## 1. State
 
@@ -31,8 +31,9 @@ run (no remote, no gh auth).
 
 From this session's work: unfinished tasks, a red suite, review findings
 not applied, TODOs added, temporary files or branches created for it.
-Close what is inside the task's scope now. List the rest, each with why it
-is open and what it needs: a decision from the user, or a next session.
+Mark what can be closed inside the task's scope, to close in step 4. List
+the rest, each with why it is open and what it needs: a decision from the
+user, or a next session.
 
 ## 3. Learnings
 
@@ -54,11 +55,11 @@ so; an empty list is a valid result.
 
 ## 4. Apply, on the user's go
 
-Write the agreed learnings. Commit and push following each repo's own
+Close the loose ends marked in step 2 and write the agreed learnings. Commit and push following each repo's own
 rules and the global ones: a branch rather than the default branch, a
 draft PR while its independent review is pending, ready only when the
-review is back. Remove a worktree only when it is clean; never with
-`--force`.
+review is back. Remove a worktree only when it is clean and is not the one this session
+runs in; never with `--force`.
 
 ## 5. Resume prompt
 
