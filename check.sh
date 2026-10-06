@@ -3735,55 +3735,57 @@ FAKE
 check "merge-on-green merges the pinned head only when its checks passed (some may be skipped)" merge_on_green
 
 # repo-rules against a `gh` that serves repositories and rulesets from files
-# under $STATE and records every write. Under test: `check` reports exactly the
-# differences from github/repos.json, and `apply` writes what removes them --
+# under $STATE (a missing file is a 404) and records every write. Under test:
+# `check` reports exactly the differences from the declaration and tells
+# "drift" (1) from "could not read" (2); `apply` writes what removes them --
 # the ruleset with each check pinned to GitHub Actions, and the settings
-# `gh pr merge --auto` needs -- without deleting anything.
+# `gh pr merge --auto` needs -- only for the repositories named, and deletes
+# nothing.
 repo_rules() {
-  local tmp state out
+  local tmp state out rc
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   mkdir -p "$tmp/bin"
   state=$tmp/state
   cat > "$tmp/bin/gh" << 'FAKE'
 #!/usr/bin/env bash
-# gh api [-X METHOD] PATH [--input FILE] [--jq EXPR]
+# gh api [-X METHOD] PATH [--input FILE|-]
 shift
-method=GET input= jq_expr= path=
+method=GET input= path=
 while [ $# -gt 0 ]; do
   case "$1" in
     -X) method=$2; shift 2 ;;
     --input) input=$2; shift 2 ;;
-    --jq) jq_expr=$2; shift 2 ;;
     *) path=$1; shift ;;
   esac
 done
 if [ "$method" != GET ]; then
-  printf '%s %s %s\n' "$method" "$path" "$(jq -cS . "$input")" >> "$STATE/writes"
+  if [ "$input" = - ]; then body=$(jq -cS .); else body=$(jq -cS . "$input"); fi
+  printf '%s %s %s\n' "$method" "$path" "$body" >> "$STATE/writes"
   exit 0
 fi
 file="$STATE/${path//\//_}.json"
-[ -f "$file" ] || { echo "HTTP 404" >&2; exit 1; }
-if [ -n "$jq_expr" ]; then jq -r "$jq_expr" "$file"; else cat "$file"; fi
+[ -f "$file" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
+cat "$file"
 FAKE
   chmod +x "$tmp/bin/gh"
-  cat > "$tmp/repos.json" << 'JSON'
-{"o/a": {"checks": ["ci-passed"]}}
-JSON
   run() { PATH="$tmp/bin:$PATH" STATE="$state" REPO_RULES_DECLARATION="$tmp/repos.json" bin/repo-rules.sh "$@" 2>&1; }
+  settings='{"allow_auto_merge":true,"delete_branch_on_merge":true,"allow_merge_commit":false,"allow_squash_merge":true,"allow_rebase_merge":false,"id":1,"full_name":"o/a"}'
   fresh() {
     rm -rf "$state" && mkdir -p "$state"
-    echo '{"allow_auto_merge":true,"delete_branch_on_merge":true,"allow_merge_commit":false,"allow_squash_merge":true,"allow_rebase_merge":false}' > "$state/repos_o_a.json"
+    echo '{"o/a": {"checks": ["ci-passed"]}}' > "$tmp/repos.json"
+    echo "$settings" > "$state/repos_o_a.json"
     echo '[]' > "$state/repos_o_a_rulesets.json"
   }
 
-  # Nothing on GitHub yet: check reports it, apply creates the ruleset with
-  # the check pinned to GitHub Actions.
+  # Nothing on GitHub yet: check reports drift (1); apply creates the
+  # ruleset with the check pinned to GitHub Actions.
   fresh
-  if out=$(run check); then
-    echo "check passed with no ruleset on the repo: $out"
+  rc=0 && out=$(run check) || rc=$?
+  [ "$rc" = 1 ] || {
+    echo "check on a repository with no ruleset exited $rc: $out"
     return 1
-  fi
+  }
   run apply > /dev/null || return 1
   grep -q '^POST repos/o/a/rulesets ' "$state/writes" || {
     echo "apply did not create the ruleset:"
@@ -3796,15 +3798,17 @@ JSON
     return 1
   }
 
-  # The ruleset apply wrote, served back: check is clean and apply writes
-  # nothing.
+  # The created ruleset served back the way GitHub returns one: with an id,
+  # bookkeeping fields and its rules in another order. check is clean and
+  # apply writes nothing.
+  grep '^POST' "$state/writes" | cut -d' ' -f3- |
+    jq '. + {id: 7, source: "o/a", source_type: "Repository", created_at: "x", _links: {}}
+      | .rules |= reverse' > "$tmp/served"
   fresh
   echo '[{"id":7,"name":"protect default branch"}]' > "$state/repos_o_a_rulesets.json"
-  PATH="$tmp/bin:$PATH" STATE="$state" REPO_RULES_DECLARATION="$tmp/repos.json" \
-    bash -c 'source bin/repo-rules.sh --source-only; desired_ruleset o/a' > "$state/repos_o_a_rulesets_7.json" || return 1
-  rm -f "$state/writes"
+  cp "$tmp/served" "$state/repos_o_a_rulesets_7.json"
   out=$(run check) || {
-    echo "check failed against the declared ruleset itself: $out"
+    echo "check failed on what apply itself created: $out"
     return 1
   }
   run apply > /dev/null || return 1
@@ -3818,20 +3822,21 @@ JSON
   # an undeclared ruleset: each is reported; apply fixes the first two with a
   # PUT and a PATCH, and deletes nothing.
   jq '(.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks) = [{"context":"ci-passed"}]' \
-    "$state/repos_o_a_rulesets_7.json" > "$tmp/x" && mv "$tmp/x" "$state/repos_o_a_rulesets_7.json"
-  jq '.allow_auto_merge = false' "$state/repos_o_a.json" > "$tmp/x" && mv "$tmp/x" "$state/repos_o_a.json"
+    "$tmp/served" > "$state/repos_o_a_rulesets_7.json"
+  jq '.allow_auto_merge = false' <<< "$settings" > "$state/repos_o_a.json"
   echo '[{"id":7,"name":"protect default branch"},{"id":9,"name":"main"}]' > "$state/repos_o_a_rulesets.json"
-  if out=$(run check); then
-    echo "check passed with drift"
+  rc=0 && out=$(run check) || rc=$?
+  [ "$rc" = 1 ] || {
+    echo "check on drift exited $rc"
     return 1
-  fi
+  }
   for want in "integration_id" "allow_auto_merge" "undeclared ruleset \"main\""; do
     grep -qF "$want" <<< "$out" || {
       echo "check did not report $want: $out"
       return 1
     }
   done
-  run apply > /dev/null || true
+  run apply > /dev/null || return 1
   if ! grep -q '^PUT repos/o/a/rulesets/7 ' "$state/writes" ||
     ! grep -q '^PATCH repos/o/a ' "$state/writes"; then
     echo "apply did not update the ruleset and the settings:"
@@ -3840,6 +3845,40 @@ JSON
   fi
   ! grep -q '^DELETE' "$state/writes" || {
     echo "apply deleted something"
+    return 1
+  }
+
+  # A declaration that cannot be read is an error (2), never "no drift".
+  fresh
+  for bad in '' 'not json' '{}' '{"o/a": {"checks": []}}'; do
+    printf '%s' "$bad" > "$tmp/repos.json"
+    rc=0 && out=$(run check) || rc=$?
+    [ "$rc" = 2 ] || {
+      echo "a declaration of '$bad' exited $rc: $out"
+      return 1
+    }
+  done
+
+  # A repository GitHub will not show: named in the output, the others still
+  # checked, and exit 2 rather than the 1 of drift.
+  fresh
+  echo '{"o/a": {"checks": ["ci-passed"]}, "o/b": {"checks": ["x"]}}' > "$tmp/repos.json"
+  rc=0 && out=$(run check) || rc=$?
+  if [ "$rc" != 2 ] || ! grep -q '^o/b: could not be read' <<< "$out" ||
+    ! grep -q '^o/a: no ' <<< "$out"; then
+    echo "an unreadable repository exited $rc or hid the others: $out"
+    return 1
+  fi
+
+  # apply with one repository named writes only to it.
+  run apply o/a > /dev/null || return 1
+  ! grep -q ' repos/o/b' "$state/writes" || {
+    echo "apply o/a wrote to o/b"
+    return 1
+  }
+  rc=0 && out=$(run apply o/zz) || rc=$?
+  [ "$rc" = 2 ] || {
+    echo "apply on an undeclared repository exited $rc"
     return 1
   }
 }
