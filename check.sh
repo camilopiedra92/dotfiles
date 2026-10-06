@@ -305,6 +305,31 @@ for path, servers in manifests.items():
         assert ('command' in server) == (server['type'] == 'stdio'), f'{path} {name}: command and type disagree'
 "
 
+# Claude Code reads a skill's command name from `name`, falling back to the
+# directory, and truncates description plus when_to_use at 1,536 characters
+# (code.claude.com/docs/en/skills). Both fail quietly: a mismatched name is a
+# command nobody expects, a truncated description loses its tail. Parsed by
+# hand because the frontmatter here is flat and PyYAML is not in every python3.
+check "claude skills: name matches its directory, description fits" python3 -c "
+import glob, os
+paths = sorted(glob.glob('claude/skills/*/SKILL.md'))
+assert paths, 'no skill found under claude/skills'
+for path in paths:
+    lines = open(path, encoding='utf-8').read().split('\\n')
+    assert lines[0] == '---', f'{path}: no frontmatter'
+    end = lines.index('---', 1)
+    fields = {}
+    for line in lines[1:end]:
+        key, sep, value = line.partition(':')
+        assert sep, f'{path}: not a key: value line: {line!r}'
+        fields[key.strip()] = value.strip().strip('\\'\"')
+    folder = os.path.basename(os.path.dirname(path))
+    assert fields.get('name') == folder, f'{path}: name {fields.get(\"name\")!r} is not {folder!r}'
+    text = fields.get('description', '') + fields.get('when_to_use', '')
+    assert text, f'{path}: no description'
+    assert len(text) <= 1536, f'{path}: description is {len(text)} characters, over 1536'
+"
+
 # VS Code settings are JSONC: comments and trailing commas are legal there and
 # rejected by json.loads, so strip both before parsing.
 check "vscode settings (jsonc)" python3 -c "
@@ -723,6 +748,17 @@ install_is_idempotent() {
   fi
   [ -L "$tmp/home/.claude/statusline.sh" ] || {
     echo "statusline was not symlinked"
+    return 1
+  }
+  # A skill is a directory, and ln -s onto a link that already points at one
+  # descends into it unless -n is given: the second run would then leave a
+  # stray brainstorm/brainstorm link inside the repo instead of failing.
+  [ -f "$tmp/home/.claude/skills/brainstorm/SKILL.md" ] || {
+    echo "the brainstorm skill is not reachable under ~/.claude/skills"
+    return 1
+  }
+  [ ! -e "$PWD/claude/skills/brainstorm/brainstorm" ] || {
+    echo "the second run linked the skill inside itself"
     return 1
   }
   # ssh checks the config file's own owner and mode, not the directory's; the

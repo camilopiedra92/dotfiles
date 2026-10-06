@@ -71,6 +71,7 @@ claude/mcp.json                 user-scope MCP servers for every Mac, applied th
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
+claude/skills/brainstorm/       `/brainstorm`: shapes an open idea before Spec Kit or a direct change
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
 drift.sh               what this machine has that the Brewfile does not say
@@ -223,7 +224,13 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   grown `docs/superpowers/` against 1 with `.specify/`. It cannot be trimmed —
   plugin skills ignore `skillOverrides`, and upstream declined an opt-out in
   #645 and #1456. The alternative on record is keeping it beside Spec Kit with
-  a bridge extension; it lost because the hook keeps pulling either way. Also
+  a bridge extension; it lost because the hook keeps pulling either way. What
+  it did well, shaping an idea before a spec exists, is `/brainstorm` in
+  `claude/skills/` (2026-10-06): written here rather than copied, so there is
+  no upstream to fall behind; invoked only by you
+  (`disable-model-invocation`), so nothing pulls; and it writes no document,
+  handing off instead to a direct change, a spike, or `/speckit-specify` (what
+  and why) plus `/speckit-plan` (approach and alternatives). Also
   removed the same day: `security-guidance` (an extra LLM review on every
   Stop, commit and push; `/security-review` is built in), `claude-md-management`
   (overlaps `/doctor`), and `chrome-devtools-mcp` (~800 tokens in every session

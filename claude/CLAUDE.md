@@ -88,6 +88,8 @@ alongside it. Size the process to what a wrong decision would cost:
   `/speckit-checklist` and `/speckit-analyze` before implementing.
 - When the way to do something is unknown, spike on a throwaway branch and
   specify from what it taught. A spec is not a way to explore.
+- When the idea itself is still open, `/brainstorm` shapes it first and hands
+  off to one of the paths above; it writes nothing.
 
 A repo without `.specify/` gets it at its first feature: `sdd-init` from the
 root, which commits Spec Kit with the released test-first and

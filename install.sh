@@ -89,6 +89,9 @@ link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
 link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+# The directory, not SKILL.md: Claude Code follows a symlinked skill folder,
+# and a file added to the skill later needs no new link.
+link "$DOTFILES/claude/skills/brainstorm" "$HOME/.claude/skills/brainstorm"
 # Dropped without the .sh so it reads as a command: ~/.local/bin is already on
 # PATH, which is what lets the alias be `sudo dev-nuke` and not a path.
 link "$DOTFILES/bin/dev-nuke.sh" "$HOME/.local/bin/dev-nuke"
