@@ -4,12 +4,12 @@
 
 `~/Development` is a container folder, not a project. Each subfolder is an
 independent project with its own git, its own toolchain and its own
-conventions. Take conventions from the project you are in, and put files
-inside a project, never loose at the root of `~/Development`.
+conventions. What holds in one project is checked again in the next, and
+files go inside a project, never loose at the root of `~/Development`.
 
 Claude Code and shell configuration live in `~/dotfiles` (versioned). The
-symlinks in `~/.claude/` (CLAUDE.md, `*.sh`, `skills/`) are edited at their
-target under `~/dotfiles/claude/`, never as stray copies.
+symlinks in `~/.claude/` (CLAUDE.md, `*.sh`, each skill in `skills/`) are
+edited at their target under `~/dotfiles/claude/`, never as stray copies.
 
 Usual stack: Python, Node/TypeScript/JavaScript, React, shell and infra.
 
@@ -128,7 +128,8 @@ In a new project there is nothing to respect yet, so start from this machine's:
 runtimes come from mise and never from Homebrew, Python packages and virtualenvs
 from uv, and a project that needs a version other than the global one gets its
 own `mise.toml` rather than a global change. Python packages go through uv
-(`uv add`, `uv venv`), never `pip install` into the interpreter itself. If a
+(`uv add`, `uv venv`), never `pip install` into the interpreter itself nor
+`python -m venv`. If a
 project needs a native library — the kind uv installs a wrapper for
 and cannot provide, like the pango behind weasyprint — say so, because that
 dependency is invisible to the lockfile and only surfaces at runtime.

@@ -64,10 +64,11 @@ found later moves the path up, never down.
   the user says go. The rejected approaches go in the commit message.
 - **Spike.** The question it answers and the cheapest probe that answers it,
   on a throwaway branch. A question of look and feel gets two or three
-  structurally different variants side by side; a question of logic gets
+  variants that differ in structure, side by side; a question of logic gets
   the bare logic driven through the happy path, an edge case and an input
   that should be refused. The output is an answer, not code to keep: its
-  verdict goes into the `/speckit-plan` guidance or the commit message.
+  verdict goes in the reply, then into the `/speckit-plan` guidance or the
+  commit message of the change that follows.
 - **Spec Kit.** Two blocks, ready to run:
   - the `/speckit-specify` description: what and why only (users, outcome,
     success criteria, scope). No stack, no APIs, no structure:

@@ -41,8 +41,9 @@ user, or a next session.
 Only what a later session would otherwise get wrong or rediscover. For each
 one, name its destination and show the text before writing it:
 
-- A mistake a tool could catch (a lint, type check, test or hook): that
-  check, proposed in its repo, ahead of any written rule.
+- A mistake a tool could catch: a check with a tool the repo already has (a
+  lint rule, type check, test or hook), proposed before reaching for a
+  written rule. A new tool is a dependency, and asked about as one.
 - A rule every change in a project must meet: that project's constitution.
 - A decision a later feature would otherwise reopen: `docs/decisions/`, as
   the global CLAUDE.md describes.
@@ -53,7 +54,8 @@ one, name its destination and show the text before writing it:
 - State of ongoing work, a fact about the user, a pointer elsewhere: auto
   memory, following its own rules (update a file before adding one).
 
-If there is nothing, say so; an empty list is a valid result.
+Nothing the repo or git history already records. If there is nothing, say
+so; an empty list is a valid result.
 
 ## 4. Apply, on the user's go
 
