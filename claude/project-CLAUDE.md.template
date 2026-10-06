@@ -8,7 +8,10 @@ keep, and it teaches that the file can be skimmed.>
 
 <The exact invocations, copy-pasteable: test, run, lint, build, and whatever
 this project needs that no one would guess. This is the section that pays for
-the file. Never describe a command; write it.>
+the file. Never describe a command; write it. The checks are the one command
+CI runs, named here in one line, never its steps copied: renta kept the steps
+in CLAUDE.md, CI and a doc, and by 2026-10-06 the doc's list lacked the ruff
+step CI had gained.>
 
 ## Toolchain
 
@@ -46,6 +49,10 @@ When something here stops being true, correct it in the same commit that made
 it false. A stale line reads as authority: on 2026-08-17 one claimed a tool
 offered a commit around every phase when it had been disabled by config the
 whole time, and three sessions read the claim as fact before anyone ran it.
+Nothing here repeats the global instructions or the constitution, and a line
+they come to cover is removed in the same change: renta's "merge it once CI
+passes" outlived the global rule that sends merges through merge-on-green, and
+read as the project's answer to a question the global rule had settled.
 
 Keep this file under 200 lines, the size Claude Code's memory docs target per
 CLAUDE.md (code.claude.com/docs/en/memory, read 2026-10-05): longer files cost

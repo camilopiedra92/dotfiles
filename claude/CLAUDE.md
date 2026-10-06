@@ -5,7 +5,8 @@
 - `~/Development` is a container folder, not a project. Each subfolder is an
   independent project with its own git, toolchain and conventions: what holds
   in one is checked again in the next, and files go inside a project, never
-  loose at the root of `~/Development`.
+  loose at the root of `~/Development`. A project's CLAUDE.md takes the shape
+  of `~/dotfiles/claude/project-CLAUDE.md.template`.
 - Claude Code and shell configuration live in `~/dotfiles` (versioned). The
   symlinks in `~/.claude/` (CLAUDE.md, `*.sh`, each skill in `skills/`) are
   edited at their target under `~/dotfiles/claude/`, never as stray copies.
