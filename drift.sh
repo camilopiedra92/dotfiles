@@ -232,6 +232,13 @@ report "commits here are signed with a key GitHub knows" \
   "./install.sh writes the switch and the key, and registers it" \
   "$(signing_key_known)"
 
+# The rulesets and merge settings GitHub holds for each repository declared in
+# github/repos.json. A rule changed by hand on GitHub's site is drift like any
+# other; `repo-rules check` prints each difference. Needs the network.
+report "GitHub rulesets match github/repos.json" \
+  "repo-rules apply (it changes repository permissions: run it yourself)" \
+  "$(bin/repo-rules.sh check 2>&1 || true)"
+
 printf '\n%sClaude Code%s\n' "$DIM" "$OFF"
 
 # settings.json is merged rather than symlinked, because Claude Code rewrites it

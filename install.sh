@@ -129,6 +129,8 @@ link "$DOTFILES/bin/sdd-init.sh" "$HOME/.local/bin/sdd-init"
 # Same. It is what a pull request's merge is handed over as where the platform
 # cannot require green checks itself; see the file.
 link "$DOTFILES/bin/merge-on-green.sh" "$HOME/.local/bin/merge-on-green"
+# Same. Reads github/repos.json, which it finds by resolving this link.
+link "$DOTFILES/bin/repo-rules.sh" "$HOME/.local/bin/repo-rules"
 # Not a command you run: it is what ~/.claude.json points the ynab MCP server
 # at, so the server logs into its own directory instead of into whichever
 # repository the editor was started in. See the file.

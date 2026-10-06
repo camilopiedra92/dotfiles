@@ -3734,6 +3734,117 @@ FAKE
 }
 check "merge-on-green merges the pinned head only when its checks passed (some may be skipped)" merge_on_green
 
+# repo-rules against a `gh` that serves repositories and rulesets from files
+# under $STATE and records every write. Under test: `check` reports exactly the
+# differences from github/repos.json, and `apply` writes what removes them --
+# the ruleset with each check pinned to GitHub Actions, and the settings
+# `gh pr merge --auto` needs -- without deleting anything.
+repo_rules() {
+  local tmp state out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin"
+  state=$tmp/state
+  cat > "$tmp/bin/gh" << 'FAKE'
+#!/usr/bin/env bash
+# gh api [-X METHOD] PATH [--input FILE] [--jq EXPR]
+shift
+method=GET input= jq_expr= path=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method=$2; shift 2 ;;
+    --input) input=$2; shift 2 ;;
+    --jq) jq_expr=$2; shift 2 ;;
+    *) path=$1; shift ;;
+  esac
+done
+if [ "$method" != GET ]; then
+  printf '%s %s %s\n' "$method" "$path" "$(jq -cS . "$input")" >> "$STATE/writes"
+  exit 0
+fi
+file="$STATE/${path//\//_}.json"
+[ -f "$file" ] || { echo "HTTP 404" >&2; exit 1; }
+if [ -n "$jq_expr" ]; then jq -r "$jq_expr" "$file"; else cat "$file"; fi
+FAKE
+  chmod +x "$tmp/bin/gh"
+  cat > "$tmp/repos.json" << 'JSON'
+{"o/a": {"checks": ["ci-passed"]}}
+JSON
+  run() { PATH="$tmp/bin:$PATH" STATE="$state" REPO_RULES_DECLARATION="$tmp/repos.json" bin/repo-rules.sh "$@" 2>&1; }
+  fresh() {
+    rm -rf "$state" && mkdir -p "$state"
+    echo '{"allow_auto_merge":true,"delete_branch_on_merge":true,"allow_merge_commit":false,"allow_squash_merge":true,"allow_rebase_merge":false}' > "$state/repos_o_a.json"
+    echo '[]' > "$state/repos_o_a_rulesets.json"
+  }
+
+  # Nothing on GitHub yet: check reports it, apply creates the ruleset with
+  # the check pinned to GitHub Actions.
+  fresh
+  if out=$(run check); then
+    echo "check passed with no ruleset on the repo: $out"
+    return 1
+  fi
+  run apply > /dev/null || return 1
+  grep -q '^POST repos/o/a/rulesets ' "$state/writes" || {
+    echo "apply did not create the ruleset:"
+    cat "$state/writes"
+    return 1
+  }
+  grep '^POST' "$state/writes" | grep -q '"required_status_checks":\[{"context":"ci-passed","integration_id":15368}\]' || {
+    echo "the created ruleset does not pin ci-passed to GitHub Actions:"
+    cat "$state/writes"
+    return 1
+  }
+
+  # The ruleset apply wrote, served back: check is clean and apply writes
+  # nothing.
+  fresh
+  echo '[{"id":7,"name":"protect default branch"}]' > "$state/repos_o_a_rulesets.json"
+  PATH="$tmp/bin:$PATH" STATE="$state" REPO_RULES_DECLARATION="$tmp/repos.json" \
+    bash -c 'source bin/repo-rules.sh --source-only; desired_ruleset o/a' > "$state/repos_o_a_rulesets_7.json" || return 1
+  rm -f "$state/writes"
+  out=$(run check) || {
+    echo "check failed against the declared ruleset itself: $out"
+    return 1
+  }
+  run apply > /dev/null || return 1
+  [ ! -s "$state/writes" ] || {
+    echo "apply wrote to a repository already in its declared state:"
+    cat "$state/writes"
+    return 1
+  }
+
+  # The check pinned to any app (the gap this exists for), a setting off, and
+  # an undeclared ruleset: each is reported; apply fixes the first two with a
+  # PUT and a PATCH, and deletes nothing.
+  jq '(.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks) = [{"context":"ci-passed"}]' \
+    "$state/repos_o_a_rulesets_7.json" > "$tmp/x" && mv "$tmp/x" "$state/repos_o_a_rulesets_7.json"
+  jq '.allow_auto_merge = false' "$state/repos_o_a.json" > "$tmp/x" && mv "$tmp/x" "$state/repos_o_a.json"
+  echo '[{"id":7,"name":"protect default branch"},{"id":9,"name":"main"}]' > "$state/repos_o_a_rulesets.json"
+  if out=$(run check); then
+    echo "check passed with drift"
+    return 1
+  fi
+  for want in "integration_id" "allow_auto_merge" "undeclared ruleset \"main\""; do
+    grep -qF "$want" <<< "$out" || {
+      echo "check did not report $want: $out"
+      return 1
+    }
+  done
+  run apply > /dev/null || true
+  if ! grep -q '^PUT repos/o/a/rulesets/7 ' "$state/writes" ||
+    ! grep -q '^PATCH repos/o/a ' "$state/writes"; then
+    echo "apply did not update the ruleset and the settings:"
+    cat "$state/writes"
+    return 1
+  fi
+  ! grep -q '^DELETE' "$state/writes" || {
+    echo "apply deleted something"
+    return 1
+  }
+}
+check "repo-rules reports drift from github/repos.json and applies only what removes it" repo_rules
+
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
   printf '\n%sAll checks passed%s\n\n' "$GREEN" "$OFF"
