@@ -82,6 +82,9 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   what is needed is a different context, not a particular tool.
 - The review comes before the PR is ready: if CI only runs on pull requests,
   open it as a draft and mark it ready once the review is back.
+- Ready is not merged: a PR merges only on green CI. When the merge is mine,
+  hand it over as `gh pr checks <n> --watch --fail-fast && gh pr merge <n> …`,
+  so it lands only if every check passes, and nobody has to watch it.
 - A subagent's report is a claim: verify its diff or rerun its command before
   passing it on as done.
 
