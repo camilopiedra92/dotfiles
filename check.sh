@@ -675,6 +675,9 @@ install_is_idempotent() {
   mkdir -p "$tmp/home/.claude/skills" "$tmp/elsewhere"
   ln -s "$tmp/dotfiles/claude/skills/deleted" "$tmp/home/.claude/skills/deleted"
   ln -s "$tmp/elsewhere/theirs" "$tmp/home/.claude/skills/theirs"
+  # And one into a directory a tool has since uninstalled: its parent cannot
+  # be entered, which must neither stop install nor drop the link.
+  ln -s "$tmp/uninstalled/x" "$tmp/home/.claude/skills/orphan"
   # The same deleted-skill case, made through a symlinked alias of the repo.
   ln -s "$tmp/dotfiles" "$tmp/alias"
   ln -s "$tmp/alias/claude/skills/gone" "$tmp/home/.claude/skills/gone"
@@ -682,6 +685,7 @@ install_is_idempotent() {
   # ~/.claude/skills, where Claude Code would load it as one more skill.
   mkdir -p "$tmp/home/.claude/skills/brainstorm"
   echo old > "$tmp/home/.claude/skills/brainstorm/SKILL.md"
+  echo old > "$tmp/home/.claude/skills/diagnose"
   # The links point into a copy, not into this tree: a step that writes through
   # a link (ln -s without -n onto a linked directory) would otherwise write
   # into the repository being checked.
@@ -766,12 +770,21 @@ install_is_idempotent() {
     echo "a link to a deleted skill made through an alias of the repo was kept"
     return 1
   }
-  if ls -d "$tmp"/home/.claude/skills/*.backup.* > /dev/null 2>&1; then
-    echo "a replaced skill directory was backed up inside ~/.claude/skills"
+  [ -L "$tmp/home/.claude/skills/orphan" ] || {
+    echo "a link into an uninstalled tool's directory was removed"
+    return 1
+  }
+  # find, not a glob, so a hidden backup counts as inside too.
+  if find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*' | grep -q .; then
+    echo "something in the way was backed up inside ~/.claude/skills"
     return 1
   fi
   ls "$tmp"/home/.claude/skills.backup.*/brainstorm/SKILL.md > /dev/null 2>&1 || {
-    echo "the replaced skill directory was not backed up"
+    echo "the directory in the way was not backed up"
+    return 1
+  }
+  ls "$tmp"/home/.claude/skills.backup.*/diagnose > /dev/null 2>&1 || {
+    echo "the file in the way was not backed up"
     return 1
   }
   [ ! -e "$tmp/dotfiles/claude/skills/brainstorm/brainstorm" ] || {

@@ -1,7 +1,7 @@
 ---
 name: diagnose
 description: Find the root cause of a bug before fixing it - reproduce, locate where the bad value first appears, test one written hypothesis at a time, then fix at the source behind a regression test that failed first.
-when_to_use: Before fixing any bug whose cause has not been shown yet, including "X fails, fix it" - a failing or flaky test, an error, a crash, a wrong result, a regression, or "works here but not in CI / on the other machine". Also when a first fix did not hold. Not for a test written to fail first, inside a /speckit-* command the user started, for building new behaviour, or for Claude Code's own session problems (that is the built-in /debug).
+when_to_use: Before fixing any bug whose cause has not been shown yet, including "X fails, fix it" - a failing or flaky test, an error, a crash, a wrong result, a regression, or "works here but not in CI / on the other machine". Also when a first fix did not hold. Not for a test written to fail first; work inside a /speckit-* command the user started; building new behaviour; Claude Code's own session problems (that is the built-in /debug).
 argument-hint: "[the symptom, or the failing command]"
 ---
 
@@ -11,8 +11,8 @@ The symptom: $ARGUMENTS
 
 No fix before the cause is understood. Each step below ends with evidence
 written in the conversation, not with a belief. If the user asked to look
-into it rather than to fix it, stop after step 3 with the cause and the
-proposed fix.
+into it rather than to fix it, stop after step 3: revert the instrumentation
+and experiments, then report the cause and the proposed fix.
 
 ## 1. Reproduce
 

@@ -91,14 +91,14 @@ link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Each skill as a directory, not its SKILL.md: Claude Code follows a symlinked
 # skill folder, and a file added to a skill later needs no new link. A real
-# directory in the way is backed up beside ~/.claude/skills rather than inside
-# it, where Claude Code would load the backup as one more skill.
+# file or directory in the way is backed up beside ~/.claude/skills rather than
+# inside it, where Claude Code would load a backed-up skill as one more skill.
 skills_backup="$HOME/.claude/skills.backup.$(date +%Y%m%d%H%M%S)"
 for skill in "$DOTFILES"/claude/skills/*/; do
   [ -d "$skill" ] || continue
   skill=${skill%/}
   dest="$HOME/.claude/skills/${skill##*/}"
-  if [ -d "$dest" ] && [ ! -L "$dest" ]; then
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     mkdir -p "$skills_backup"
     mv "$dest" "$skills_backup/"
     echo "    backed up: $dest -> $skills_backup/"
