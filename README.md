@@ -68,6 +68,7 @@ macos/handlers.sh      applies it, plus the machine's own, through `duti`, or re
 macos/machine.sh       which profile under macos/machines/ this Mac is (`dir`), or records it (`set`)
 macos/machines/<p>/    what only one Mac has: dock.txt, mcp.json, and defaults.txt / handlers.txt read after the shared ones
 claude/mcp.json                 user-scope MCP servers for every Mac, applied through `claude mcp`
+claude/config-guard.sh          PreToolUse hook: asks before a lint, format or test config is edited
 claude/statusline.sh            Claude Code statusline
 claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
@@ -294,6 +295,25 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   through unresolved variables, and is shown `git status` before an `rm -rf` in a
   repo. A hook was the alternative and lost: it cannot know which files the
   session created, which is the one distinction that matters here.
+- **An edit to a lint, format or test config asks first** (`claude/config-guard.sh`,
+  2026-10-06). Changing the config is the cheapest way to make a red check
+  green without fixing anything. It asks rather than denies: a hook's `ask`
+  shows its reason to you in the permission prompt (code.claude.com hooks
+  reference), so a change you requested costs one keypress, and a denial would
+  leave the agent to work around it. In `pyproject.toml` it asks only for a
+  change inside `[tool.ruff|mypy|pytest|mutmut|importlinter]`, because that is
+  where the projects here keep that config. The idea came from ECC's
+  `config-protection` hook; ECC itself was not adopted. ECC blocks instead of
+  asking and looks at filenames only, so it would have missed almost all of
+  the Python config here. It covers the Edit and Write tools only: a
+  config rewritten through Bash never reaches it, and that is a stated ceiling,
+  not something to patch with patterns. Its verdicts are tested in `check.sh`
+  against stdin payloads. A headless `claude -p` run (observed 2026-10-06, with
+  `acceptEdits`) has no one to ask, so the edit is refused and the agent sees
+  the reason, reports it and stops rather than working around it. So a
+  headless phase that has to change such a config stops there and waits for
+  you. Not yet observed: the prompt in an interactive auto-mode session (the
+  docs say a hook `ask` prompts).
 
 Note what a deny rule can and cannot reach. It covers Claude's own file tools
 and the shell commands Claude Code recognises — `cat`, `head`, `sed` — and stops
