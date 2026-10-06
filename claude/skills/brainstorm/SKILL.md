@@ -1,8 +1,8 @@
 ---
 name: brainstorm
-description: Shape an open idea into an agreed brief before anything is built - intent questions one at a time, 2-3 approaches with a recommendation, then a hand-off to a direct change, a spike or Spec Kit.
+description: Shape an open idea into an agreed brief before anything is specified or built - intent questions one at a time, 2-3 approaches with a recommendation, then a hand-off to a direct change, a spike or /speckit-specify.
+when_to_use: The user brings a new feature, tool or project whose intent, scope or approach is still open ("I want to build...", "I have an idea for...", "how should we approach...", "let's think through..."), before /speckit-specify or before writing code. Not for bug fixes, for requests that already say what to build and how, or once the feature has a spec under specs/.
 argument-hint: "[the idea, in a sentence or two]"
-disable-model-invocation: true
 ---
 
 # Brainstorm
@@ -11,10 +11,10 @@ The idea: $ARGUMENTS
 
 The outcome is an understanding the user recognises as theirs and a chosen
 approach with its alternatives on record. Nothing else: no files, no code, no
-scaffolding, no dependencies installed until the user has picked a path at the
-end. Reading the project is allowed throughout.
+scaffolding, no dependencies. Reading the project is allowed throughout.
 
-If the idea above is empty, ask for it in one sentence and stop.
+If the idea is neither above nor in the conversation, ask for it in one
+sentence and stop.
 
 ## 1. Read before asking
 
@@ -62,10 +62,11 @@ found later moves the path up, never down.
   on a throwaway branch. The output is an answer, not code to keep.
 - **Spec Kit.** Two blocks, ready to run:
   - the `/speckit-specify` description: what and why only (users, outcome,
-    success criteria, scope). No stack, no APIs, no structure: the spec
-    template rejects them.
+    success criteria, scope). No stack, no APIs, no structure:
+    `/speckit-specify`'s quality checklist rejects them.
   - the `/speckit-plan` guidance: the chosen approach, the alternatives and
-    why each lost, so they land in the plan's `research.md`.
+    why each lost. The plan only has to consider its input, so once it has
+    run, check that `research.md` records them.
 
   A repo without `.specify/` runs `sdd-init` first.
 

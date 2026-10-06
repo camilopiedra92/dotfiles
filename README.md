@@ -227,8 +227,8 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   a bridge extension; it lost because the hook keeps pulling either way. What
   it did well, shaping an idea before a spec exists, is `/brainstorm` in
   `claude/skills/` (2026-10-06): written here rather than copied, so there is
-  no upstream to fall behind; invoked only by you
-  (`disable-model-invocation`), so nothing pulls; and it writes no document,
+  no upstream to fall behind; Claude reaches for it only when its description
+  matches an idea still open, with no hook pushing it; and it writes no document,
   handing off instead to a direct change, a spike, or `/speckit-specify` (what
   and why) plus `/speckit-plan` (approach and alternatives). Also
   removed the same day: `security-guidance` (an extra LLM review on every
