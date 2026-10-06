@@ -21,7 +21,9 @@ sentence and stop.
 Read what answers questions without the user: the project's CLAUDE.md, its
 constitution (`.specify/memory/constitution.md`) if there is one, the code the
 idea touches, recent commits, and the `specs/` and `docs/decisions/` entries
-near it. Never ask what the request or the repo already says.
+near it. Facts are yours to look up, with a subagent for a wide search;
+only decisions go to the user. Keep asking while a lookup runs, if the next
+question does not wait on it.
 
 ## 2. Find the intent
 
@@ -31,8 +33,10 @@ is out of scope. The genre of the thing does not say why the user wants it.
 - One question per message. Prefer AskUserQuestion with 2-4 options, your
   recommended one first and marked; open text when the answer can't be
   listed.
-- Ask the questions whose answer changes the design, most decisive first,
-  and stop when the remaining ones would not change it.
+- Ask the questions whose answer changes the design, most decisive first.
+
+Done when no open decision would change the approach. Whatever is still
+assumed is marked as assumed in step 3.
 
 ## 3. Write the understanding back
 
@@ -59,7 +63,11 @@ found later moves the path up, never down.
 - **Direct change.** The brief plus the chosen approach. Build it only after
   the user says go. The rejected approaches go in the commit message.
 - **Spike.** The question it answers and the cheapest probe that answers it,
-  on a throwaway branch. The output is an answer, not code to keep.
+  on a throwaway branch. A question of look and feel gets two or three
+  structurally different variants side by side; a question of logic gets
+  the bare logic driven through the happy path, an edge case and an input
+  that should be refused. The output is an answer, not code to keep: its
+  verdict goes into the `/speckit-plan` guidance or the commit message.
 - **Spec Kit.** Two blocks, ready to run:
   - the `/speckit-specify` description: what and why only (users, outcome,
     success criteria, scope). No stack, no APIs, no structure:
