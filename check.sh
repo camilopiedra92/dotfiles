@@ -280,6 +280,21 @@ check "gitconfig" git config --file git/config --list
 
 check "claude settings" python3 -c "import json; json.load(open('claude/settings.json'))"
 
+# Claude Code's memory docs target under 200 lines per CLAUDE.md: a longer file
+# costs context in every session and lowers adherence. The global file passed
+# that mark unnoticed (214 lines on 2026-10-06) while the template asked
+# projects to stay under it.
+claude_md_size() {
+  local lines
+  lines=$(wc -l < claude/CLAUDE.md)
+  [ "$lines" -lt 200 ] || {
+    echo "claude/CLAUDE.md has $((lines)) lines; the target is under 200."
+    echo "Cut what a tool, a skill or a preset already carries before adding."
+    return 1
+  }
+}
+check "claude/CLAUDE.md stays under 200 lines" claude_md_size
+
 # The same shape as a project's .mcp.json, checked for the two things install.sh
 # relies on: a `mcpServers` object, and a `type` on every entry, because
 # `claude mcp add-json` infers nothing and stores what it is given.

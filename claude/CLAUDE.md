@@ -10,7 +10,6 @@
 - Claude Code and shell configuration live in `~/dotfiles` (versioned). The
   symlinks in `~/.claude/` (CLAUDE.md, `*.sh`, each skill in `skills/`) are
   edited at their target under `~/dotfiles/claude/`, never as stray copies.
-- Usual stack: Python, Node/TypeScript/JavaScript, React, shell and infra.
 
 ## Language
 
@@ -84,14 +83,12 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
 - The review comes before the PR is ready: if CI only runs on pull requests,
   open it as a draft and mark it ready once the review is back.
 - Ready is not merged: a PR merges only on green CI, for the commit that was
-  green. Where the platform can require checks, a ruleset on the default
-  branch does — declared in `~/dotfiles/github/repos.json`; `drift.sh`
-  reports an active public repository left out of it — and the merge is
-  `gh pr merge --auto`. Where it cannot — a
-  private repository on GitHub's free plan — I get the merge as
-  `merge-on-green <n> <merge flags>`, to run in a terminal of its own. A
-  repository without CI has no green to wait for: it gets CI first, since its
-  checks belong in one command CI runs (see "Toolchain").
+  green. Where the platform can require checks, a ruleset on the default branch
+  does — declared in `~/dotfiles/github/repos.json` — and the merge is
+  `gh pr merge --auto`. Where it cannot — a private repository on GitHub's free
+  plan — I get the merge as `merge-on-green <n> <merge flags>`, to run in a
+  terminal of its own. A repository without CI has no green to wait for: it
+  gets CI first, to run the one command "Toolchain" asks for.
 - A subagent's report is a claim: verify its diff or rerun its command before
   passing it on as done.
 
@@ -107,8 +104,6 @@ alongside it. Size the process to what a wrong decision would cost:
 - A feature with a real design choice, or a changed interface, takes the short
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
   `/speckit-implement`, then `/speckit-converge` until it reports converged.
-  The preset makes implement end each user story with a review from a fresh
-  context that tries wrong versions of the code against the tests.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan and
   `/speckit-checklist` and `/speckit-analyze` before implementing.
@@ -125,13 +120,6 @@ Setup and lifecycle:
   decides what goes in for a new project and an existing one alike, and
   `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
   holds for direct changes too and not only inside the speckit skills.
-- The first time `/speckit-implement` sees the whole suite green, the
-  test-first preset commits a Stop hook (`.claude/hooks/stop-gate.sh`): from
-  then on a turn that ends on a red suite is blocked once, with the failure, so
-  even an unattended run has been shown it. A repo with a Stop gate of its own
-  does not get a second one. To turn the gate off, remove its `hooks.Stop`
-  entry in `.claude/settings.json` and keep that file: a missing file is what
-  makes the next run install it again.
 - `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
   `research.md` is where its decisions and their alternatives go. Later
   features never read it, so a decision that binds them moves out before the
@@ -166,20 +154,17 @@ Setup and lifecycle:
   eslint, plus typescript-eslint and `tsc --noEmit` for TypeScript. New projects
   get them at scaffold; a role an existing one lacks is offered once, as its own
   change, not mid-task. Scratch scripts need none of this, nor a lockfile.
-- For node it is pnpm, declared in `mise/config.toml`, never `npm i -g` (that
-  directory is named after node's patch version and empties on the next bump).
-  pnpm resolves only what a package declares; npm's flat `node_modules` does
-  not. Not yarn. Existing npm projects stay on npm: a project's toolchain wins.
-- Do not declare `packageManager` in `package.json` on this machine: corepack is
-  what reads that field, and node removed corepack from the distribution — 26
-  ships `node`, `npm` and `npx` and nothing else. The lockfile says which
-  manager a project uses, and cannot be wrong about it: the manager wrote it.
+- For node it is pnpm, declared in `mise/config.toml`, never `npm i -g` (its
+  directory empties on every node bump), never yarn. An existing npm project
+  stays on npm: a project's toolchain wins.
+- Do not declare `packageManager` in `package.json` on this machine: corepack
+  reads that field, and node 26 no longer ships corepack. The lockfile names
+  the manager, and cannot be wrong about it: the manager wrote it.
 - The version file has to be one something reads. mise leaves
   `idiomatic_version_file_enable_tools` empty by default, so it reads neither
   `.nvmrc` nor `.python-version`, and with corepack gone nothing else reads
   `.nvmrc`: a project here asked for node 22 in one, ran on 26 for months and
-  published from CI on 22. A declaration nothing honours is worse than none,
-  because with none you look: for node, no `.nvmrc`.
+  published from CI on 22. For node, no `.nvmrc`.
 - `.python-version` is the exception: uv reads it to pick the interpreter
   `uv venv` builds on, so it is a uv project's pin, and deleting it because mise
   ignores it breaks what it exists for. `mise.toml` is for a version resolved
