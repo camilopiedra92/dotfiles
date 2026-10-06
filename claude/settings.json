@@ -93,6 +93,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/config-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

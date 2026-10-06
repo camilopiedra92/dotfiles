@@ -88,6 +88,7 @@ link "$DOTFILES/starship.toml" "$HOME/.config/starship.toml"
 link "$DOTFILES/claude/statusline.sh" "$HOME/.claude/statusline.sh"
 link "$DOTFILES/claude/subagent-statusline.sh" "$HOME/.claude/subagent-statusline.sh"
 link "$DOTFILES/claude/git-guard.sh" "$HOME/.claude/git-guard.sh"
+link "$DOTFILES/claude/config-guard.sh" "$HOME/.claude/config-guard.sh"
 link "$DOTFILES/claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 # Each skill as a directory, not its SKILL.md: Claude Code follows a symlinked
 # skill folder, and a file added to a skill later needs no new link. A real

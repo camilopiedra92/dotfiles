@@ -326,10 +326,10 @@ report "settings.json declares every choice" \
 
 # `hooks` sits in LOCAL_ONLY above because most of it is command strings with
 # absolute paths from another tool, and comparing the whole key would report
-# drift forever. The guard is the exception: it is versioned, its path is
-# portable, and it fails open, so a live file that quietly lost it would look
-# exactly like one that never had it. Checking the one entry keeps the coarse
-# exclusion honest without widening it.
+# drift forever. The two guards are the exception: they are versioned, their
+# paths are portable, and they fail open, so a live file that quietly lost one
+# would look exactly like one that never had it. Checking those two entries
+# keeps the coarse exclusion honest without widening it.
 guard_wired() {
   python3 - << 'GUARD'
 import json
@@ -348,15 +348,15 @@ commands = [
     for entry in settings.get('hooks', {}).get('PreToolUse', [])
     for hook in entry.get('hooks', [])
 ]
-if not any('git-guard.sh' in command for command in commands):
-    print('no PreToolUse hook runs git-guard.sh')
-
-guard = os.path.expanduser('~/.claude/git-guard.sh')
-if not os.access(guard, os.X_OK):
-    print('%s is missing or not executable' % guard)
+for name in ('git-guard.sh', 'config-guard.sh'):
+    if not any(name in command for command in commands):
+        print('no PreToolUse hook runs %s' % name)
+    guard = os.path.expanduser('~/.claude/' + name)
+    if not os.access(guard, os.X_OK):
+        print('%s is missing or not executable' % guard)
 GUARD
 }
-report "the git guard is wired on this machine" \
+report "the git and config guards are wired on this machine" \
   "run ./install.sh" \
   "$(guard_wired)"
 
