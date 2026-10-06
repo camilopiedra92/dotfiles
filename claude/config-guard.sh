@@ -15,8 +15,9 @@
 # table for one of the checkers below -- the line between them is the reason
 # this is not a list of filenames: in the projects under ~/Development ruff,
 # pytest and mypy live in pyproject.toml far more often than in files of their
-# own. Creating a config that does not exist yet is setup, not loosening, and
-# goes through.
+# own. Creating one asks too: ruff.toml and pytest.ini win over pyproject.toml,
+# and a nested ruff.toml re-scopes a directory, so a new file can switch a
+# check off as surely as an edited one.
 #
 # Ceiling: this sees Claude's file tools only. A config rewritten through Bash
 # (`sed -i`, a heredoc, a script) never reaches it. Matching file names inside
@@ -25,9 +26,10 @@
 # that, it is a reason to rethink, not to add patterns.
 #
 # Contract: the tool call arrives as JSON on stdin. The ask decision goes to
-# stdout as JSON; no output and exit 0 means no opinion. Anything it cannot
-# read -- bad JSON, an unreadable file, no python3 -- gets no decision, so a
-# crashed guard fails open to the permission rules, like git-guard.sh.
+# stdout as JSON; no output and exit 0 means no opinion. It never exits 2, so
+# anything it cannot read -- bad JSON, an unreadable file, no python3 (exit
+# 127) -- gets no decision, and a crashed guard fails open to the permission
+# rules, like git-guard.sh.
 
 # Python for the TOML tables and the edit simulation; -I so nothing in the
 # project directory (a stray json.py) is imported. Standard library only, and
@@ -51,8 +53,10 @@ WHOLE_FILE = re.compile(
 )
 
 # The pyproject tables seen in those projects that configure a checker.
-CHECKER_TABLES = ("ruff", "mypy", "pytest", "mutmut", "importlinter")
-HEADER = re.compile(r"^\s*\[\[?\s*([^\]]+?)\s*\]\]?")
+CHECKER_TABLES = ("ruff", "mypy", "pytest", "mutmut", "importlinter", "black", "isort")
+# Anchored at both ends, so an array element that opens a line (["E"],) is
+# not read as a header.
+HEADER = re.compile(r"^\s*\[\[?([^\]]+)\]\]?\s*(#.*)?$")
 CHECKER = re.compile(r"^\s*tool\.(%s)(\.|\s*=|$)" % "|".join(CHECKER_TABLES))
 
 
@@ -96,6 +100,9 @@ def touched_checker_table(before, after):
         if op == "equal":
             continue
         changed = [(old_t[i], old[i]) for i in range(i1, i2)] + [(new_t[j], new[j]) for j in range(j1, j2)]
+        # A blank or comment-only line changes no setting; skipping it keeps a
+        # table appended after a checker table from reading as a change to it.
+        changed = [(t, l) for t, l in changed if l.strip() and not l.lstrip().startswith("#")]
         # A line outside any table names its own: tool.ruff.line-length = 100.
         names = [table or line for table, line in changed]
         for name in names:
@@ -112,7 +119,7 @@ try:
 except (ValueError, KeyError, TypeError):
     sys.exit(0)
 
-if tool not in ("Edit", "Write") or not os.path.isfile(path):
+if tool not in ("Edit", "Write"):
     sys.exit(0)
 
 name = os.path.basename(path).lower()
@@ -127,6 +134,8 @@ if name != "pyproject.toml":
 try:
     with open(path, encoding="utf-8") as handle:
         before = handle.read()
+except FileNotFoundError:
+    before = ""
 except (OSError, ValueError):
     sys.exit(0)
 

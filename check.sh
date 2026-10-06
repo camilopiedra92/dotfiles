@@ -3366,6 +3366,30 @@ addopts = "-q"
 [tool.uv]
 dev-dependencies = ["pytest"]
 TOML
+  # Ends on a checker table, so a table appended after it starts with a blank
+  # line that diffs inside that table.
+  mkdir -p "$tmp/tail" "$tmp/odd"
+  printf '[project]\nname = "tail"\n\n[tool.pytest.ini_options]\naddopts = "-q"\n' > "$tmp/tail/pyproject.toml"
+  # Valid TOML spelled the less common ways: a top-level dotted key, spaces
+  # inside the brackets, an indented header, a quoted key, an array whose
+  # elements are arrays, and one value in two tables for replace_all.
+  cat > "$tmp/odd/pyproject.toml" << 'TOML'
+tool.mypy = { strict = true }
+
+[project]
+name = "odd"
+flag = 1
+
+  [ tool.ruff ]
+flag = 1
+extend-select = [
+["E"],
+]
+ignore = []
+
+[tool."pytest".ini_options]
+addopts = "-q"
+TOML
   while IFS='|' read -r want tool file args; do
     [ -z "$want" ] && continue
     payload=$(jq -cn --arg tool "$tool" --arg path "$tmp/$file" --argjson args "$args" \
@@ -3378,7 +3402,8 @@ TOML
   done << 'CASES'
 none|Write|src/app.py|{"content": "print(2)"}
 ask|Edit|eslint.config.mjs|{"old_string": "x = 1", "new_string": "x = 2"}
-none|Write|eslint.config.js|{"content": "export default []"}
+ask|Write|eslint.config.js|{"content": "export default []"}
+ask|Write|tests/ruff.toml|{"content": "lint.select = []"}
 ask|Write|.prettierrc.json|{"content": "{}"}
 ask|Edit|.prettierignore|{"old_string": "x = 1", "new_string": "x = 2"}
 ask|Edit|ruff.toml|{"old_string": "x = 1", "new_string": "x = 2"}
@@ -3401,6 +3426,17 @@ none|Write|pyproject.toml|{"content": "[project]\nname = \"demo\"\ndependencies 
 ask|Write|pyproject.toml|{"content": "[project]\nname = \"demo\"\ndependencies = [\"httpx\"]\n\n[tool.uv]\ndev-dependencies = [\"pytest\"]\n"}
 ask|Edit|pyproject.toml|{"old_string": "[project]", "new_string": "tool.ruff.lint.ignore = [\"E501\"]\n\n[project]"}
 none|Edit|pyproject.toml|{"old_string": "not in the file", "new_string": "x"}
+ask|Write|src/pyproject.toml|{"content": "[tool.ruff]\nlint.select = []\n"}
+ask|Write|fmt/pyproject.toml|{"content": "[tool.black]\nline-length = 200\n"}
+ask|Write|fmt/pyproject.toml|{"content": "[tool.isort]\nskip_glob = [\"*\"]\n"}
+none|Write|pkg/pyproject.toml|{"content": "[project]\nname = \"pkg\"\n"}
+none|Edit|tail/pyproject.toml|{"old_string": "addopts = \"-q\"\n", "new_string": "addopts = \"-q\"\n\n[tool.hatch.build]\nx = 1\n"}
+none|Edit|pyproject.toml|{"old_string": "select = [\"E\", \"F\"]", "new_string": "# keep in sync with CI\nselect = [\"E\", \"F\"]"}
+ask|Edit|odd/pyproject.toml|{"old_string": "strict = true", "new_string": "strict = false"}
+ask|Edit|odd/pyproject.toml|{"old_string": "ignore = []", "new_string": "ignore = [\"F\"]"}
+ask|Edit|odd/pyproject.toml|{"old_string": "addopts = \"-q\"", "new_string": "addopts = \"-q -x\""}
+none|Edit|odd/pyproject.toml|{"old_string": "flag = 1", "new_string": "flag = 2"}
+ask|Edit|odd/pyproject.toml|{"old_string": "flag = 1", "new_string": "flag = 2", "replace_all": true}
 none|Read|eslint.config.mjs|{}
 CASES
   return "$fails"

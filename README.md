@@ -301,8 +301,11 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   shows its reason to you in the permission prompt (code.claude.com hooks
   reference), so a change you requested costs one keypress, and a denial would
   leave the agent to work around it. In `pyproject.toml` it asks only for a
-  change inside `[tool.ruff|mypy|pytest|mutmut|importlinter]`, because that is
-  where the projects here keep that config. The idea came from ECC's
+  change inside `[tool.ruff|mypy|pytest|mutmut|importlinter|black|isort]`,
+  because that is where the projects here keep that config. Creating such a
+  file asks too: a new `ruff.toml` or `pytest.ini` overrides `pyproject.toml`,
+  which an independent review showed by turning `ruff check` from 2 errors to
+  none with one new file. The idea came from ECC's
   `config-protection` hook; ECC itself was not adopted. ECC blocks instead of
   asking and looks at filenames only, so it would have missed almost all of
   the Python config here. It covers the Edit and Write tools only: a
