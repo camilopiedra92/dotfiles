@@ -97,10 +97,16 @@ test-first preset is what keeps each task to one behaviour with its test
 first, citing the requirement IDs it implements; `specify preset list` shows
 which presets a repo has.
 
-Once the repo has a test suite, `sdd-gate <test command>` from the root
-commits a Stop hook: a Claude turn that ends on a red suite is blocked once,
-with the failure, so even an unattended run has been shown it before it ends.
-It runs at every stop, so the command is one quick enough for that.
+The first time `/speckit-implement` sees the whole suite green, the test-first
+preset (v1.4.0 and later) commits a Stop hook: from then on a Claude turn that
+ends on a red suite is blocked once, with the failure, so even an unattended
+run has been shown it before it ends. A repo with a Stop gate of its own does
+not get a second one, and a repo set up with an older preset gets it after
+`specify preset update test-first --from <the tag's zip>`, the URL `sdd-init`
+holds. To change the command, edit `TEST_COMMAND` in
+`.claude/hooks/stop-gate.sh`; to turn the gate off, remove its `hooks.Stop`
+entry in `.claude/settings.json` and keep that file, because a missing file
+is what makes the next run install it again.
 
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
