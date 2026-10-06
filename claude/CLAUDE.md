@@ -4,11 +4,12 @@
 
 `~/Development` is a container folder, not a project. Each subfolder is an
 independent project with its own git, its own toolchain and its own
-conventions. Do not assume something seen in one project applies to another,
-and do not create loose files at the root of `~/Development`.
+conventions. What holds in one project is checked again in the next, and
+files go inside a project, never loose at the root of `~/Development`.
 
-Claude Code and shell configuration live in `~/dotfiles` (versioned). Changes
-to `~/.claude/*.sh` go there, not into stray copies.
+Claude Code and shell configuration live in `~/dotfiles` (versioned). The
+symlinks in `~/.claude/` (CLAUDE.md, `*.sh`, each skill in `skills/`) are
+edited at their target under `~/dotfiles/claude/`, never as stray copies.
 
 Usual stack: Python, Node/TypeScript/JavaScript, React, shell and infra.
 
@@ -44,8 +45,8 @@ default buys nothing today and blocks the better default tomorrow.
 Prove things rather than assert them. If a claim can be settled with a command,
 run it first — and say plainly when something cannot be determined from here
 instead of picking the likely answer. When you add a check, break it on purpose
-before trusting it: a check nobody has watched fail is a check nobody should
-rely on.
+and watch it go red before trusting it: a check nobody has seen go red is a
+check nobody should rely on.
 
 That applies to comments and documentation, not only to code. A comment or a
 README line that describes behaviour is a claim: write what was observed, when
@@ -64,6 +65,7 @@ No fix before the root cause is understood. Read the whole error, reproduce it,
 and find where the bad value comes from rather than where it surfaced. One fix
 at a time, and a third failed fix is not a fourth hypothesis — it means the
 design is wrong, and that is a conversation rather than another patch.
+`/diagnose` carries the method.
 
 Do not create files that are not needed. No READMEs, summaries or
 "implementation notes" documents unless I ask for them. Directories are named
@@ -97,22 +99,15 @@ root, which commits Spec Kit with the released test-first and
 constitution-authoring presets. Then `/speckit-constitution`, whose preset
 decides what goes in for a new project and an existing one alike, and
 `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
-holds for direct changes too and not only inside the speckit skills. The
-test-first preset is what keeps each task to one behaviour, citing the
-requirement IDs it implements, with a list of cases taken from the spec that
-implement turns into tests one at a time, each seen failing first; `specify
-preset list` shows which presets a repo has.
+holds for direct changes too and not only inside the speckit skills.
 
 The first time `/speckit-implement` sees the whole suite green, the test-first
-preset (v1.4.0 and later) commits a Stop hook: from then on a Claude turn that
-ends on a red suite is blocked once, with the failure, so even an unattended
-run has been shown it before it ends. A repo with a Stop gate of its own does
-not get a second one, and a repo set up with an older preset gets it after
-`specify preset update test-first --from <the tag's zip>`, the URL `sdd-init`
-holds. To change the command, edit `TEST_COMMAND` in
-`.claude/hooks/stop-gate.sh`; to turn the gate off, remove its `hooks.Stop`
-entry in `.claude/settings.json` and keep that file, because a missing file
-is what makes the next run install it again.
+preset commits a Stop hook (`.claude/hooks/stop-gate.sh`): from then on a turn
+that ends on a red suite is blocked once, with the failure, so even an
+unattended run has been shown it. A repo with a Stop gate of its own does not
+get a second one. To turn the gate off, remove its `hooks.Stop` entry in
+`.claude/settings.json` and keep that file: a missing file is what makes the
+next run install it again.
 
 `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
 `research.md` is where its decisions and their alternatives go. Later features
@@ -132,9 +127,10 @@ change them or add new config on your own initiative.
 In a new project there is nothing to respect yet, so start from this machine's:
 runtimes come from mise and never from Homebrew, Python packages and virtualenvs
 from uv, and a project that needs a version other than the global one gets its
-own `mise.toml` rather than a global change. Never `pip install` into the
-interpreter itself, and never reach for `python -m venv` when `uv venv` is
-there. If a project needs a native library — the kind uv installs a wrapper for
+own `mise.toml` rather than a global change. Python packages go through uv
+(`uv add`, `uv venv`), never `pip install` into the interpreter itself nor
+`python -m venv`. If a
+project needs a native library — the kind uv installs a wrapper for
 and cannot provide, like the pango behind weasyprint — say so, because that
 dependency is invisible to the lockfile and only surfaces at runtime.
 
@@ -182,10 +178,10 @@ Write tests for logic of its own: a branch, a computation, a parse, a state
 change. Not for getters, wrappers, wiring or one-line delegations. Where a
 project's constitution draws this line, its line applies there. Start from a
 list of the cases — in the conversation or the task list, not a new file —
-simplest first, and take them one at a time. A test you have not watched fail
-is not a test: write it first, run it, and check
-it failed for the reason you expected — an import or collection error proves the
-test was collected, not that it exercises anything. If the first run errors
+simplest first, and take them one at a time. A test you have not seen go red,
+for the reason you expected, is not a test: write it first, run it, and read
+why it failed — an import or collection error proves the test was collected,
+not that it exercises anything. If the first run errors
 instead of failing, stub the thing under test until it fails from inside. Then
 write the simplest thing that makes it pass: a design document is not a licence
 to build past the test in front of you. With the suite green, refactor what that
