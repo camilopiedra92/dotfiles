@@ -1,0 +1,8 @@
+{
+  "camilopiedra92/aware-connector": {"checks": ["ci-passed"]},
+  "camilopiedra92/dotfiles": {"checks": ["check"]},
+  "camilopiedra92/ibkr-control": {"checks": ["backend", "frontend"]},
+  "camilopiedra92/spec-kit-preset-constitution-authoring": {"checks": ["compose (pinned)"]},
+  "camilopiedra92/spec-kit-preset-test-first": {"checks": ["compose (pinned)"]},
+  "camilopiedra92/workstation": {"checks": ["ubuntu-checks", "windows-checks"]}
+}
