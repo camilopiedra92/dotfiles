@@ -30,8 +30,9 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
 - When a request reads two ways and the reading changes the result, do not
   pick one silently: ask if a wrong guess is costly to undo, otherwise take the
   likelier reading and say which one you took when you finish.
-- Ask before introducing a new dependency. I almost always prefer solving it
-  with what is already in the project or with the standard library.
+- Once you have read the code the change touches, reuse before writing, in
+  order: this codebase, the stdlib, the platform (`<input type="date">`, a DB
+  constraint), an installed dependency, new code. Ask before a new dependency.
 - When I ask whether something is best practice, judge it against the
   authoritative source — the published schema, the vendor's docs, the upstream
   release calendar — not against what is already configured here: reading a
@@ -171,9 +172,8 @@ Setup and lifecycle:
 
 ## Code
 
-- Comment the why, not the what. If the comment repeats what the next line
-  already says, drop it. The ones worth keeping explain a decision, an edge
-  case, or something that would surprise the reader.
+- Comment the why, not the what: a decision, an edge case, a surprise, or a
+  deliberate shortcut's ceiling and its trigger (`O(n²); index past 10k rows`).
 - Build only what today's callers need. No abstraction with a single caller,
   no option or extension point nobody asked for, no handling for a state the
   code cannot reach. If someone reading it cold would call it overbuilt, it is.
