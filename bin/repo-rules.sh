@@ -19,6 +19,12 @@
 # `apply` never deletes. A ruleset other than the declared one is reported by
 # `check` and left for a person to remove.
 #
+# `check` with no repository named also reports the public repositories under
+# active work -- not archived, pushed in the last 90 days -- that the
+# declaration leaves out, so joining it is checked rather than remembered.
+# Which checks a new one requires is a person's choice, so it is reported and
+# never added.
+#
 # Exit: 0 in the declared state (check) or applied (apply); 1 drift found by
 # check; 2 the declaration or GitHub could not be read.
 set -euo pipefail
@@ -169,4 +175,22 @@ while read -r repo; do
       ;;
   esac
 done <<< "$targets"
+
+if [ "$mode" = check ] && [ $# -eq 0 ]; then
+  # --source leaves forks out: someone else's project, not one kept here.
+  if ! listed=$(gh repo list --visibility public --source --limit 1000 \
+    --json nameWithOwner,isArchived,pushedAt); then
+    echo "repo-rules: could not list the public repositories (gh's error is above)"
+    exit 2
+  fi
+  # A repository never pushed to has no pushedAt, and is not under work.
+  active=$(jq -r '.[] | select((.isArchived | not) and .pushedAt != null
+    and (.pushedAt | fromdateiso8601) > (now - 90 * 86400)) | .nameWithOwner' <<< "$listed")
+  while read -r repo; do
+    [ -n "$repo" ] || continue
+    grep -qxF "$repo" <<< "$declared" && continue
+    echo "$repo: active public repository not declared in $declaration (add it there, then apply)"
+    [ "$status" = 2 ] || status=1
+  done <<< "$active"
+fi
 exit "$status"

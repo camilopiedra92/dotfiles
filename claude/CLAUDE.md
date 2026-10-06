@@ -84,8 +84,8 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   open it as a draft and mark it ready once the review is back.
 - Ready is not merged: a PR merges only on green CI, for the commit that was
   green. Where the platform can require checks, a ruleset on the default
-  branch does — declared in `~/dotfiles/github/repos.json`, which every
-  public repository I keep working on joins — and the merge is
+  branch does — declared in `~/dotfiles/github/repos.json`; `drift.sh`
+  reports an active public repository left out of it — and the merge is
   `gh pr merge --auto`. Where it cannot — a
   private repository on GitHub's free plan — I get the merge as
   `merge-on-green <n> <merge flags>`, to run in a terminal of its own. A
