@@ -50,6 +50,11 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   is built: what else was considered, and why it lost. Two lines in the commit
   message when the decision dies with the commit, a document only when it
   outlives it.
+- An escape hatch — `# fmt: off`, a `noqa`, a skipped test, a linter exclude
+  for one file — is a workaround until justified: first look for the design
+  that needs none. One that stays carries a comment beside it saying why, and
+  what would let it go. A tree the project chose not to check, such as vendored
+  or frozen code, is scope, not an escape hatch.
 - No fix before the root cause is understood. Read the whole error, reproduce
   it, and find where the bad value comes from rather than where it surfaced.
   One fix at a time, and a third failed fix is not a fourth hypothesis — it
