@@ -26,6 +26,17 @@ file's.
 Calibrate by size. Make a small or mechanical change directly and tell me
 afterwards. If it touches several files, changes an interface, or involves a
 design decision with real alternatives, propose the approach before writing.
+If what I asked for has a simpler way to the same result, say so before
+building mine.
+
+When a request reads two ways and the reading changes the result, do not pick
+one silently: ask if a wrong guess is costly to undo, otherwise take the
+likelier reading and say which one you took when you finish.
+
+Every changed line traces to the request. Something unrelated you notice on the
+way — dead code, a nearby bug, a style you would not have chosen — is out of
+scope: mention it, do not fix it. What your own change left orphaned, you
+remove.
 
 Anything with a real alternative gets the alternative written down before it is
 built: what else was considered, and why it lost. Two lines in the commit
@@ -173,6 +184,10 @@ node project, or a tool that runs before the venv exists.
 Comment the why, not the what. If the comment repeats what the next line
 already says, drop it. The ones worth keeping explain a decision, an edge case,
 or something that would surprise the reader.
+
+Build only what today's callers need. No abstraction with a single caller, no
+option or extension point nobody asked for, no handling for a state the code
+cannot reach. If someone reading it cold would call it overbuilt, it is.
 
 Write tests for logic of its own: a branch, a computation, a parse, a state
 change. Not for getters, wrappers, wiring or one-line delegations. Where a
