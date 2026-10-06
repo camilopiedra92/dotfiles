@@ -15,7 +15,7 @@
 # <newer tag's zip>`. The URLs below are the versions new repos get.
 set -euo pipefail
 
-PRESET_TEST_FIRST_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.3.0.zip
+PRESET_TEST_FIRST_URL=https://github.com/camilopiedra92/spec-kit-preset-test-first/archive/refs/tags/v1.4.1.zip
 PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.0.0.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
