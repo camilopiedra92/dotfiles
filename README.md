@@ -74,7 +74,7 @@ claude/subagent-statusline.sh   per-agent telemetry in the agent panel
 claude/statusline-demo.sh       renders both with sample cases
 claude/skills/<name>/           personal skills, each linked into ~/.claude/skills by install.sh:
                                 `/brainstorm` (shape an open idea), `/diagnose` (root cause of a bug),
-                                `/wrap-up` (close a session and hand off)
+                                `/wrap-up` (close a session and hand off), `/wp` (shortcut for it)
 install.sh             symlinks + full installation
 check.sh               every check, run by you, the hook and CI
 drift.sh               what this machine has that the Brewfile does not say
