@@ -150,10 +150,10 @@ Setup and lifecycle:
 - Such a Python, TypeScript or JavaScript project has a formatter, a linter and,
   outside plain JS, a type checker: dev dependencies, config in the repo, one
   command CI runs (else a pre-commit hook) and you run before calling work done.
-  Defaults, as in ~/Development: ruff and mypy via `uv add --dev`; prettier and
-  eslint, plus typescript-eslint and `tsc --noEmit` for TypeScript. New projects
-  get them at scaffold; a role an existing one lacks is offered once, as its own
-  change, not mid-task. Scratch scripts need none of this, nor a lockfile.
+  Approved defaults, no question needed: ruff, mypy, pytest-timeout via
+  `uv add --dev`; prettier, eslint, typescript-eslint and `tsc --noEmit` for
+  TypeScript. New projects get them at scaffold; an existing one gets a missing
+  role once, as its own change, not mid-task. Scratch scripts: none, nor a lockfile.
 - For node it is pnpm, declared in `mise/config.toml`, never `npm i -g` (its
   directory empties on every node bump), never yarn. An existing npm project
   stays on npm: a project's toolchain wins.
