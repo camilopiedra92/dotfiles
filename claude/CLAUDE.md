@@ -184,10 +184,10 @@ Setup and lifecycle:
   new file — simplest first, and take them one at a time. A case you think of
   along the way goes on the list, not into the test in progress.
 - A test you have not seen go red, for the reason you expected, is not a test:
-  write it first, run it, and read why it failed — an import or collection
-  error proves the test was collected, not that it exercises anything. If the
-  first run errors instead of failing, stub the thing under test until it fails
-  from inside.
+  write it first, run it in a tool call that changes no other file, and read
+  why it failed; the code comes in a later call. An import or collection error
+  proves only collection: stub the thing under test until it fails from inside.
+  A first-run pass on this session's code: stub that code, see red, restore it.
 - Then write the simplest thing that makes it pass: a design document is not a
   licence to build past the test in front of you. With the suite green,
   refactor what that cycle left — duplication, names that no longer fit —
