@@ -105,8 +105,11 @@ alongside it. Size the process to what a wrong decision would cost:
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
   `/speckit-implement`, then `/speckit-converge` until it reports converged.
 - Domain or money logic, a contract something external consumes, or work across
-  more than three or four modules adds `/speckit-clarify` before the plan and
-  `/speckit-checklist` and `/speckit-analyze` before implementing.
+  more than three or four modules adds `/speckit-clarify` before the plan,
+  `/speckit-checklist` after it and `/speckit-analyze` before implementing. A
+  fresh context reviews each checklist it writes before `/speckit-tasks`: you
+  mark what it finds met, I mark the rest or accept it open with the reason
+  beside it, and `/speckit-implement`'s unchecked-items question is mine.
 - When the way to do something is unknown, spike on a throwaway branch and
   specify from what it taught. A spec is not a way to explore.
 - When the idea itself is still open, `/brainstorm` shapes it first and hands
@@ -115,11 +118,8 @@ alongside it. Size the process to what a wrong decision would cost:
 Setup and lifecycle:
 
 - A repo without `.specify/` gets it at its first feature: `sdd-init` from the
-  root, which commits Spec Kit with the released constitution-authoring
-  preset. Then `/speckit-constitution`, whose preset decides what goes in for
-  a new project and an existing one alike, and
-  `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
-  holds for direct changes too and not only inside the speckit skills.
+  root, then `/speckit-constitution`, and `@.specify/memory/constitution.md` in
+  its CLAUDE.md, so the constitution holds for direct changes too.
 - `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
   `research.md` is where its decisions and their alternatives go. Later
   features never read it, so a decision that binds them moves out before the
