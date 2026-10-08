@@ -104,9 +104,9 @@ alongside it. Size the process to what a wrong decision would cost:
 - A feature with a real design choice, or a changed interface, takes the short
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
   `/speckit-implement`, then `/speckit-converge` until it reports converged.
-  `/speckit-tasks` treats tests as requested for stories with logic, test tasks
-  first; each story closes with the whole suite, the project's mutation check
-  (if any) on the code the story changed, and a fresh-context review.
+  `/speckit-tasks` treats tests as requested for stories with logic of their
+  own, test tasks first; each story closes with the whole suite, the
+  project's mutation check (if any) on its changed code, and a fresh review.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
   `/speckit-checklist` after it and `/speckit-analyze` before implementing. A
@@ -182,16 +182,16 @@ Setup and lifecycle:
   change. Not for getters, wrappers, wiring or one-line delegations. Where a
   project's constitution draws this line, its line applies there.
 - Cases first: the spec's acceptance scenarios, else the conversation; one
-  found along the way becomes a task in Spec Kit, never a new file.
+  found later is a new test task (Spec Kit) with its own red run first.
 - Tests come from the cases and precede the code: written after, they read its
   bugs as the spec. Run them once before the code exists — per story's test
   tasks or per direct change, not per case or tool call — and check each fails
   for the reason its case predicts (a missing name proves only collection:
-  stub it, rerun). One that passes then guards existing behaviour (break that
-  code by hand, as for any check) or tests nothing new: tighten or drop it.
+  stub it, rerun). A pass then guards existing behaviour, kept once that
+  code broken by hand turns it red, or adds nothing: tighten or drop it.
 - Then the simplest code that passes them, tests untouched: a wrong test is
-  named with why, changed as its own step, and seen failing on the code it
-  should reject. Refactor on green, rerunning the tests it touches each step.
+  named with why, changed as its own step, and seen red on code broken by
+  hand. Refactor on green, rerunning the tests it touches each step.
 
 When you finish, tell me what actually happened: if a test fails, show me the
 output; if you left something half done, say so. I prefer an uncomfortable
