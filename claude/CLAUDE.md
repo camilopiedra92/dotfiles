@@ -116,8 +116,8 @@ Setup and lifecycle:
 
 - A repo without `.specify/` gets it at its first feature: `sdd-init` from the
   root, which commits Spec Kit with the released constitution-authoring
-  preset. Then `/speckit-constitution`, whose preset
-  decides what goes in for a new project and an existing one alike, and
+  preset. Then `/speckit-constitution`, whose preset decides what goes in for
+  a new project and an existing one alike, and
   `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
   holds for direct changes too and not only inside the speckit skills.
 - `specs/<n>-<slug>/` is the source of truth for a feature, and the plan's
