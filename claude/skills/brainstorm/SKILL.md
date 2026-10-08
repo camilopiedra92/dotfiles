@@ -41,11 +41,11 @@ assumed is marked as assumed in step 3.
 ## 3. Write the understanding back
 
 A short note: outcome, users, constraints, success criteria, out of scope.
-Each success criterion is a concrete example — a situation and the outcome
-expected in it: these become the spec's acceptance scenarios, and the tests
-are written from them before any code. Mark what the user said apart from
-what you assumed. Ask for corrections
-and apply them before going on.
+Each success criterion comes with concrete examples — a situation and the
+outcome expected in it: `/speckit-specify` turns them into acceptance
+scenarios, and the tests are written from them before any code. Mark what the
+user said apart from what you assumed. Ask for corrections and apply them
+before going on.
 
 ## 4. Approaches
 
