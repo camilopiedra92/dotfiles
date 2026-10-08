@@ -115,8 +115,8 @@ alongside it. Size the process to what a wrong decision would cost:
 Setup and lifecycle:
 
 - A repo without `.specify/` gets it at its first feature: `sdd-init` from the
-  root, which commits Spec Kit with the released test-first and
-  constitution-authoring presets. Then `/speckit-constitution`, whose preset
+  root, which commits Spec Kit with the released constitution-authoring
+  preset. Then `/speckit-constitution`, whose preset
   decides what goes in for a new project and an existing one alike, and
   `@.specify/memory/constitution.md` in its CLAUDE.md, so the constitution
   holds for direct changes too and not only inside the speckit skills.

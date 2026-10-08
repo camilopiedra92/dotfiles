@@ -224,8 +224,8 @@ retire "$HOME/.zsh_plugins.txt"
 retire "$HOME/.zsh_plugins.zsh"
 
 # A command this repo used to link and no longer ships: sdd-gate moved into
-# the test-first preset, which installs the gate itself, and its link would
-# dangle on a machine that installed it.
+# the test-first preset (since dropped), and its link would dangle on a
+# machine that installed it.
 log "Retiring commands that left this repo"
 retire "$HOME/.local/bin/sdd-gate"
 
