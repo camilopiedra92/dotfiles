@@ -41,7 +41,10 @@ assumed is marked as assumed in step 3.
 ## 3. Write the understanding back
 
 A short note: outcome, users, constraints, success criteria, out of scope.
-Mark what the user said apart from what you assumed. Ask for corrections
+Each success criterion is a concrete example — a situation and the outcome
+expected in it: these become the spec's acceptance scenarios, and the tests
+are written from them before any code. Mark what the user said apart from
+what you assumed. Ask for corrections
 and apply them before going on.
 
 ## 4. Approaches
@@ -71,7 +74,7 @@ found later moves the path up, never down.
   commit message of the change that follows.
 - **Spec Kit.** Two blocks, ready to run:
   - the `/speckit-specify` description: what and why only (users, outcome,
-    success criteria, scope). No stack, no APIs, no structure:
+    success criteria with their examples, scope). No stack, no APIs, no structure:
     `/speckit-specify`'s quality checklist flags and strips them.
   - the `/speckit-plan` guidance: the chosen approach, the alternatives and
     why each lost. The plan only has to consider its input, so once it has
