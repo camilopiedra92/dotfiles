@@ -105,6 +105,20 @@
   },
   "chat.mcp.gallery.enabled": true,
 
+  // ---------- YAML ----------
+  // Written by redhat.vscode-yaml 1.24 itself while vscode-github-actions is
+  // installed, so that one validates workflows alone (read in its dist code,
+  // 2026-10-08). Versioned so the extension finds it in place and stops
+  // rewriting this file; drop it with the GitHub Actions extension.
+  "yaml.disableSchemaDetection": [
+    "**/.github/workflows/*.yml",
+    "**/.github/workflows/*.yaml",
+    "**/.gitea/workflows/*.yml",
+    "**/.gitea/workflows/*.yaml",
+    "**/.forgejo/workflows/*.yml",
+    "**/.forgejo/workflows/*.yaml",
+  ],
+
   // ---------- Claude Code ----------
   // The panel, not the sidebar: it keeps the full editor width for code.
   "claudeCode.preferredLocation": "panel",
