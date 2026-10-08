@@ -110,6 +110,14 @@
 	# looking, and untrackedCache remembers which directories held no untracked
 	# files. On a large repo this is the difference between seconds and
 	# milliseconds, and starship runs it on every prompt.
+	#
+	# It also starts a daemon for every repository a git command touches,
+	# throwaway ones included, and the daemon lives as long as its directory: a
+	# test suite that builds scratch repositories should run git with
+	# GIT_CONFIG_GLOBAL=/dev/null (as git's own test suite does), or each run
+	# leaves daemons behind (613 from one project's pytest temp dirs, found
+	# 2026-10-08). That also keeps this file's hooks, signing and defaults out
+	# of a run meant to match CI's.
 	fsmonitor = true
 	untrackedCache = true
 
