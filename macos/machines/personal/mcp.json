@@ -4,6 +4,10 @@
       "type": "stdio",
       "command": "ynab-mcp",
       "args": []
+    },
+    "croma": {
+      "type": "http",
+      "url": "https://api.croma.run/mcp"
     }
   }
 }
