@@ -104,6 +104,8 @@ alongside it. Size the process to what a wrong decision would cost:
 - A feature with a real design choice, or a changed interface, takes the short
   path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
   `/speckit-implement`, then `/speckit-converge` until it reports converged.
+  Each task sees its new tests red then green; each user story closes with
+  the whole suite, the project's mutation check if any, and a fresh review.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
   `/speckit-checklist` after it and `/speckit-analyze` before implementing. A
@@ -112,8 +114,6 @@ alongside it. Size the process to what a wrong decision would cost:
   beside it, and `/speckit-implement`'s unchecked-items question is mine.
 - When the way to do something is unknown, spike on a throwaway branch and
   specify from what it taught. A spec is not a way to explore.
-- When the idea itself is still open, `/brainstorm` shapes it first and hands
-  off to one of the paths above; it writes nothing.
 
 Setup and lifecycle:
 
@@ -191,7 +191,7 @@ Setup and lifecycle:
 - Then write the simplest thing that makes it pass: a design document is not a
   licence to build past the test in front of you. With the suite green,
   refactor what that cycle left — duplication, names that no longer fit —
-  without changing behaviour, running the suite after each step.
+  without changing behaviour, running the tests it touches after each step.
 
 When you finish, tell me what actually happened: if a test fails, show me the
 output; if you left something half done, say so. I prefer an uncomfortable
