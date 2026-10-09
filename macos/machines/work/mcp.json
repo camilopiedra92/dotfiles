@@ -4,6 +4,10 @@
       "type": "stdio",
       "command": "aware",
       "args": ["mcp"]
+    },
+    "glean_claude-mcp": {
+      "type": "http",
+      "url": "https://autodesk-be.glean.com/mcp/claude-mcp"
     }
   }
 }

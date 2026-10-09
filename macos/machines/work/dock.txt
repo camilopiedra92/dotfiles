@@ -1,0 +1,15 @@
+# The work Mac's Dock apps, left to right, one absolute path per line.
+# `#` starts a comment. macos/dock.sh applies it from install.sh and checks it
+# from drift.sh; folders and stacks right of the divider are not managed here.
+#
+# Taken from this machine's Dock on 2026-10-05, unchanged.
+/Applications/Microsoft Outlook.app
+/Applications/Google Chrome.app
+/System/Applications/Notes.app
+/Applications/Slack.app
+/Applications/Microsoft Teams.app
+/Applications/zoom.us.app
+/Applications/Visual Studio Code.app
+/Applications/Glean.app
+/Applications/AI Observability Platform.app
+/Applications/Ghostty.app
