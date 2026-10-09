@@ -3307,12 +3307,14 @@ drift_counts_profile_brewfile() {
   }
   mkdir -p "$tmp/repo" "$tmp/machine" "$tmp/bare"
   printf 'brew "bat"\ncask "ghostty"\n' > "$tmp/repo/Brewfile"
-  printf 'cask "rectangle"\n' > "$tmp/machine/Brewfile"
+  printf 'cask "rectangle"\ncask "someone/tap/pinned@1.2"\n' > "$tmp/machine/Brewfile"
 
   # shellcheck disable=SC2016  # expanded by the inner shell
   out=$(cd "$tmp/repo" && machine_dir="$tmp/machine" bash -c '. "$1" && declared cask' _ "$fn" | paste -sd, -) || return 1
-  [ "$out" = "ghostty,rectangle" ] || {
-    echo "expected both Brewfiles' casks, got: ${out:-nothing}"
+  # brew list --cask names a tapped cask by its token, without the tap, so a
+  # declaration written with the tap has to be compared without it.
+  [ "$out" = "ghostty,pinned@1.2,rectangle" ] || {
+    echo "expected both Brewfiles' casks, tap prefix dropped, got: ${out:-nothing}"
     return 1
   }
   # shellcheck disable=SC2016  # expanded by the inner shell

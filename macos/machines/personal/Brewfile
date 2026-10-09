@@ -1,8 +1,12 @@
 # Casks only the personal Mac wants, installed by install.sh step 8a after the
 # shared Brewfile.
+# Casks pinned to the last version a licence covers live in this tap; its README
+# says why each is pinned and the Brewfile line below it is where one is used.
+tap "camilopiedra92/tap"
 cask "1password"
 cask "appcleaner"
 cask "betterdisplay"
+cask "camilopiedra92/tap/cleanshot@4.8.11"
 cask "cursor"
 cask "db-browser-for-sqlite"
 cask "gcloud-cli"
