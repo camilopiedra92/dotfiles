@@ -1,7 +1,15 @@
 # Casks only the personal Mac wants, installed by install.sh step 8a after the
 # shared Brewfile.
 cask "1password"
+cask "appcleaner"
 cask "cursor"
 cask "db-browser-for-sqlite"
 cask "gcloud-cli"
+cask "keyclu"
+cask "notion-calendar"
 cask "rectangle"
+cask "stats"
+cask "tradingview"
+# Mac App Store apps, by id (`mas search <name>` finds one). Both are in the Dock.
+mas "Todoist", id: 585829637
+mas "WhatsApp", id: 310633997
