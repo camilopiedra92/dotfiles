@@ -467,6 +467,16 @@ fi
 machine_dir=$("$DOTFILES/macos/machine.sh" dir)
 log "Machine profile: ${machine_dir##*/}"
 
+# --- 8a. Machine Brewfile ---
+# The casks only this Mac wants, from its profile's own Brewfile, so the shared
+# one stays what every Mac needs on day one. After 8 because the profile is
+# what says which file to read, and --no-upgrade for the reason step 2 gives.
+# A profile with no Brewfile (the work Mac) installs nothing here.
+if [ -f "$machine_dir/Brewfile" ]; then
+  log "Installing the machine's Homebrew packages"
+  brew bundle install --no-upgrade --file="$machine_dir/Brewfile"
+fi
+
 # --- 8b. Claude Code MCP servers ---
 # User-scope servers live in ~/.claude.json, a file Claude Code owns and rewrites
 # freely, so they are neither symlinked nor merged in: the CLI is the interface
