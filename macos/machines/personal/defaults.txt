@@ -29,6 +29,23 @@ com.knollsoft.Rectangle landscapeSnapAreas              string  [8,{"action":14}
 # shared.
 NSGlobalDomain          com.apple.mouse.scaling         float   1.5
 
+# ── Battery ─────────────────────────────────────────────────────────────────
+
+# AlDente's charging behaviour, the reason the app is installed: stop at 80%,
+# sail (let the battery drift instead of topping up) down to 10 points below
+# it, and protect against heat above 35 C. Only these five of its ~85 keys: the
+# rest is state it rewrites itself (last calibration, window frames, update
+# checks) or binary blobs a line here cannot hold, and its licence is not in
+# the plist (paddleLicense reads empty). Read off this Mac on 2026-10-09 and
+# not compared with AlDente's own defaults, so whether each differs from them
+# is not known; a reinstall empties the plist, which is what these lines
+# restore.
+com.apphousekitchen.aldente-pro chargeVal               float   80
+com.apphousekitchen.aldente-pro sailingMode             bool    true
+com.apphousekitchen.aldente-pro sailingLevel            float   10
+com.apphousekitchen.aldente-pro heatProtectMode         bool    true
+com.apphousekitchen.aldente-pro maxTemperature          float   35
+
 # ── Screenshots ─────────────────────────────────────────────────────────────
 
 # CleanShot X takes every screenshot here: macOS's own Cmd+Shift+3/4/5
