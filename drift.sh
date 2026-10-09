@@ -35,7 +35,8 @@ machine_dir=$(macos/machine.sh dir 2> /dev/null) || machine_dir=
 export machine_dir
 
 # Entries of one kind from the shared Brewfile and the profile's, sorted for comm.
-declared() { cat Brewfile ${machine_dir:+"$machine_dir/Brewfile"} 2> /dev/null | grep -oE "^$1 \"[^\"]+\"" | sed "s/^$1 \"//; s/\"\$//" | sort; }
+# A tapped entry (user/tap/name) loses its tap: `brew list` names it by token.
+declared() { cat Brewfile ${machine_dir:+"$machine_dir/Brewfile"} 2> /dev/null | grep -oE "^$1 \"[^\"]+\"" | sed "s/^$1 \"//; s/\"\$//; s#^[^/]*/[^/]*/##" | sort; }
 
 report() {
   local title=$1 hint=$2 items=$3
