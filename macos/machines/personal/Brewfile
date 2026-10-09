@@ -4,6 +4,7 @@
 # says why each is pinned and the Brewfile line below it is where one is used.
 tap "camilopiedra92/tap"
 cask "1password"
+cask "aldente"
 cask "appcleaner"
 cask "betterdisplay"
 cask "camilopiedra92/tap/cleanshot@4.8.11"
