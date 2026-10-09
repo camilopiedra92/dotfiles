@@ -841,7 +841,7 @@ have. What every Mac gets stays where it was — `macos/defaults.txt`,
 `macos/machines/<profile>/`: `dock.txt`, which is only ever per machine;
 `mcp.json`, the MCP servers only that Mac has — YNAB on the personal one,
 `aware` and Glean on the work one — added on top of `claude/mcp.json`; `Brewfile`, the
-casks only that Mac wants, installed by `install.sh` step 8a after the shared
+packages only that Mac wants, installed by `install.sh` step 8a after the shared
 one (a profile without one installs nothing there); and
 `defaults.txt` and `handlers.txt`, read after the shared file of the same
 name. A key or an extension is in the shared file or a machine's, never
