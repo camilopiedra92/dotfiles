@@ -25,8 +25,7 @@
 # 14:54:53-14:55:01), a drift.sh run after that still reported Claude.app for
 # `json`, `yaml` and `yml`, and then `check` exited 0 at 14:56:50. No upper
 # bound on the delay has been measured, so `apply` does not read back what it
-# set --
-# drift.sh's `check` is the verification, and runs long after.
+# set -- drift.sh's `check` is the verification, and runs long after.
 #
 # `check` compares the app `duti -x` reports as the default, which is the
 # one Finder opens on a double-click; it does not read each role apart.
