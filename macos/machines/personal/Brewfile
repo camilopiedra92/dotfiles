@@ -2,6 +2,7 @@
 # shared Brewfile.
 cask "1password"
 cask "appcleaner"
+cask "betterdisplay"
 cask "cursor"
 cask "db-browser-for-sqlite"
 cask "gcloud-cli"
