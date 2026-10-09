@@ -31,15 +31,18 @@ NSGlobalDomain          com.apple.mouse.scaling         float   1.5
 
 # ── Battery ─────────────────────────────────────────────────────────────────
 
-# AlDente's charging behaviour, the reason the app is installed: stop at 80%,
-# sail (let the battery drift instead of topping up) down to 10 points below
-# it, and protect against heat above 35 C. Only these five of its ~85 keys: the
-# rest is state it rewrites itself (last calibration, window frames, update
-# checks) or binary blobs a line here cannot hold, and its licence is not in
-# the plist (paddleLicense reads empty). Read off this Mac on 2026-10-09 and
-# not compared with AlDente's own defaults, so whether each differs from them
-# is not known; a reinstall empties the plist, which is what these lines
-# restore.
+# Five of AlDente's ~83 keys, the ones that set its charging behaviour: a limit
+# of 80, "sailing" on at 10, and heat protection at 35. What the last four mean
+# (units, and whether 10 is points below the limit or an absolute level) is
+# read from the key names and the app's UI, not observed. The other keys are
+# left out of this change: some are state it rewrites itself (last calibration,
+# window frames, update checks), some are binary blobs a line here cannot hold,
+# and some are plain preferences (menu bar icon, launch at login) that nobody
+# has decided to version yet. Its licence is not in the plist (paddleLicense
+# reads empty). Read off this Mac on 2026-10-09 and not compared with
+# AlDente's own defaults, so whether each differs from them is not known.
+# AlDente's uninstaller emptied this plist here; whether these lines restore a
+# fresh install was not tested.
 com.apphousekitchen.aldente-pro chargeVal               float   80
 com.apphousekitchen.aldente-pro sailingMode             bool    true
 com.apphousekitchen.aldente-pro sailingLevel            float   10
