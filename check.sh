@@ -1563,7 +1563,7 @@ install_machine_step() {
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
-    sed -n '/^# --- 8\. Machine profile/,/^# --- 8b\./p' install.sh
+    sed -n '/^# --- 8\. Machine profile/,/^# --- 8a\./p' install.sh
   } > "$tmp/step.sh"
   grep -qF 'machine.sh' "$tmp/step.sh" || {
     echo "could not extract step 8 from install.sh"
@@ -1608,7 +1608,7 @@ install_machine_prompt() {
   {
     # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
     echo 'log() { printf "==> %s\n" "$1"; }'
-    sed -n '/^# --- 8\. Machine profile/,/^# --- 8b\./p' install.sh
+    sed -n '/^# --- 8\. Machine profile/,/^# --- 8a\./p' install.sh
   } > "$tmp/step.sh"
   mkdir -p "$tmp/machines/personal"
   rc=0
@@ -1649,6 +1649,49 @@ install_machine_prompt() {
   esac
 }
 check "install.sh asks again after a wrong name, and stops with a reason on end of input" install_machine_prompt
+
+# Step 8a installs the casks only this Mac wants, from its profile's own
+# Brewfile. Run against a stub brew that records its arguments: installing is
+# Homebrew's job, what is ours is which file it is pointed at, and that a
+# profile with no Brewfile (the work Mac) installs nothing and still succeeds.
+install_machine_brewfile_step() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  {
+    # shellcheck disable=SC2016,SC2028  # written verbatim, expanded when it runs
+    echo 'log() { printf "==> %s\n" "$1"; }'
+    sed -n '/^# --- 8a\. Machine Brewfile/,/^# --- 8b\./p' install.sh
+  } > "$tmp/step.sh"
+  grep -qF 'brew bundle' "$tmp/step.sh" || {
+    echo "could not extract step 8a from install.sh"
+    return 1
+  }
+  one_step_only "$tmp/step.sh" || return 1
+  mkdir -p "$tmp/bin" "$tmp/with" "$tmp/without"
+  printf '#!/bin/sh\necho "$@" >> "%s/brew.log"\n' "$tmp" > "$tmp/bin/brew"
+  chmod +x "$tmp/bin/brew"
+  echo 'cask "rectangle"' > "$tmp/with/Brewfile"
+
+  PATH="$tmp/bin:$PATH" machine_dir="$tmp/without" bash -euo pipefail "$tmp/step.sh" > /dev/null 2>&1 || {
+    echo "the step failed for a profile with no Brewfile"
+    return 1
+  }
+  [ ! -e "$tmp/brew.log" ] || {
+    echo "brew ran for a profile with no Brewfile: $(cat "$tmp/brew.log")"
+    return 1
+  }
+  PATH="$tmp/bin:$PATH" machine_dir="$tmp/with" bash -euo pipefail "$tmp/step.sh" > /dev/null 2>&1 || {
+    echo "the step failed for a profile with a Brewfile"
+    return 1
+  }
+  out=$(cat "$tmp/brew.log" 2> /dev/null)
+  [ "$out" = "bundle install --no-upgrade --file=$tmp/with/Brewfile" ] || {
+    echo "brew was called with: ${out:-nothing}"
+    return 1
+  }
+}
+check "install.sh installs the profile's Brewfile with --no-upgrade, and nothing without one" install_machine_brewfile_step
 
 # ── macOS defaults ───────────────────────────────────────────────────────────
 # macos/defaults.txt is the fourth manifest here and the only one whose
@@ -3248,6 +3291,38 @@ drift_counts_profile_mcp_servers() {
   }
 }
 check "drift.sh counts the profile's MCP servers as declared" drift_counts_profile_mcp_servers
+
+# A cask the profile's Brewfile declares is declared: reported as drift, it
+# would send the owner to add to the shared Brewfile what the profile exists
+# to keep out of it.
+drift_counts_profile_brewfile() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn="$tmp/fn.sh"
+  sed -n '/^declared() /p' drift.sh > "$fn"
+  grep -qF 'Brewfile' "$fn" || {
+    echo "could not extract declared from drift.sh"
+    return 1
+  }
+  mkdir -p "$tmp/repo" "$tmp/machine" "$tmp/bare"
+  printf 'brew "bat"\ncask "ghostty"\n' > "$tmp/repo/Brewfile"
+  printf 'cask "rectangle"\n' > "$tmp/machine/Brewfile"
+
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && machine_dir="$tmp/machine" bash -c '. "$1" && declared cask' _ "$fn" | paste -sd, -) || return 1
+  [ "$out" = "ghostty,rectangle" ] || {
+    echo "expected both Brewfiles' casks, got: ${out:-nothing}"
+    return 1
+  }
+  # shellcheck disable=SC2016  # expanded by the inner shell
+  out=$(cd "$tmp/repo" && machine_dir="$tmp/bare" bash -c '. "$1" && declared cask' _ "$fn") || return 1
+  [ "$out" = "ghostty" ] || {
+    echo "a profile with no Brewfile changed the answer: ${out:-nothing}"
+    return 1
+  }
+}
+check "drift.sh counts the profile's Brewfile as declared" drift_counts_profile_brewfile
 
 # A pin and the machine can disagree in two directions, and they close in
 # opposite ways. When `specify self upgrade` moved the machine past the pin,

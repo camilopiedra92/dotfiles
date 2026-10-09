@@ -66,7 +66,7 @@ macos/dock.sh          applies a machine's dock.txt through `dockutil`, or repor
 macos/handlers.txt     the default app per file extension on every Mac, only where it differs from Apple's
 macos/handlers.sh      applies it, plus the machine's own, through `duti`, or reports where the Mac differs
 macos/machine.sh       which profile under macos/machines/ this Mac is (`dir`), or records it (`set`)
-macos/machines/<p>/    what only one Mac has: dock.txt, mcp.json, and defaults.txt / handlers.txt read after the shared ones
+macos/machines/<p>/    what only one Mac has: dock.txt, mcp.json, Brewfile, and defaults.txt / handlers.txt read after the shared ones
 claude/mcp.json                 user-scope MCP servers for every Mac, applied through `claude mcp`
 claude/config-guard.sh          PreToolUse hook: asks before a lint, format or test config is edited
 claude/statusline.sh            Claude Code statusline
@@ -840,7 +840,9 @@ have. What every Mac gets stays where it was — `macos/defaults.txt`,
 `macos/handlers.txt`. What only one gets lives under
 `macos/machines/<profile>/`: `dock.txt`, which is only ever per machine;
 `mcp.json`, the MCP servers only that Mac has — YNAB on the personal one,
-`aware` on the work one — added on top of `claude/mcp.json`; and
+`aware` on the work one — added on top of `claude/mcp.json`; `Brewfile`, the
+casks only that Mac wants, installed by `install.sh` step 8a after the shared
+one (a profile without one installs nothing there); and
 `defaults.txt` and `handlers.txt`, read after the shared file of the same
 name. A key or an extension is in the shared file or a machine's, never
 both, which `check.sh` enforces: in both, it would be written twice and the

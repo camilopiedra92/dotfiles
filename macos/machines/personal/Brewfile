@@ -1,0 +1,7 @@
+# Casks only the personal Mac wants, installed by install.sh step 8a after the
+# shared Brewfile.
+cask "1password"
+cask "cursor"
+cask "db-browser-for-sqlite"
+cask "gcloud-cli"
+cask "rectangle"

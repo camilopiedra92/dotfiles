@@ -3,11 +3,25 @@
 
 # ── Windows ─────────────────────────────────────────────────────────────────
 
-# Dragging a window to a screen edge does not tile it: Rectangle, installed
-# here by hand and not by the Brewfile, does the tiling, and one drag should
+# Dragging a window to a screen edge does not tile it: Rectangle, which the
+# profile's Brewfile installs, does the tiling, and one drag should
 # have one tiler answering it.
 com.apple.WindowManager EnableTilingByEdgeDrag          bool    false
 com.apple.WindowManager EnableTopTilingByEdgeDrag       bool    false
+
+# Rectangle's own settings. The app stays out of the Brewfile (personal apps
+# do), so only what it keeps in its defaults domain is declared here, and only
+# keys that read as a choice rather than a default: hidden menu bar icon, no
+# snap-footprint animation, haptic tick on snap, double click on a title bar
+# runs action 3, and the screen-edge snap areas. Its Todo-mode shortcuts are
+# nested dictionaries, which a line here cannot hold. Not tested against a
+# clean profile: that these differ from Rectangle's defaults is inferred from
+# the keys being in the domain, not observed.
+com.knollsoft.Rectangle hideMenubarIcon                 bool    true
+com.knollsoft.Rectangle footprintAnimationDurationMultiplier float 0
+com.knollsoft.Rectangle hapticFeedbackOnSnap            int     1
+com.knollsoft.Rectangle doubleClickTitleBar             int     3
+com.knollsoft.Rectangle landscapeSnapAreas              string  [8,{"action":14},1,{"action":15},2,{"action":2},4,{"compound":-2},3,{"action":16},5,{"compound":-3},6,{"action":13},7,{"compound":-4}]
 
 # ── Mouse ───────────────────────────────────────────────────────────────────
 

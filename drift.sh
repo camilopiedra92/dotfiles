@@ -28,8 +28,14 @@ RED=$'\033[31m'
 DIM=$'\033[90m'
 OFF=$'\033[0m'
 
-# Entries of one kind from the Brewfile, sorted for comm.
-declared() { grep -oE "^$1 \"[^\"]+\"" Brewfile | sed "s/^$1 \"//; s/\"\$//" | sort; }
+# The profile is needed before the first section: its Brewfile is half of what
+# is declared. No profile is not an error here, only a machine with the shared
+# Brewfile alone.
+machine_dir=$(macos/machine.sh dir 2> /dev/null) || machine_dir=
+export machine_dir
+
+# Entries of one kind from the shared Brewfile and the profile's, sorted for comm.
+declared() { cat Brewfile ${machine_dir:+"$machine_dir/Brewfile"} 2> /dev/null | grep -oE "^$1 \"[^\"]+\"" | sed "s/^$1 \"//; s/\"\$//" | sort; }
 
 report() {
   local title=$1 hint=$2 items=$3
@@ -130,7 +136,11 @@ printf '\n%sDeclared but not installed%s\n' "$DIM" "$OFF"
 # machine -- nothing here declares a version for it -- and `brew upgrade` is where
 # that decision already lives.
 missing=$(brew bundle check --file=Brewfile --verbose --no-upgrade 2>&1 | sed -n 's/^→ //p')
-report "Brewfile is satisfied" "brew bundle install --no-upgrade --file=Brewfile" "$missing"
+if [ -f "${machine_dir:-/nonexistent}/Brewfile" ]; then
+  missing+=$'\n'$(brew bundle check --file="$machine_dir/Brewfile" --verbose --no-upgrade 2>&1 | sed -n 's/^→ //p')
+  missing=$(printf '%s\n' "$missing" | sed '/^$/d')
+fi
+report "Brewfile is satisfied" "./install.sh, or: brew bundle install --no-upgrade --file=<the Brewfile>" "$missing"
 
 # The question above is about this repo's list. This one is about Homebrew's own:
 # a formula records what it needs, and `brew missing` says which of those are not
@@ -405,8 +415,6 @@ for name in sorted(set(repo) & set(live)):
               % (name, json.dumps(repo[name])[:40], json.dumps(live[name])[:40]))
 MCP
 }
-machine_dir=$(macos/machine.sh dir 2> /dev/null) || machine_dir=
-export machine_dir
 report "user-scope MCP servers match claude/mcp.json and this profile's" \
   "declare it in claude/mcp.json or the profile's mcp.json, or drop it with claude mcp remove; run ./install.sh for the rest" \
   "$(mcp_servers_drift)"

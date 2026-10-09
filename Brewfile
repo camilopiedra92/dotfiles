@@ -93,7 +93,8 @@ brew "zoxide"
 # Casks are development environment only, by the same rule the formulae follow:
 # it goes here if a new machine needs it on day one to be able to work. Personal
 # apps stay off this list on purpose -- reproducing them costs install time and
-# inherits choices made once and never revisited.
+# inherits choices made once and never revisited. What only one Mac wants goes in
+# macos/machines/<profile>/Brewfile, installed by install.sh step 8a.
 #
 cask "claude"
 cask "font-jetbrains-mono-nerd-font"
