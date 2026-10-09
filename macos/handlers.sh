@@ -19,9 +19,12 @@
 #
 # Launch Services takes the change asynchronously. On 2026-10-03 a `check`
 # run straight after `apply` still read the old handlers for `js` and `sh`;
-# three seconds later `duti -x` read the new ones and `check` exited 0. So
-# `apply` does not read back what it set -- drift.sh's `check` is the
-# verification, and runs long after.
+# three seconds later `duti -x` read the new ones and `check` exited 0. On
+# 2026-10-05 it took longer: the plist already held the new handlers (written
+# 14:54:53-14:55:01), a drift.sh run after that still read Claude.app for
+# `json`, `yaml` and `yml`, and `check` exited 0 at 14:56:50. The delay has
+# no bound to wait for, so `apply` does not read back what it set --
+# drift.sh's `check` is the verification, and runs long after.
 #
 # `check` compares the app `duti -x` reports as the default, which is the
 # one Finder opens on a double-click; it does not read each role apart.
