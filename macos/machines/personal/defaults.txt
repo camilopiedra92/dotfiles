@@ -48,6 +48,12 @@ com.apphousekitchen.aldente-pro sailingMode             bool    true
 com.apphousekitchen.aldente-pro sailingLevel            float   10
 com.apphousekitchen.aldente-pro heatProtectMode         bool    true
 com.apphousekitchen.aldente-pro maxTemperature          float   35
+# Discharge while plugged in when the limit is below the current level. Off in
+# AlDente's own default per its feature page; kept on here by choice.
+com.apphousekitchen.aldente-pro automaticDischarge      bool    true
+# No usage data to the vendor. A privacy choice, not a battery one: declared so
+# a reinstall that empties the plist does not leave it to a prompt.
+com.apphousekitchen.aldente-pro dataShareConsent        bool    false
 
 # ── Screenshots ─────────────────────────────────────────────────────────────
 
