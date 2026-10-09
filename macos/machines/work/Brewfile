@@ -1,0 +1,8 @@
+# Packages only the work Mac wants, installed by install.sh step 8a after the
+# shared Brewfile.
+
+# OCR engine. ~/Development/aipods shells out to the `tesseract` binary
+# (src/aipods/ocr.py) to read scanned pages, and no Python lockfile can install
+# it. The formula ships only the `eng` and `osd` language data. Here and not in
+# the shared Brewfile because only this Mac runs that project.
+brew "tesseract"

@@ -1650,10 +1650,10 @@ install_machine_prompt() {
 }
 check "install.sh asks again after a wrong name, and stops with a reason on end of input" install_machine_prompt
 
-# Step 8a installs the casks only this Mac wants, from its profile's own
+# Step 8a installs the packages only this Mac wants, from its profile's own
 # Brewfile. Run against a stub brew that records its arguments: installing is
 # Homebrew's job, what is ours is which file it is pointed at, and that a
-# profile with no Brewfile (the work Mac) installs nothing and still succeeds.
+# profile with no Brewfile installs nothing and still succeeds.
 install_machine_brewfile_step() {
   local tmp out
   tmp=$(mktemp -d) || return 1
