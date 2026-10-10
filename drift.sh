@@ -1080,6 +1080,9 @@ script_drift() {
 report "Touch ID is on for sudo" \
   "./macos/touchid.sh apply (asks for your password)" \
   "$(script_drift ./macos/touchid.sh)"
+report "the application firewall is on, in stealth mode" \
+  "./macos/firewall.sh apply (asks for your password)" \
+  "$(script_drift ./macos/firewall.sh)"
 report "this machine's dock.txt matches the Dock" \
   "./macos/dock.sh apply, or edit macos/machines/<profile>/dock.txt if the new Dock is the one you want; with no dock.txt yet, write one -- dockutil --list shows the apps" \
   "$(script_drift ./macos/dock.sh)"

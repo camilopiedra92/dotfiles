@@ -713,11 +713,16 @@ macos/power.sh apply|check
 The settings `pmset` owns, which `defaults` cannot reach. Same two verbs and
 the same callers as the manifest above, and the same rule about content: only
 values that differ from Apple's own, each with its reason in the script. One
-is declared — Energy Mode on battery set to Low Power, `powermode 1` under
-the battery profile, with plugged-in left at Automatic. It is the one
-software lever left with a runtime gain worth a line; the rest of what
-`pmset -g custom` prints on this machine is what Apple ships, and the
-charge limit that holds the battery at 80% is already on.
+is declared for runtime — Energy Mode on battery set to Low Power,
+`powermode 1` under the battery profile, with plugged-in left at Automatic.
+It is the one software lever left with a runtime gain worth a line; the rest
+of what `pmset -g custom` prints on this machine is what Apple ships, and
+the charge limit that holds the battery at 80% is already on. The other is a
+security baseline: Wake for network access off (`womp 0`) in both profiles,
+which CIS lists at Level 1 (2.10.3 in the Tahoe benchmark, as quoted by
+Tenable's audit; the CIS PDF was not read). Its cost, from the same audit:
+Find My cannot locate, lock or erase the Mac while it sleeps. Power Nap is
+left alone: CIS's Tahoe control for it is titled "for Intel Macs".
 
 A separate script rather than a `pmset:` prefix in `defaults.txt`, because
 writing through `pmset` needs root and the manifest promises nothing in it
@@ -768,6 +773,31 @@ asked for the password once and wrote Apple's template with the line
 uncommented (root:wheel, 644); `check` then exited 0; and `sudo -k && sudo
 true` completed without a password prompt. Run from Claude Code's `!`
 prompt, which has no terminal, `apply` failed at `sudo` and wrote nothing.
+
+## Application firewall
+
+```bash
+macos/firewall.sh apply|check
+```
+
+The firewall on and in stealth mode, on every Mac: `globalstate` and
+`stealthmode`, read and written through `socketfilterfw`. Stealth mode makes
+the Mac ignore pings and probes to closed ports instead of answering them;
+CIS lists it as a Level 1 control, and the same guidance says it can be
+unwanted on a trusted LAN. The settings live in the root-owned
+`/Library/Preferences/com.apple.alf.plist`, which is why they are not in
+`defaults.txt`.
+
+Same contract as `power.sh`: `check` only reads, so `drift.sh` never prompts;
+`apply` goes through `sudo` once per setting that differs. Output
+`socketfilterfw` prints that the script does not recognise is a broken
+checker (exit 2), not a difference. Not tested: a Mac whose firewall a
+configuration profile manages.
+
+Verified on the personal Mac on 2026-10-10: stealth mode was set by hand with
+`sudo socketfilterfw --setstealthmode on` and read back as `Firewall stealth
+mode is on`; `macos/firewall.sh check` then exited 0. `apply` itself has run
+only against the stub in `check.sh`, not against the real tool.
 
 ## Dock and file handlers
 
