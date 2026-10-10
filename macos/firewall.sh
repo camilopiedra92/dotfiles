@@ -14,10 +14,15 @@
 # What is declared:
 #
 #   globalstate on. Stealth mode does nothing while the firewall is off.
-#   stealthmode on. The Mac ignores ICMP and probes to closed ports instead
-#   of answering them, which matters on the untrusted networks a laptop
-#   joins. CIS lists it as a Level 1 control; the same guidance says it can
-#   be unwanted on a trusted LAN, where other hosts ping this one to find it.
+#   stealthmode on. Meant to make the Mac ignore ICMP and probes to closed
+#   ports instead of answering them (Apple's description; the behaviour was
+#   not tested here, only that the setting reads back as on). CIS is said to
+#   list it as a Level 1 control and to warn it can be unwanted on a trusted
+#   LAN -- from memory of that guidance, the CIS PDF was not read.
+#
+# Not supported: "Block all incoming connections". Its globalstate output
+# was not observed, so it reads as unrecognised output (exit 2) rather than
+# as on; turn it off, or extend `current` once someone has seen the output.
 #
 # Not tested: a Mac whose firewall a configuration profile manages -- the
 # write would read back as applied and be overruled.
@@ -47,7 +52,7 @@ stealthmode  on
 # understood.
 current() {
   local out
-  out=$("$FW" "--get$1") || {
+  out=$("$FW" "--get$1" < /dev/null) || {
     echo "socketfilterfw --get$1 failed" >&2
     exit 2
   }
@@ -75,7 +80,7 @@ while read -r setting value; do
     continue
   fi
   echo "$setting -> $value"
-  sudo "$FW" "--set$setting" "$value"
+  sudo "$FW" "--set$setting" "$value" < /dev/null
 done <<< "$SETTINGS"
 
 if [ "$MODE" = check ]; then

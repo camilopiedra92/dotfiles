@@ -781,10 +781,13 @@ macos/firewall.sh apply|check
 ```
 
 The firewall on and in stealth mode, on every Mac: `globalstate` and
-`stealthmode`, read and written through `socketfilterfw`. Stealth mode makes
-the Mac ignore pings and probes to closed ports instead of answering them;
-CIS lists it as a Level 1 control, and the same guidance says it can be
-unwanted on a trusted LAN. The settings live in the root-owned
+`stealthmode`, read and written through `socketfilterfw`. Stealth mode is
+meant to make the Mac ignore pings and probes to closed ports instead of
+answering them (Apple's description; not tested here). CIS is said to list it
+as a Level 1 control and to warn it can be unwanted on a trusted LAN, from
+memory: the CIS PDF was not read. "Block all incoming connections" is not
+supported: its output was not observed, so it reads as a broken checker. The
+settings live in the root-owned
 `/Library/Preferences/com.apple.alf.plist`, which is why they are not in
 `defaults.txt`.
 
