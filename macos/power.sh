@@ -29,6 +29,17 @@
 #   Automatic and a build or a call is not throttled at the desk. The key is
 #   not in `man pmset` on macOS 26.6.2; it is what `pmset -g custom` prints
 #   and what the plist holds, which is how it was found.
+#
+#   Wake for network access (womp) = 0, in both profiles. CIS lists it as a
+#   Level 1 control (2.10.3 in the macOS 26 Tahoe benchmark, as quoted by
+#   Tenable's audit; the CIS PDF itself was not read): off, a host on the
+#   network cannot wake the Mac with a magic packet. The price is on the same
+#   audit's list: with it off, Find My cannot locate, lock or erase the Mac
+#   while it sleeps. Taken for the security baseline over that. Whether 0
+#   differs from the factory value of this Mac was not checked, so this line
+#   may be a default written down; the reason to keep it is the baseline.
+#   Power Nap is deliberately not declared: CIS's Tahoe control for it
+#   (2.10.2) is titled "for Intel Macs", and this one is Apple Silicon.
 set -euo pipefail
 
 MODE=${1:-}
@@ -44,6 +55,8 @@ esac
 # `pmset -g custom` prints and the -b / -c flags it takes on write.
 SETTINGS='
 battery  powermode  1
+battery  womp       0
+ac       womp       0
 '
 
 profile_flag() {

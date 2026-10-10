@@ -543,6 +543,11 @@ log "Applying power settings"
 log "Enabling Touch ID for sudo"
 "$DOTFILES/macos/touchid.sh" apply
 
+# --- 10c. Application firewall ---
+# Root again, and the same rule: a password only while a setting differs.
+log "Applying firewall settings"
+"$DOTFILES/macos/firewall.sh" apply
+
 # --- 11. Dock and file handlers ---
 # The Dock's apps and the default app per file extension, declared in the
 # machine's dock.txt and in macos/handlers.txt plus the machine's own
