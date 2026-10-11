@@ -41,6 +41,8 @@ brew "gh"
 brew "git"
 # Rewrites history in ways filter-branch cannot do safely or quickly
 brew "git-filter-repo"
+# Finds secrets in git history and in what is about to be committed
+brew "gitleaks"
 # Task runner. There is a Taskfile.yml in the projects here that needs it.
 brew "go-task"
 # Lightweight and flexible command-line JSON processor
@@ -88,6 +90,8 @@ brew "rustup"
 brew "starship"
 # Extremely fast Python package installer and resolver, written in Rust
 brew "uv"
+# Static analysis for GitHub Actions workflows: finds exploitable ones, where actionlint finds broken ones
+brew "zizmor"
 # Shell extension to navigate your filesystem faster
 brew "zoxide"
 # Casks are development environment only, by the same rule the formulae follow:

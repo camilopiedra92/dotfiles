@@ -134,6 +134,30 @@ else
   skip "actionlint" "brew install actionlint"
 fi
 
+# actionlint finds broken workflows; zizmor finds exploitable ones: credentials
+# left in .git/config, an over-broad App token, an untrusted value reaching a
+# script. Offline on purpose: its online audits need a GitHub token and a
+# network, so the same tree could pass here and fail in CI or the reverse, and
+# a check that depends on where it runs is the drift check.sh exists to prevent.
+if command -v zizmor > /dev/null 2>&1; then
+  check "zizmor" zizmor --offline --no-progress .github
+else
+  skip "zizmor" "brew install zizmor"
+fi
+
+# A secret removed in a later commit is still published, so this reads history,
+# not the tree. --staged adds what is about to be committed, which is the one
+# moment a secret can still be stopped before it enters history.
+secrets() {
+  gitleaks git --no-banner --redact --log-level error . || return 1
+  gitleaks git --staged --no-banner --redact --log-level error .
+}
+if command -v gitleaks > /dev/null 2>&1; then
+  check "gitleaks" secrets
+else
+  skip "gitleaks" "brew install gitleaks"
+fi
+
 syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
@@ -181,7 +205,7 @@ exec_bits() {
 check "tracked scripts are executable in git" exec_bits
 
 # ── Tool versions ────────────────────────────────────────────────────────────
-# CI pins these five and verifies them by checksum; the Brewfile installs
+# CI pins these seven and verifies them by checksum; the Brewfile installs
 # whatever is current. "CI and your machine run the same binaries" is therefore
 # a claim nothing was enforcing, true only as long as nobody upgraded. Ghostty
 # does not even need that: it is a cask that updates itself, and its own config
@@ -207,13 +231,16 @@ installed() {
     actionlint) actionlint --version | head -1 ;;
     ghostty) ghostty +version | awk 'NR == 1 { print $2 }' ;;
     taplo) taplo --version | awk '{ print $2 }' ;;
+    zizmor) zizmor --version | awk '{ print $2 }' ;;
+    gitleaks) gitleaks version ;;
   esac
 }
 
 versions_match() {
   local status=0 tool var want have
   for pair in shellcheck:SHELLCHECK_VERSION shfmt:SHFMT_VERSION \
-    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION taplo:TAPLO_VERSION; do
+    actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION taplo:TAPLO_VERSION \
+    zizmor:ZIZMOR_VERSION gitleaks:GITLEAKS_VERSION; do
     tool=${pair%%:*}
     var=${pair##*:}
     # A missing tool is already reported by its own check above; repeating it

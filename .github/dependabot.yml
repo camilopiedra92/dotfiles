@@ -9,6 +9,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # A release yanked or found compromised in its first days is the usual
+    # supply-chain shape; waiting a week lets that surface before a PR exists
+    # (zizmor: dependabot-cooldown).
+    cooldown:
+      default-days: 7
     commit-message:
       # Matches the style of the rest of the history: a plain imperative
       # subject, no conventional-commits prefixes.

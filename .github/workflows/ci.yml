@@ -48,10 +48,20 @@ jobs:
       ACTIONLINT_VERSION: 1.7.12
       GHOSTTY_VERSION: 1.3.1
       TAPLO_VERSION: 0.10.0
+      # Bare, as actionlint's: the tag carries a v, the filenames do not.
+      ZIZMOR_VERSION: 1.30.1
+      GITLEAKS_VERSION: 8.30.1
     steps:
       # Pinned to a commit SHA rather than a tag: a tag can be moved to point at
       # different code, a SHA cannot.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No job here pushes, so the token checkout would leave in .git/config
+          # is credential exposure for nothing (zizmor: artipacked).
+          persist-credentials: false
+          # gitleaks scans history, not just the tip: a secret committed and
+          # then deleted is still published. A shallow clone would hide it.
+          fetch-depth: 0
 
       # Tools are downloaded at a pinned version instead of taken from the
       # runner's image, which drifts underneath you: a linter that reports a
@@ -116,6 +126,22 @@ jobs:
           verify "$al_file" "$al_file"
           tar -xzf "$al_file" -C /usr/local/bin actionlint
 
+          # zizmor names its artifact by target triple and puts no version in
+          # it, like taplo, so a pin moved without its hash fails as a
+          # checksum mismatch.
+          zz_file="zizmor-aarch64-apple-darwin.tar.gz"
+          [ "$sc_arch" = aarch64 ] || { echo "::error::no zizmor artifact recorded for $sc_arch"; exit 1; }
+          curl -fsSL "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/${zz_file}" -o "$zz_file"
+          verify "$zz_file" "$zz_file"
+          tar -xzf "$zz_file" -C /usr/local/bin zizmor
+
+          # gitleaks names its artifacts like actionlint and shfmt, so the same
+          # os/arch pair covers it.
+          gl_file="gitleaks_${GITLEAKS_VERSION}_${fmt_os}_${fmt_arch}.tar.gz"
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${gl_file}" -o "$gl_file"
+          verify "$gl_file" "$gl_file"
+          tar -xzf "$gl_file" -C /usr/local/bin gitleaks
+
           # Ghostty is the only thing here that validates a config rather than
           # code. Two things this must not do, both found by trying them. The
           # binary cannot be lifted out of Ghostty.app: that breaks the code
@@ -166,6 +192,14 @@ jobs:
           }
           [ "$(taplo --version)" = "taplo $TAPLO_VERSION" ] || {
             echo "::error::unexpected taplo: $(taplo --version)"
+            exit 1
+          }
+          [ "$(zizmor --version)" = "zizmor $ZIZMOR_VERSION" ] || {
+            echo "::error::unexpected zizmor: $(zizmor --version)"
+            exit 1
+          }
+          [ "$(gitleaks version)" = "$GITLEAKS_VERSION" ] || {
+            echo "::error::unexpected gitleaks: $(gitleaks version)"
             exit 1
           }
 
