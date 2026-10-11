@@ -534,7 +534,9 @@ where `git add` does nothing and prints no reason.
 ./check.sh
 ```
 
-Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint),
+Linting (shellcheck), formatting (shfmt), the CI workflow itself (actionlint, plus zizmor for
+exploitable patterns such as persisted credentials), secrets in history and in
+what is staged (gitleaks),
 syntax for every config format here, that the login agent plist parses and its
 `Label` matches its filename, the statuslines' behaviour, that the tools you
 have installed are the versions `ci.yml` pins, that `install.sh` is still
@@ -569,7 +571,7 @@ the flag the run ends `All checks passed` and exits 0, with it `FAIL shellcheck
 (not installed)` and exits 1.
 
 This is why CI installs pinned, checksummed copies of shellcheck, shfmt,
-actionlint, Ghostty and taplo instead of trusting the runner image: strict mode
+actionlint, zizmor, gitleaks, Ghostty and taplo instead of trusting the runner image: strict mode
 means anything it fails to install stops the build rather than quietly shrinking
 it.
 

@@ -7,8 +7,8 @@
 #
 # Mostly there is nothing upstream to compare against anyway: shellcheck and
 # shfmt publish no checksums, and Ghostty signs its source tarballs with
-# minisign but not the macOS build CI actually runs. actionlint is the
-# exception and does publish a checksums file; its two hashes below were
+# minisign but not the macOS build CI actually runs. actionlint and gitleaks are the
+# exceptions and do publish a checksums file; their hashes below were
 # confirmed against it when pinned, which is worth doing once at that moment
 # even though it cannot be trusted as an ongoing check.
 #
@@ -39,3 +39,5 @@ aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f  actionlint_1.7
 56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck-v0.11.0.darwin.aarch64.tar.xz
 b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5  shfmt_v3.14.1_darwin_arm64
 713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d  taplo-darwin-aarch64.gz
+b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5  gitleaks_8.30.1_darwin_arm64.tar.gz
+e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2  zizmor-aarch64-apple-darwin.tar.gz

@@ -20,7 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 WORKFLOW=.github/workflows/ci.yml
 CHECKSUMS=.github/tool-checksums.txt
-TOOLS="shellcheck shfmt actionlint ghostty taplo"
+TOOLS="shellcheck shfmt actionlint ghostty taplo zizmor gitleaks"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[32m'
@@ -40,6 +40,8 @@ var_of() {
     actionlint) echo ACTIONLINT_VERSION ;;
     ghostty) echo GHOSTTY_VERSION ;;
     taplo) echo TAPLO_VERSION ;;
+    zizmor) echo ZIZMOR_VERSION ;;
+    gitleaks) echo GITLEAKS_VERSION ;;
   esac
 }
 
@@ -64,6 +66,8 @@ latest_of() {
         grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 | sed 's/^v//'
       ;;
     taplo) gh api repos/tamasfe/taplo/releases/latest --jq .tag_name | sed 's/^v//' ;;
+    zizmor) gh api repos/zizmorcore/zizmor/releases/latest --jq .tag_name | sed 's/^v//' ;;
+    gitleaks) gh api repos/gitleaks/gitleaks/releases/latest --jq .tag_name | sed 's/^v//' ;;
   esac
 }
 
@@ -78,6 +82,8 @@ url_of() {
     actionlint) echo "https://github.com/rhysd/actionlint/releases/download/v$2/actionlint_${2}_darwin_arm64.tar.gz" ;;
     ghostty) echo "https://release.files.ghostty.org/$2/ghostty-macos-universal.zip" ;;
     taplo) echo "https://github.com/tamasfe/taplo/releases/download/$2/taplo-darwin-aarch64.gz" ;;
+    zizmor) echo "https://github.com/zizmorcore/zizmor/releases/download/v$2/zizmor-aarch64-apple-darwin.tar.gz" ;;
+    gitleaks) echo "https://github.com/gitleaks/gitleaks/releases/download/v$2/gitleaks_${2}_darwin_arm64.tar.gz" ;;
   esac
 }
 
@@ -88,6 +94,8 @@ name_of() {
     actionlint) echo "actionlint_${2}_darwin_arm64.tar.gz" ;;
     ghostty) echo "ghostty-$2-macos-universal.zip" ;;
     taplo) echo "taplo-darwin-aarch64.gz" ;;
+    zizmor) echo "zizmor-aarch64-apple-darwin.tar.gz" ;;
+    gitleaks) echo "gitleaks_${2}_darwin_arm64.tar.gz" ;;
   esac
 }
 

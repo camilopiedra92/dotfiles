@@ -29,6 +29,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # create-pull-request pushes with the App token below, so the default
+          # token checkout would persist is not used for anything.
+          persist-credentials: false
 
       # A pull request opened with the default GITHUB_TOKEN does not start
       # workflows, by design, so ci.yml would never run on it and the ruleset
@@ -45,6 +49,13 @@ jobs:
         with:
           client-id: ${{ vars.BUMP_APP_CLIENT_ID }}
           private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
+          # Only what opening the pull request takes, not every permission the
+          # installation holds (zizmor: github-app). workflows because the pins
+          # live in ci.yml, and GitHub refuses an App push that touches a
+          # workflow file without it.
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
 
       - name: Bump the pins
         env:
