@@ -52,3 +52,10 @@ python = "3.14"
 #
 # The major is the pin because the lockfile format travels with it.
 pnpm = "11"
+
+# The JDK that Ghidra runs on, installed for REA (reverse-engineering MCP).
+# Ghidra 12.1 asks for JDK 21 or newer and declares no maximum; 21 is the
+# version REA's bridge is verified against, so it is pinned there rather than
+# at the newest. Temurin because it is the plain OpenJDK build with a full JDK
+# (REA needs javac too, not just a JRE). Revisit when REA documents a newer one.
+java = "temurin-21"
