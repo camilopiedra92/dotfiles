@@ -191,7 +191,7 @@ printf '\n%sGit%s\n' "$DIM" "$OFF"
 # The switch is checked first. commit.gpgsign lives in config.local with the
 # key rather than in git/config (that file says why), which means the
 # versioned config no longer states "commits are signed" on its face -- this
-# line is where that statement now lives, together with docs/commit-signing.md.
+# line is where that statement now lives, together with docs/git.md.
 signing_key_known() {
   local key file pub
   [ "$(git config commit.gpgsign 2> /dev/null)" = true ] ||
@@ -286,7 +286,7 @@ LOCAL_ONLY = {
     # Written by `/effort`, the /model picker and `/autocompact` whenever a
     # level or window is saved as the default (v2.1.251+), one entry per model,
     # so it records choices made in sessions rather than a policy. The policy
-    # -- no pinned effort -- is in docs/config-rationale.md.
+    # -- no pinned effort -- is in docs/claude-settings.md.
     'modelSettings',
 }
 
