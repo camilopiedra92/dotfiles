@@ -58,7 +58,6 @@ vscode/settings.json   editor settings
 bin/dev-nuke.sh        resets a machine left in a bad state
 bin/aware.sh           runs the aware-connector CLI from anywhere
 bin/ynab-mcp.sh        runs the YNAB MCP server with a log directory of its own
-bin/install-ghidra.sh   installs Ghidra and builds its macOS arm64 decompiler, which the release lacks
 macos/defaults.txt     macOS settings, one `defaults` key per line
 macos/defaults.sh      applies the manifest (install.sh) or reports where the machine differs (drift.sh)
 macos/power.sh         the `pmset` settings, declared inline; same two verbs, `apply` is the one that needs sudo
@@ -104,7 +103,7 @@ they are usually installed to:
 | `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against); plus `identities/`, one file per identity scoped to a directory, written by hand (see [Commit signing](docs/commit-signing.md)) |
 | `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
 | `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
-| `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp`, `install-ghidra` |
+| `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see [Claude Code](docs/claude-code.md) |
 | `~/.claude.json` | Claude Code's own state file; `install.sh` registers the servers in `claude/mcp.json` and the profile's `mcp.json` into it through the CLI, and `drift.sh` reports one registered by hand and never declared |
 
