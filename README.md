@@ -42,8 +42,8 @@ The system Python (`/usr/bin/python3`) is never touched.
 
 ```
 Brewfile               packages, apps and VS Code extensions
-zsh/.zshenv            sets ZDOTDIR and builds PATH; linked into both $HOME and ZDOTDIR (see [why](docs/config-rationale.md))
-zsh/.zprofile          re-asserts PATH after macOS rewrites it (see [why](docs/config-rationale.md))
+zsh/.zshenv            sets ZDOTDIR and builds PATH; linked into both $HOME and ZDOTDIR (see [Shell](docs/shell.md))
+zsh/.zprofile          re-asserts PATH after macOS rewrites it (see [Shell](docs/shell.md))
 zsh/.zshrc             history, completion, fzf, aliases
 zsh/.zsh_plugins.txt   plugins (antidote)
 starship.toml          prompt
@@ -51,7 +51,7 @@ ghostty/config         terminal
 git/config             git config (without identity)
 git/ignore             global gitignore
 ssh/config             ssh client config: agent + Keychain, and where the per-machine hosts go
-launchd/               login agent that loads the signing key into ssh-agent (see [Commit signing](docs/commit-signing.md))
+launchd/               login agent that loads the signing key into ssh-agent (see [Git](docs/git.md))
 mise/config.toml       global runtime versions
 uv-tools.txt           CLI tools installed with `uv tool`, each pinned to a reference
 vscode/settings.json   editor settings
@@ -98,9 +98,9 @@ they are usually installed to:
 | | |
 |---|---|
 | `~/.zshenv` | cannot be moved: zsh reads it before it can know about `ZDOTDIR`, and it is what points at the directory below |
-| `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see [why](docs/config-rationale.md) — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
+| `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see [Shell](docs/shell.md) — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
-| `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against); plus `identities/`, one file per identity scoped to a directory, written by hand (see [Commit signing](docs/commit-signing.md)) |
+| `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against); plus `identities/`, one file per identity scoped to a directory, written by hand (see [Git](docs/git.md)) |
 | `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
 | `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
@@ -115,8 +115,9 @@ so leaving it behind means the linked config is read and then overruled.
 
 Why things are the way they are, one file per subject:
 
-- [Configs](docs/config-rationale.md): why `.zshenv` is linked twice, why there is a `.zprofile`, and the reasoning behind `settings.json` that its strict JSON cannot hold.
-- [Commit signing](docs/commit-signing.md)
+- [Shell](docs/shell.md): why `.zshenv` is linked twice and why there is a `.zprofile`.
+- [Git](docs/git.md): why git is linked at its XDG paths, and commit signing.
+- [Claude Code settings](docs/claude-settings.md): the reasoning behind `settings.json`, which its strict JSON cannot hold.
 - [Claude Code](docs/claude-code.md): why the sandbox is off, why the YNAB server runs through a wrapper.
 - [Checks](docs/checks.md): what `check.sh` runs, and how configs are validated against schemas.
 - [macOS](docs/macos.md): defaults, power, Touch ID, firewall, Dock, file handlers and more than one Mac.

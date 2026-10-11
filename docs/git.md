@@ -1,4 +1,14 @@
-# Commit signing
+# Git
+
+## Git config lives at its XDG paths
+
+Git is linked to its XDG paths (`~/.config/git/config` and `~/.config/git/ignore`)
+and not to `~/.gitconfig` and `~/.gitignore_global`. The two cannot coexist —
+git reads both and the legacy one wins — so `install.sh` removes the old paths
+after linking the new ones. Using the default ignore location is also what lets
+`core.excludesfile` disappear from the config: naming a non-standard path is the
+only reason that option ever needs to exist, and doing so silently disables
+`~/.config/git/ignore` for everything else that expects to find it there.
 
 ## Commit signing
 

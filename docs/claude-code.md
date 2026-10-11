@@ -4,7 +4,7 @@
 
 `sandbox` is the OS-level layer that does cover Bash subprocesses, so it is the
 obvious answer to the gap described at the end of
-[the `settings.json` notes](config-rationale.md): deny rules reach Claude's own
+[the `settings.json` notes](claude-settings.md): deny rules reach Claude's own
 file tools and not what a Bash subprocess does. It is off here on purpose, and the reason is
 fit rather than friction.
 
@@ -24,7 +24,7 @@ Three things are worth stating plainly before treating it as a security answer:
   entire computer, and the documentation names `~/.aws/credentials` and `~/.ssh/`
   as still readable. That takes a deliberate `sandbox.credentials` block.
 - **It does not cover Read, Edit or Write**, which go through the permission
-  system directly. The [deny rules](config-rationale.md) and the sandbox protect different
+  system directly. The [deny rules](claude-settings.md) and the sandbox protect different
   things; neither replaces the other, which is why the docs recommend both.
 - **The documentation does not call it a boundary**: "Sandboxing reduces risk but
   is not a complete isolation boundary." The proxy does not inspect TLS, so a
