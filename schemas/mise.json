@@ -84,35 +84,40 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "minItems": 1
         },
         {
-          "type": "object",
-          "properties": {
-            "task": {
-              "type": "string"
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "env": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            },
-            "optional": {
-              "description": "do not fail when the task name or pattern has no matches",
-              "type": "boolean"
-            }
-          },
-          "required": ["task"],
-          "unevaluatedProperties": false
+          "$ref": "#/$defs/task_dependency_table"
         }
       ]
+    },
+    "task_dependency_table": {
+      "description": "task dependency with args, env, and optional flag",
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "optional": {
+          "description": "do not fail when the task name or pattern has no matches",
+          "type": "boolean"
+        }
+      },
+      "required": ["task"],
+      "unevaluatedProperties": false
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
@@ -232,7 +237,7 @@
           "description": "require this environment variable with user help text on how to set it"
         }
       ],
-      "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Can be a boolean or a help string. A variable that carries its own `value` cannot also be `required = true`."
     },
     "env_default": {
       "oneOf": [
@@ -319,7 +324,8 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "$ref": "#/$defs/env_required"
+                "const": false,
+                "description": "a variable with its own value cannot be required; only `required = false` is accepted"
               }
             },
             "required": ["value"],
@@ -351,7 +357,15 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
-                "$ref": "#/$defs/env_required"
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "description": "a variable without a value must be required: `true` or help text on how to set it"
               }
             },
             "required": ["required"],
@@ -637,8 +651,9 @@
           "type": "boolean"
         },
         "always_keep_download": {
-          "description": "Keep downloaded archives and sources after installing, for debugging.",
-          "type": "boolean"
+          "description": "[deprecated] Keep downloaded archives and sources after installing, for debugging.",
+          "type": "boolean",
+          "deprecated": true
         },
         "always_keep_install": {
           "description": "Keep a failed installation's partial install directory and downloads, for debugging.",
@@ -907,6 +922,16 @@
               "type": "string"
             }
           }
+        },
+        "download_cache": {
+          "default": true,
+          "description": "Reuse finished downloads instead of fetching them again.",
+          "type": "boolean"
+        },
+        "download_cache_max_size": {
+          "default": "2GiB",
+          "description": "Maximum total size of the download cache, such as `500MB` or `10GiB`.",
+          "type": "string"
         },
         "enable_tools": {
           "description": "Allowlist of configured tools mise uses; other tools are ignored.",
@@ -1981,11 +2006,18 @@
             "auto": {
               "default": false,
               "description": "Update mise automatically before running eligible commands.",
-              "type": "boolean"
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             },
             "check_duration": {
               "default": "7d",
-              "description": "How often automatic updates check for a new mise release when `self_update.auto` is on.",
+              "description": "How often automatic updates check for a new mise release when `self_update.auto = true`.",
               "type": "string"
             },
             "minimum_release_age": {
@@ -2442,8 +2474,20 @@
           "properties": {
             "check_duration": {
               "default": "24h",
-              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`.",
+              "description": "How often mise checks for a newer version of a global tool that sets `auto_update = true`, or of every global tool with `tool_update.global_auto = true`.",
               "type": "string"
+            },
+            "global_auto": {
+              "default": false,
+              "description": "Update every tool in global config automatically, as if each set `auto_update` to this value.",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                }
+              ]
             }
           }
         },
@@ -2635,10 +2679,9 @@
           "type": "string"
         },
         {
-          "description": "script to run",
+          "description": "scripts or task references to run",
           "items": {
-            "description": "script to run",
-            "type": "string"
+            "$ref": "#/$defs/task_run_entry"
           },
           "type": "array"
         },
@@ -5330,6 +5373,9 @@
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
@@ -5365,6 +5411,9 @@
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
@@ -5380,6 +5429,9 @@
                 "$ref": "#/$defs/task_dependency_item"
               },
               "type": "array"
+            },
+            {
+              "$ref": "#/$defs/task_dependency_table"
             }
           ]
         },
@@ -5490,8 +5542,7 @@
               "unevaluatedProperties": false,
               "properties": {
                 "auto": {
-                  "description": "automatically touch an internal tracked file instead of specifying outputs",
-                  "enum": [true],
+                  "description": "automatically touch an internal tracked file instead of specifying outputs; `false` is the same as leaving `outputs` unset",
                   "type": "boolean"
                 }
               },
