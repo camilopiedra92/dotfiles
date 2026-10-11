@@ -1,0 +1,33 @@
+# zizmor with its online audits, weekly.
+#
+# check.sh runs zizmor offline so a tree gets the same verdict on every machine
+# (see checks/10-lint.sh). The audits that need the network are the ones that
+# change without anyone touching the repo: an action pinned to a commit that
+# turns out to be a fork's, a pinned version that gets a published advisory.
+# Those are found by asking GitHub, on a schedule, not by a push.
+name: Audit
+
+on:
+  schedule:
+    - cron: "27 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # version: latest on purpose: an audit that stays on an old release stops
+      # knowing about new problems, and the action itself is pinned by SHA.
+      # Annotations rather than code scanning: uploading SARIF needs
+      # security-events: write, a permission this job has no other use for. A
+      # finding fails the run, and a failed scheduled run is the alert.
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          advanced-security: false
+          annotations: true
