@@ -50,9 +50,12 @@ jobs:
           client-id: ${{ vars.BUMP_APP_CLIENT_ID }}
           private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
           # Only what opening the pull request takes, not every permission the
-          # installation holds (zizmor: github-app).
+          # installation holds (zizmor: github-app). workflows because the pins
+          # live in ci.yml, and GitHub refuses an App push that touches a
+          # workflow file without it.
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Bump the pins
         env:
