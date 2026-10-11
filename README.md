@@ -76,7 +76,8 @@ claude/skills/<name>/           personal skills, each linked into ~/.claude/skil
                                 `/brainstorm` (shape an open idea), `/diagnose` (root cause of a bug),
                                 `/wrap-up` (close a session and hand off), `/wp` (shortcut for it)
 install.sh             symlinks + full installation
-check.sh               every check, run by you, the hook and CI
+check.sh               runs every check, by you, the hook and CI: arguments, strict mode, shared helpers, the verdict
+checks/                the checks themselves, one file per area, sourced by check.sh in file-name order
 drift.sh               what this machine has that the Brewfile does not say
 bump-tools.sh          moves the CI tool pins to their latest releases
 githooks/pre-commit    runs check.sh before each commit
@@ -310,7 +311,7 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   asking and looks at filenames only, so it would have missed almost all of
   the Python config here. It covers the Edit and Write tools only: a
   config rewritten through Bash never reaches it, and that is a stated ceiling,
-  not something to patch with patterns. Its verdicts are tested in `check.sh`
+  not something to patch with patterns. Its verdicts are tested in `checks/`
   against stdin payloads. A headless `claude -p` run (observed 2026-10-06, with
   `acceptEdits`) has no one to ask, so the edit is refused and the agent sees
   the reason, reports it and stops rather than working around it. So a
@@ -802,7 +803,7 @@ configuration profile manages.
 Verified on the personal Mac on 2026-10-10: stealth mode was set by hand with
 `sudo socketfilterfw --setstealthmode on` and read back as `Firewall stealth
 mode is on`; `macos/firewall.sh check` then exited 0. `apply` itself has run
-only against the stub in `check.sh`, not against the real tool.
+only against the stub in `checks/`, not against the real tool.
 
 ## Dock and file handlers
 
