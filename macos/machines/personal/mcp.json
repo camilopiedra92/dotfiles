@@ -8,6 +8,19 @@
     "croma": {
       "type": "http",
       "url": "https://api.croma.run/mcp"
+    },
+    "rea": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "rea-agents@6.3.0",
+        "mcp"
+      ],
+      "env": {
+        "GHIDRA_INSTALL_DIR": "/opt/homebrew/opt/ghidra/libexec",
+        "JAVA_HOME": "/opt/homebrew/opt/openjdk@21"
+      }
     }
   }
 }

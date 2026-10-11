@@ -135,8 +135,6 @@ link "$DOTFILES/bin/repo-rules.sh" "$HOME/.local/bin/repo-rules"
 # at, so the server logs into its own directory instead of into whichever
 # repository the editor was started in. See the file.
 link "$DOTFILES/bin/ynab-mcp.sh" "$HOME/.local/bin/ynab-mcp"
-# Same, a command to run once per machine; it installs nothing at link time.
-link "$DOTFILES/bin/install-ghidra.sh" "$HOME/.local/bin/install-ghidra"
 
 # --- 3b. Claude Code settings ---
 # settings.json is not symlinked: Claude Code rewrites it on its own (the
