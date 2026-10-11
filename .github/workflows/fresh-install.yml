@@ -35,7 +35,9 @@ concurrency:
 jobs:
   packages:
     runs-on: macos-latest
-    timeout-minutes: 60
+    # Minutes, not the default six hours: the run that hung on the App Store
+    # would otherwise have held a macOS runner until GitHub killed it.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,12 +51,27 @@ jobs:
 
       # One run per profile, so a Brewfile for the Mac that is not the one
       # being used today cannot rot unseen.
+      #
+      # Mac App Store apps are not installed: that needs an Apple ID signed in
+      # to the App Store, which a runner does not have, and `mas` waits on it
+      # instead of failing (the first run sat on one for seven minutes). What
+      # can rot there is the id, so each is looked up in Apple's public catalog
+      # below and has to exist.
       - name: Machine Brewfiles
         run: |
+          ids=$(grep -h '^mas ' macos/machines/*/Brewfile | sed 's/.*id: *//' | tr '\n' ' ')
+          export HOMEBREW_BUNDLE_MAS_SKIP="$ids"
           for f in macos/machines/*/Brewfile; do
             echo "::group::$f"
             brew bundle install --no-upgrade --file="$f"
             echo "::endgroup::"
+          done
+          for id in $ids; do # word splitting is the point: ids are digits
+            curl -fsS "https://itunes.apple.com/lookup?id=$id&country=us" |
+              jq -e '.resultCount == 1' > /dev/null || {
+              echo "::error::App Store id $id does not exist"
+              exit 1
+            }
           done
 
       # install.sh links this file to ~/.config/mise/config.toml before it runs
