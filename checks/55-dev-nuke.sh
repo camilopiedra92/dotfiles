@@ -6,17 +6,17 @@
 
 # ── dev-nuke ─────────────────────────────────────────────────────────────────
 # bin/dev-nuke.sh quits apps, signals processes, deletes a socket, flushes DNS
-# and purges memory, as root. Its check runs it under a hermetic PATH: stubs
-# for everything that acts on the machine or reads who is running it, links to
-# the harmless utilities it needs, and nothing else. A stub-first PATH that
-# fell through to the real one would let a command the stubs miss -- today's
-# or one added later -- act on the machine; here a command looked up on PATH
-# fails as "command not found" instead. What PATH cannot close: an absolute
-# path, a shell redirection, and builtins -- bash's kill, if the script
-# stopped going through xargs, is the dangerous one. Against kill, the fixture's PIDs are six digits, above the
-# five macOS gives out, so a real kill finds no such process (`kill -0 900101`
-# answered "No such process" here, 2026-10-12). rm is a stub that removes
-# nothing outside the scratch directory, so even a script that ignored
+# and purges memory, as root. Its check runs it under a hermetic PATH: stubs for
+# everything that acts on the machine or reads who is running it, links to the
+# harmless utilities it needs, and nothing else. A stub-first PATH that fell
+# through to the real one would let a command the stubs miss -- today's or one
+# added later -- act on the machine; here a command looked up on PATH fails as
+# "command not found" instead. What PATH cannot close: an absolute path, a shell
+# redirection, and builtins -- bash's kill, if the script stopped going through
+# xargs, is the dangerous one. Against kill, the fixture's PIDs are six digits,
+# above the five macOS gives out, so a real kill finds no such process (`kill -0
+# 900101` answered "No such process" here, 2026-10-12). rm is a stub that
+# removes nothing outside the scratch directory, so even a script that ignored
 # DEV_NUKE_PG_SOCKET could not delete the real socket. HOME is a scratch
 # directory too, so a log written to the wrong home stays in it.
 #

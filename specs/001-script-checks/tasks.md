@@ -101,3 +101,10 @@ US1 first (MVP: the guard on the branch everything lands on), then US2-US4 in pr
 - [x] T026 Update research.md R2's Decision to the scratch copy of the hook per research R2 (contradicts)
 - [x] T027 Give `bump_tools` a hermetic PATH as R5 reasons for dev-nuke, and record it in research.md R4, per FR-002 (partial)
 - [x] T028 Name the strict-mode case in `pre_commit_gate`'s call failure, matching quickstart.md, per FR-003 (partial)
+
+## Phase 9: Convergence
+
+- [x] T029 Add lines that use each `*_VERSION` variable without being its pin to the fixture `ci.yml` in `checks/20-tool-versions.sh` and to every expected file, and see a break that rewrites every line mentioning the variable go red per US3/AC1 (partial)
+- [x] T030 Run `bump-tools.sh` in the check with `TMPDIR` inside the scratch directory and assert it is left empty, and see a break that drops the script's EXIT trap go red per FR-002 (partial)
+- [x] T031 Reflow the comment paragraphs at `checks/55-dev-nuke.sh:16` and `checks/20-tool-versions.sh:75` per Constitution VI (partial)
+- [ ] T032 Write each scenario's break and its failure line into the PR #144 body before it is marked ready per FR-004 (partial)

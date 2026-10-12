@@ -72,8 +72,13 @@ Each decision below names what was chosen, why, and what lost.
   saves a redirect's body, and a missing artifact is a 404 that fails only
   under `-f`, otherwise saving the error page -- a first version ignored both
   flags, and convergence review showed a script dropping either staying
-  green. `shasum` is the real one, so the expected hash is computed the same
-  way. The "moved"
+  green. `mktemp` is a stub that makes its directory inside the fixture:
+  macOS's `mktemp -d` ignores `TMPDIR` (seen 2026-10-12), and a script that
+  stopped cleaning its staging would otherwise leave downloads in the real
+  temp directory, where convergence review found them. The fixture's
+  `ci.yml` also uses each variable on lines that are not its pin, as the real
+  one does, so a rewrite reaching those lines shows. `shasum` is the real
+  one, so the expected hash is computed the same way. The "moved"
   case moves all seven tools against URLs and artifact names written out
   literally, so every entry of the script's per-tool tables is checked;
   Ghostty is pinned at 1.10.0 with tags that only a release-shaped filter and

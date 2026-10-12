@@ -61,20 +61,19 @@ versions_match() {
 check "installed tools match the ci.yml pins" versions_match
 
 # bump-tools.sh against a scratch copy of itself and of the two files it
-# rewrites, under a PATH of stubs for the network and links to the utilities
-# it uses, and nothing else, so a version that fetched with another tool
-# fails rather than reaching the network. A copy rather than a symlink: the
-# script cds to its own directory, and a later version that resolved its
-# link there would find this repository's real pins. The pins are synthetic
-# so the check does not change meaning with every bump. The gh stub answers
-# from $LATEST, one "api-path answer" line per tool. The curl stub answers
-# as GitHub's release downloads do: every URL redirects, so without -L the
-# -o file gets the redirect's body; a URL listed in $MISSING is a 404, which
-# fails only under -f and otherwise saves the error page. A real download
-# writes "artifact:<url>". The real shasum hashes that, so the expected hash
-# is computed the way the script's is. The expected URLs and artifact names are written
-# out here rather than derived, so every entry of the script's per-tool
-# tables is checked.
+# rewrites, under a PATH of stubs for the network and links to the utilities it
+# uses, and nothing else, so a version that fetched with another tool fails
+# rather than reaching the network. A copy rather than a symlink: the script cds
+# to its own directory, and a later version that resolved its link there would
+# find this repository's real pins. The pins are synthetic so the check does not
+# change meaning with every bump. The gh stub answers from $LATEST, one
+# "api-path answer" line per tool. The curl stub answers as GitHub's release
+# downloads do: every URL redirects, so without -L the -o file gets the
+# redirect's body; a URL listed in $MISSING is a 404, which fails only under -f
+# and otherwise saves the error page. A real download writes "artifact:<url>".
+# The real shasum hashes that, so the expected hash is computed the way the
+# script's is. The expected URLs and artifact names are written out here rather
+# than derived, so every entry of the script's per-tool tables is checked.
 bump_tools() {
   local tmp dir out
   tmp=$(mktemp -d) || return 1
@@ -110,14 +109,27 @@ fi
 STUB
   chmod +x "$tmp/bin/gh" "$tmp/bin/curl"
   local tool real
-  for tool in awk bash cut dirname grep mktemp mv rm sed shasum sort tail; do
+  for tool in awk bash cut dirname grep mv rm sed shasum sort tail; do
     real=$(command -v "$tool") || return 1
     ln -s "$real" "$tmp/bin/$tool"
   done
+  # The script stages its downloads in `mktemp -d`, which on macOS ignores
+  # TMPDIR (seen 2026-10-12: TMPDIR=<dir> mktemp -d still answered under
+  # /var/folders/.../T). This one makes the directory inside the fixture, so
+  # whatever the script leaves behind stays in the scratch directory and shows.
+  real=$(command -v mktemp) || return 1
+  cat > "$tmp/bin/mktemp" << STUB
+#!/usr/bin/env bash
+[ "\$*" = -d ] || exit 94
+exec "$real" -d "\$STAGE/tmp.XXXXXX"
+STUB
+  chmod +x "$tmp/bin/mktemp"
 
   # sed -i takes its suffix differently in BSD and GNU sed; this needs neither.
   edit() { sed "$2" "$1" > "$1.new" && mv "$1.new" "$1"; }
 
+  # The steps use each variable without being its pin, as ci.yml's do, so a
+  # rewrite that reached every line naming the variable would show.
   # Ghostty's answer is its tag list, which the script filters to
   # release-shaped tags and orders by version: 1.10.0 sorts before 1.9.0 as
   # text, and the release candidate after its release under sort -V.
@@ -134,6 +146,9 @@ env:
   TAPLO_VERSION: 0.9.0
   ZIZMOR_VERSION: 1.30.0
   GITLEAKS_VERSION: 8.30.0
+steps:
+  - run: echo "${SHELLCHECK_VERSION} ${SHFMT_VERSION} ${ACTIONLINT_VERSION} ${GHOSTTY_VERSION}"
+  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION}"
 YML
     cat > "$dir/.github/tool-checksums.txt" << 'SUMS'
 # fixture
@@ -162,7 +177,10 @@ repos/gitleaks/gitleaks/releases/latest v8.30.0
 LATEST
   }
   latest() { edit "$dir/latest" "s|^\\($1\\) .*|\\1 $2|"; }
-  run() { (cd "$dir" && LATEST="$dir/latest" MISSING="$dir/missing" PATH="$tmp/bin" ./bump-tools.sh 2>&1); }
+  run() {
+    mkdir -p "$dir/tmp"
+    (cd "$dir" && LATEST="$dir/latest" MISSING="$dir/missing" STAGE="$dir/tmp" PATH="$tmp/bin" ./bump-tools.sh 2>&1)
+  }
   untouched() {
     cmp -s "$dir/ci.before" "$dir/.github/workflows/ci.yml" &&
       cmp -s "$dir/sums.before" "$dir/.github/tool-checksums.txt"
@@ -202,6 +220,9 @@ env:
   TAPLO_VERSION: 0.10.0
   ZIZMOR_VERSION: 1.31.0
   GITLEAKS_VERSION: 8.31.0
+steps:
+  - run: echo "${SHELLCHECK_VERSION} ${SHFMT_VERSION} ${ACTIONLINT_VERSION} ${GHOSTTY_VERSION}"
+  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION}"
 YML
   cat > "$dir/sums.want" << SUMS
 # fixture
@@ -283,5 +304,13 @@ SUMS
     differences
     return 1
   }
+
+  local staged
+  for staged in "$tmp"/*/tmp; do
+    [ -z "$(ls -A "$staged")" ] || {
+      echo "staging: left its downloads behind in $staged: $(ls -A "$staged")"
+      return 1
+    }
+  done
 }
 check "bump-tools.sh moves each pin with its checksum, and refuses a downgrade, a 404 or a missing line untouched" bump_tools
