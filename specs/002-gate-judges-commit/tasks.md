@@ -30,5 +30,5 @@ the whole suite and a fresh-context review.
 ## Phase 5: Polish
 
 - [x] T010 Say in `docs/checks.md` that the hook judges the commit in a throwaway tree, and why
-- [ ] T011 Time a gated commit against T001's baseline (SC-003)
+- [x] T011 Time a gated commit against T001's baseline (SC-003)
 - [ ] T012 Fresh-context review of the whole diff; then `/speckit-converge` until a pass finds nothing above LOW
