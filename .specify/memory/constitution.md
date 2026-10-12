@@ -44,13 +44,16 @@ script, verb, hook or guard this repository writes with logic of its own — a
 branch that decides an outcome, a computation, a parse, a state change, a
 refusal — MUST ship with a check in `checks/` that drives it against scratch
 fixtures, and that check MUST have been seen to fail on the behaviour broken
-by hand before it is trusted. A wrapper whose only branches choose which
-command to exec or report a missing prerequisite, such as `bin/aware.sh`,
-needs none.
+by hand before it is trusted. The one exemption, which wins over that list: a
+wrapper whose only branches choose which command to exec, or stop because a
+prerequisite — a file, a command, a variable — is absent, without parsing or
+computing anything to decide it, needs none; `bin/aware.sh` is one. Passing
+on another command's verdict with an option this repository chose, as
+`githooks/pre-commit` does with `check.sh --strict`, is logic of its own.
 
-Checked by a reviewer: each new or changed script with logic of its own has
-its check in `checks/`, and the pull request or commit message names the red
-run.
+Checked by a reviewer: each new or changed script, verb, hook or guard with
+logic of its own has its check in `checks/`, and the pull request or commit
+message names the red run.
 
 ### IV. Apply and Report Are Twins
 
