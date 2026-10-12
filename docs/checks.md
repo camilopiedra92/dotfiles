@@ -21,7 +21,18 @@ machine already matches (against a stub `defaults`), and that `macos/power.sh`
 writes only through `sudo`, only for a difference, and never from `check`
 (against a stub `pmset` and `sudo`), and that `macos/dock.sh` and
 `macos/handlers.sh` change only what differs and skip, without failing, an app
-that is not installed (against a stub `dockutil` and `duti`).
+that is not installed (against a stub `dockutil` and `duti`), that
+`githooks/pre-push` refuses deleting or rewriting the remote's default branch
+and nothing else and `githooks/pre-commit` runs the checks in strict mode and
+refuses any commit they fail (through real pushes and commits in scratch
+repositories), that `bump-tools.sh` moves each pin with its checksum and
+refuses a downgrade, a 404 or a pin with no checksum line untouched (under a
+`PATH` holding only a stub `gh`, `curl` and `mktemp` and links to the
+utilities it uses), and that `bin/dev-nuke.sh` signals, quits
+and deletes only what it should, as whom it should (under a `PATH` holding
+only stubs and links to harmless utilities, so a command it looks up there
+cannot act on the machine; absolute paths, redirections and builtins are not
+covered by that, and the check's own comment says what limits them).
 
 One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
