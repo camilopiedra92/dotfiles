@@ -27,10 +27,17 @@ Each decision below names what was chosen, why, and what lost.
   the pre-commit hook.
 - **Alternatives**: piping a line to the hook directly (lost: it checks the
   hook against my reading of git's protocol, not against git).
-- **Fixtures**: a non-`main` default branch is a bare remote whose HEAD points
-  at `trunk`, cloned; the unknown-default case removes `origin/HEAD` with
-  `git remote set-head origin -d`. A multi-ref push is one `git push` naming
-  two refspecs.
+- **Fixtures**: the default branch is set with `git remote set-head origin
+  <branch>` in the clone, since `refs/remotes/origin/HEAD` is what the hook
+  reads; the unknown-default case removes it with `set-head -d`. The bare
+  remote sets `receive.denyDeleteCurrent ignore`: git's default refuses
+  deleting the remote's current branch on the server, which would make the
+  deletion case pass whatever the hook decided. A multi-ref push puts an
+  allowed ref on each side of the refused one by name, because git hands the
+  refs to the hook sorted by remote ref name, not in refspec order (observed
+  with git 2.56, 2026-10-12). Every allowed push must print nothing; every
+  refusal must name its reason, give the bypass hint, and leave every remote
+  ref where it was.
 
 ## R3. Driving the commit gate
 
