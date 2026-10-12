@@ -5,3 +5,4 @@ schemas/** linguist-vendored
 .claude/skills/speckit-*/** linguist-vendored
 # The constitution is written here.
 .specify/memory/** -linguist-vendored
+.specify/memory/.constitution-template.json linguist-vendored

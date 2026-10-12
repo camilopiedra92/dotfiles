@@ -14,11 +14,6 @@ global instructions file linked into `~/.claude/`, not this project's.
 
 @.specify/memory/constitution.md
 
-## Where things live
-
-The reasons behind the setup are in `docs/`, one file per subject, linked from
-`README.md`; read the one for a subject before changing it.
-
 ---
 
 When something here stops being true, correct it in the same commit that made

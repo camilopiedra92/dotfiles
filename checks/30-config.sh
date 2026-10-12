@@ -352,4 +352,4 @@ english_only_contract() {
     return 1
   fi
 }
-check "english only finds Spanish whatever the locale, reads the commit's index, and fails when its grep fails" english_only_contract
+check "english only finds Spanish whatever the locale, skips only what is vendored, reads the commit's index, and fails when its grep fails" english_only_contract
