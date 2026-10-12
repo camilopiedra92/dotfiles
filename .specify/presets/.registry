@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "presets": {
+    "constitution-authoring": {
+      "version": "1.2.1",
+      "source": "local",
+      "manifest_hash": "sha256:08024fcbc64ac03f0fcadd718dd4d45f929f82b3679e2c1f2d7d059c5014e7d1",
+      "enabled": true,
+      "priority": 10,
+      "registered_commands": {
+        "claude": [
+          "speckit.constitution"
+        ]
+      },
+      "registered_skills": {
+        "claude": [
+          "speckit-constitution"
+        ]
+      },
+      "installed_at": "2026-10-12T18:39:07.418575+00:00"
+    }
+  }
+}

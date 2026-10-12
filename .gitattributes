@@ -1,0 +1,8 @@
+# Upstream's files, kept byte-for-byte: checks/30-config.sh's english_only
+# skips them, and GitHub leaves them out of the language stats.
+schemas/** linguist-vendored
+.specify/** linguist-vendored
+.claude/skills/speckit-*/** linguist-vendored
+# The constitution is written here.
+.specify/memory/** -linguist-vendored
+.specify/memory/.constitution-template.json linguist-vendored
