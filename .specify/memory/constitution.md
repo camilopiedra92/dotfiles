@@ -40,11 +40,15 @@ the system Python, no path outside XDG, no identity in a versioned file.
 
 `./check.sh` is the single gate: the pre-commit hook, CI and a person run the
 same command, and a check means the same on a runner as on a laptop. Every
-script, verb, hook or guard this repository writes MUST ship with a check in
-`checks/` that drives it against scratch fixtures, and that check MUST have
-been seen to fail on the behaviour broken by hand before it is trusted.
+script, verb, hook or guard this repository writes with logic of its own — a
+branch that decides an outcome, a computation, a parse, a state change, a
+refusal — MUST ship with a check in `checks/` that drives it against scratch
+fixtures, and that check MUST have been seen to fail on the behaviour broken
+by hand before it is trusted. A wrapper whose only branches choose which
+command to exec or report a missing prerequisite, such as `bin/aware.sh`,
+needs none.
 
-Checked by a reviewer: each new or changed script, verb, hook or guard has
+Checked by a reviewer: each new or changed script with logic of its own has
 its check in `checks/`, and the pull request or commit message names the red
 run.
 
@@ -99,4 +103,4 @@ Amendments are made through `/speckit-constitution` in a pull request of their
 own. The version follows semantic versioning: MAJOR for a principle removed or
 redefined, MINOR for one added or materially expanded, PATCH for wording.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
+**Version**: 2.0.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
