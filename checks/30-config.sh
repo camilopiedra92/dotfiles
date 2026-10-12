@@ -242,13 +242,19 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # The range covers Latin-1 Supplement and Latin Extended A/B, so no English
 # word trips it while Spanish prose of any length always does.
 #
-# schemas/ is excluded because the policy is about prose written here, and none
-# of it is: those files are upstream's, vendored byte-for-byte so drift.sh can
-# compare them against what starship and mise publish. starship's uses a slashed
-# capital O as a module symbol -- named rather than spelled for the same reason
-# the pattern above is, since writing it here would trip this check. Editing the
-# schema to satisfy the rule would break that comparison and the validation
-# both, to police text nobody here wrote.
+# Paths .gitattributes marks linguist-vendored are excluded because the policy
+# is about prose written here, and none of theirs is. schemas/ is upstream's,
+# vendored byte-for-byte so drift.sh can compare it against what starship and
+# mise publish. starship's uses a slashed capital O as a module symbol -- named
+# rather than spelled for the same reason the pattern above is, since writing it
+# here would trip this check. Editing the schema to satisfy the rule would break
+# that comparison and the validation both, to police text nobody here wrote.
+# What Spec Kit writes is the same case: `specify init` and `specify preset add`
+# put it there, .specify/integrations/ hashes it, and an upgrade rewrites it.
+# create-new-feature.sh carries accented characters as a locale probe (seen on
+# specify-cli 1.1.3, 2026-10-12). .specify/memory/ is unmarked, and checked:
+# the constitution is written here. The attribute rather than an exclude list
+# here, because git pathspecs cannot re-include under an excluded directory.
 #
 # The locale is set here because the pattern needs it: PCRE accepts code points
 # above U+00FF only in UTF mode, which git turns on only under a UTF-8 locale.
@@ -260,7 +266,7 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # as "none", so a Spanish file passed whenever the locale was not UTF-8.
 english_only() {
   local rc=0
-  LC_ALL=C.UTF-8 this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude)schemas/' || rc=$?
+  LC_ALL=C.UTF-8 this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude,attr:linguist-vendored)' || rc=$?
   case "$rc" in
     0) return 1 ;;
     1) return 0 ;;
@@ -303,6 +309,25 @@ english_only_contract() {
       return 1
     }
   done
+  # Under this repo's .gitattributes, the vendored trees are skipped and the
+  # constitution is not.
+  git init -q "$tmp/sdd"
+  cp .gitattributes "$tmp/sdd/"
+  mkdir -p "$tmp/sdd/schemas" "$tmp/sdd/.specify/scripts/bash" "$tmp/sdd/.specify/memory" "$tmp/sdd/.claude/skills/speckit-plan"
+  printf 'a\xc3\xb1o\n' > "$tmp/sdd/schemas/starship.json"
+  printf 'a\xc3\xb1o\n' > "$tmp/sdd/.specify/scripts/bash/common.sh"
+  printf 'a\xc3\xb1o\n' > "$tmp/sdd/.claude/skills/speckit-plan/SKILL.md"
+  git -C "$tmp/sdd" add .
+  out=$(cd "$tmp/sdd" && THIS_INDEX='' english_only 2>&1) || {
+    echo "flagged a vendored file: $out"
+    return 1
+  }
+  printf 'a\xc3\xb1o\n' > "$tmp/sdd/.specify/memory/constitution.md"
+  git -C "$tmp/sdd" add .
+  if out=$(cd "$tmp/sdd" && THIS_INDEX='' english_only 2>&1); then
+    echo "missed Spanish in .specify/memory/constitution.md"
+    return 1
+  fi
   # The commit's index, not the default one: a Spanish file staged only in an
   # index of its own, as `git commit -a` or `git commit <paths>` hands one
   # to the hook, is found through THIS_INDEX and not without it.
