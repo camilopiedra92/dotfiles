@@ -10,16 +10,21 @@
 # for everything that acts on the machine or reads who is running it, links to
 # the harmless utilities it needs, and nothing else. A stub-first PATH that
 # fell through to the real one would let a command the stubs miss -- today's
-# or one added later -- act on the machine; here it fails as "command not
-# found" instead. rm is a stub too, and removes nothing outside the scratch
-# directory, so even a script that ignored DEV_NUKE_PG_SOCKET could not delete
-# the real socket.
+# or one added later -- act on the machine; here a command looked up on PATH
+# fails as "command not found" instead. Two escapes PATH cannot close: an
+# absolute path, and bash's builtin kill if the script stopped going through
+# xargs. Against the second, the fixture's PIDs are six digits, above the
+# five macOS gives out, so a real kill finds no such process (`kill -0 900101`
+# answered "No such process" here, 2026-10-12). rm is a stub that removes
+# nothing outside the scratch directory, so even a script that ignored
+# DEV_NUKE_PG_SOCKET could not delete the real socket. HOME is a scratch
+# directory too, so a log written to the wrong home stays in it.
 #
 # Every stub that stands for an action appends "as=<user> <command> <args>"
-# to $CALLS, where the user is the one the sudo stub ran it as, or root. pgrep answers from $PROCS, one
-# "pid owner obeys-TERM command" line per process, and kill -TERM removes the
-# processes that obey it, so which ones survive to KILL is the fixture's
-# choice.
+# to $CALLS, where the user is the one the sudo stub ran it as, or root.
+# pgrep answers from $PROCS, one "pid owner obeys-TERM command" line per
+# process, and kill -TERM removes the processes that obey it, so which ones
+# survive to KILL is the fixture's choice.
 printf '\n%sdev-nuke%s\n' "$DIM" "$OFF"
 
 dev_nuke_stubs() {
@@ -35,7 +40,7 @@ dev_nuke_stubs() {
     real=$(command -v "$tool") || return 1
     cat > "$bin/$tool" << STUB
 #!/usr/bin/env bash
-printf 'as=%s %s\n' "\${AS_USER:-root}" "$tool \$*" >> "\$CALLS"
+printf 'as=%s %s\\n' "\${AS_USER:-root}" "$tool \$*" >> "\$CALLS"
 exec "$real" "\$@"
 STUB
   done
@@ -49,8 +54,11 @@ STUB
 #!/usr/bin/env bash
 echo "$FAKE_UID"
 STUB
+  # Only the invoking user's record exists, so asking for anyone else's home
+  # fails the way dscl does for an unknown user.
   cat > "$bin/dscl" << 'STUB'
 #!/usr/bin/env bash
+[ "$1 $2 $3 $4" = ". -read /Users/$SUDO_USER NFSHomeDirectory" ] || exit 56
 echo "NFSHomeDirectory: $FAKE_HOME"
 STUB
   # sudo -u USER cmd...: records the user for the stubs below it, runs cmd.
@@ -62,22 +70,28 @@ export AS_USER
 shift 2
 exec "$@"
 STUB
-  # -x NAME matches the command exactly; -f [-u USER] PATTERN matches the
-  # processes, USER's only when given, whose command line contains PATTERN.
+  # pgrep [-x] [-f] [-u USER] PATTERN, in any order: -x matches the whole
+  # command, otherwise any part of the command line; -u limits it to USER.
   cat > "$bin/pgrep" << 'STUB'
 #!/usr/bin/env bash
 printf 'as=%s %s\n' "${AS_USER:-root}" "pgrep $*" >> "$CALLS"
-case "$1" in
-  -x) awk -v n="$2" '{ c = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", c) } c == n { print $1; f = 1 } END { exit !f }' "$PROCS" ;;
-  -f)
-    u='' p=$2
-    [ "$2" = -u ] && u=$3 p=$4
-    awk -v u="$u" -v p="$p" '{ c = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", c) } (u == "" || $2 == u) && index(c, p) { print $1; f = 1 } END { exit !f }' "$PROCS"
-    ;;
-  *) exit 99 ;;
-esac
+exact=0 user=''
+while [ $# -gt 1 ]; do
+  case "$1" in
+    -x) exact=1 ;;
+    -f) ;;
+    -u) user=$2; shift ;;
+    *) exit 99 ;;
+  esac
+  shift
+done
+awk -v x="$exact" -v u="$user" -v p="$1" '
+  { c = $0; sub(/^[^ ]+ [^ ]+ [^ ]+ /, "", c) }
+  (u == "" || $2 == u) && (x ? c == p : index(c, p)) { print $1; f = 1 }
+  END { exit !f }' "$PROCS"
 STUB
-  # TERM removes the processes that obey it; KILL removes any.
+  # One line per call, "kill -SIG pid...", as xargs batches them. TERM
+  # removes the processes that obey it; KILL removes any.
   cat > "$bin/kill" << 'STUB'
 #!/usr/bin/env bash
 printf 'as=%s %s\n' "${AS_USER:-root}" "kill $*" >> "$CALLS"
@@ -94,6 +108,7 @@ printf 'as=%s %s\n' "${AS_USER:-root}" "rm $*" >> "$CALLS"
 for path in "$@"; do
   case "$path" in
     -*) ;;
+    *..*) exit 95 ;;
     "$SCRATCH"/*) /bin/rm -f -- "$path" ;;
     *) exit 96 ;;
   esac
@@ -103,29 +118,38 @@ STUB
 }
 
 dev_nuke() {
-  local tmp out
+  local tmp out pid line term kill
   tmp=$(mktemp -d) || return 1
   trap '/bin/rm -rf "$tmp"' RETURN
   dev_nuke_stubs "$tmp/bin" || {
     echo "setup: a utility the hermetic PATH links to is missing"
     return 1
   }
-  mkdir -p "$tmp/home" "$tmp/sock"
+  mkdir -p "$tmp/home" "$tmp/roothome" "$tmp/sock"
   : > "$tmp/sock/.s.PGSQL.5432"
   : > "$tmp/sock/other.lock"
+  # Docker runs, Postman does not (a document viewer only mentions it). Each
+  # orphan pattern has one of the user's processes that obeys TERM, one that
+  # does not, and another user's process that matches it too.
   cat > "$tmp/procs" << 'PROCS'
-200 me 1 Docker
-101 me 1 node next-server
-102 me 0 webpack serve
-103 other 0 nodemon app.js
+900200 me 1 Docker
+900300 me 1 Preview Postman-guide.pdf
+900101 me 1 node next-server
+900102 me 0 node next-server --turbo
+900111 other 0 node next-server
+900201 me 1 webpack serve
+900202 me 0 webpack --watch
+900211 other 0 webpack serve
 PROCS
   run() {
     : > "$tmp/calls"
     CALLS="$tmp/calls" PROCS="$tmp/procs" SCRATCH="$tmp" FAKE_UID=$1 FAKE_HOME="$tmp/home" \
-      SUDO_USER=me DEV_NUKE_PG_SOCKET="$tmp/sock/.s.PGSQL.5432" PATH="$tmp/bin" \
-      "$tmp/bin/bash" bin/dev-nuke.sh 2>&1
+      HOME="$tmp/roothome" SUDO_USER=me DEV_NUKE_PG_SOCKET="$tmp/sock/.s.PGSQL.5432" \
+      PATH="$tmp/bin" "$tmp/bin/bash" bin/dev-nuke.sh 2>&1
   }
   called() { grep -qxF "$1" "$tmp/calls"; }
+  # The line number of the kill call that sent SIG to PID, batched or not.
+  signalled() { grep -n "^as=root kill -$1 " "$tmp/calls" | grep -E " $2( |\$)" | cut -d: -f1; }
 
   if out=$(run 501); then
     echo "root: ran without root"
@@ -150,26 +174,38 @@ PROCS
     return 1
   fi
 
-  # 101 obeys TERM; 102 ignores it and is the only one KILL may reach.
-  local term102 kill102
-  if ! called 'as=root kill -TERM 101' || ! called 'as=root kill -TERM 102'; then
-    echo "orphans: did not send TERM to each of the user's matching processes"
-    return 1
-  fi
-  if grep -q '^as=root kill -KILL.*101' "$tmp/calls"; then
-    echo "orphans: sent KILL to 101, which had exited on TERM"
-    return 1
-  fi
-  term102=$(grep -n '^as=root kill -TERM 102$' "$tmp/calls" | cut -d: -f1)
-  kill102=$(grep -n '^as=root kill -KILL 102$' "$tmp/calls" | cut -d: -f1)
-  [ -n "$kill102" ] && [ "$term102" -lt "$kill102" ] || {
-    echo "orphans: 102 survived TERM but was not sent KILL after it"
-    return 1
-  }
-  if grep -q '^as=root kill .*103' "$tmp/calls"; then
-    echo "other users: signalled 103, which belongs to another user"
-    return 1
-  fi
+  # TERM to every one of the user's matching processes; then, after a
+  # grace period, KILL to exactly the ones that ignored it.
+  for pid in 900101 900102 900201 900202; do
+    [ -n "$(signalled TERM "$pid")" ] || {
+      echo "orphans: did not send TERM to $pid, one of the user's matching processes"
+      return 1
+    }
+  done
+  for pid in 900101 900201; do
+    [ -z "$(signalled KILL "$pid")" ] || {
+      echo "orphans: sent KILL to $pid, which had exited on TERM"
+      return 1
+    }
+  done
+  for pid in 900102 900202; do
+    term=$(signalled TERM "$pid")
+    kill=$(signalled KILL "$pid")
+    if [ -z "$kill" ] || [ "$term" -gt "$kill" ]; then
+      echo "orphans: $pid survived TERM but was not sent KILL after it"
+      return 1
+    fi
+    awk -v t="$term" -v k="$kill" 'NR > t && NR < k && /^as=root sleep [1-9]/ { f = 1 } END { exit !f }' "$tmp/calls" || {
+      echo "orphans: sent KILL to $pid without waiting out a grace period after TERM"
+      return 1
+    }
+  done
+  for pid in 900111 900211; do
+    if line=$(grep -E "^as=[a-z]+ kill .* $pid( |\$)" "$tmp/calls"); then
+      echo "other users: signalled $pid, which belongs to another user: $line"
+      return 1
+    fi
+  done
 
   [ ! -e "$tmp/sock/.s.PGSQL.5432" ] || {
     echo "socket: the stale socket at DEV_NUKE_PG_SOCKET is still there"
@@ -194,6 +230,10 @@ PROCS
   # notification, and the log, which must end up in their home, not root's.
   called 'as=me brew services stop postgresql@17' || {
     echo "as user: did not stop the service as the invoking user"
+    return 1
+  }
+  grep -q '^as=me osascript -e display notification' "$tmp/calls" || {
+    echo "as user: did not notify the invoking user"
     return 1
   }
   if grep -Eq '^as=root (osascript|brew|tee|mkdir)' "$tmp/calls"; then

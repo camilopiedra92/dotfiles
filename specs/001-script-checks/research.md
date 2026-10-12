@@ -86,22 +86,33 @@ Each decision below names what was chosen, why, and what lost.
 - **Decision**: a hermetic `PATH`: a scratch `bin/` holding stubs for every
   command that acts on the machine or reads its identity (`id`, `dscl`,
   `stat`, `sudo`, `pgrep`, `kill`, `sleep`, `osascript`, `brew`,
-  `dscacheutil`, `killall`, `purge`) and symlinks to the harmless utilities
-  the script needs (`awk`, `cat`, `date`, `dirname`, `mkdir`, `tee`, `tr`,
-  `xargs`), and nothing else. `rm` is a guarded stub: it logs every call and
-  removes a path only inside the scratch directory, so even a script that
-  ignores the socket default (R6) cannot delete the real socket. Each stub appends what it was asked to a
-  calls log. `sudo -u USER cmd…` logs the user and runs `cmd…`; `kill` is
-  reached through `xargs`, which runs it from `PATH`. `pgrep` answers from a
-  process table file and `kill -TERM` removes the processes marked as obeying
-  it, so survivors are a fixture choice.
-- **Rationale**: a stub-first `PATH` that falls through to the real one would
-  let a command the stubs forgot — today's or one added later — act on the
-  machine. With a hermetic `PATH` it fails as "command not found" instead, so
-  the check can never be the thing that kills a process or purges memory.
+  `dscacheutil`, `killall`, `purge`, `rm`), logging pass-throughs for `tee`
+  and `mkdir` (the log must be written as the user), and links to the
+  harmless utilities the script and stubs need (`awk`, `basename`, `bash`,
+  `cat`, `date`, `dirname`, `tr`, `xargs`), and nothing else. Each stub
+  appends who ran it and how to a calls log. `sudo -u USER cmd…` records the
+  user and runs `cmd…`; `kill` is reached through `xargs`, which runs it
+  from `PATH`. `pgrep` answers from a process table and `kill -TERM` removes
+  the processes marked as obeying it. `dscl` answers only for the invoking
+  user. `rm` removes a path only inside the scratch directory and refuses
+  any path with `..`. `HOME` points at a scratch directory.
+- **Fixture**: each orphan pattern matches one of the user's processes that
+  obeys TERM, one that does not, and another user's; PIDs are six digits,
+  which macOS never hands out, so a builtin or absolute-path `kill` that
+  escaped the stubs would find no process. Postman is mentioned on a
+  document viewer's command line but not running, so an app matched by
+  command line rather than by name shows.
+- **Rationale**: a stub-first `PATH` that falls through to the real one
+  would let a command the stubs forgot — today's or one added later — act
+  on the machine. With a hermetic `PATH` it fails as "command not found"
+  instead. Absolute paths and shell builtins escape any `PATH`; the PIDs and
+  the scratch `HOME` limit what such an escape could reach.
 - **Alternatives**: stubs first on the inherited `PATH` (lost for the reason
-  above); running inside a VM or container (lost: none exists here, and macOS
-  commands are the point).
+  above); running inside a VM or container (lost: none exists here, and
+  macOS commands are the point). A first version had one process per
+  pattern and an argument-blind `dscl`; review showed KILL to another
+  user's process, KILL to every original PID, a removed grace period and a
+  log under the inherited `HOME` all surviving.
 
 ## R6. The socket path
 
