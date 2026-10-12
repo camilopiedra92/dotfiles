@@ -22,11 +22,10 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
 
 ### Before building
 
-- Calibrate by size. Make a small or mechanical change directly and tell me
-  afterwards. If it touches several files, changes an interface, or involves a
-  design decision with real alternatives, propose the approach before writing.
-  If what I asked for has a simpler way to the same result, say so before
-  building mine.
+- Open with the route from "Spec-driven development" and why. A direct change
+  goes ahead, reported after, unless it touches more than one file besides tests
+  and lockfiles or has a real alternative; that, and any other route, waits for
+  my go. A simpler way to the same result is said first.
 - When a request reads two ways and the reading changes the result, do not
   pick one silently: ask if a wrong guess is costly to undo, otherwise take the
   likelier reading and say which one you took when you finish.
@@ -94,27 +93,28 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
 
 ## Spec-driven development
 
-Spec Kit is the only spec process here; no other planning framework runs
-alongside it. Size the process to what a wrong decision would cost:
+Spec Kit is the only spec or planning process. The route follows what a change
+does, not its file count; a named example decides, and doubt goes short.
+An unknown way is spiked on a throwaway branch; any spec follows what it
+taught. A mid-build finding that changes route or wait stops work and is said.
 
-- Bug fixes, changes to one to three files, scripts, docs and configuration go
-  direct, without a spec: test first where there is logic of its own, the
-  alternative in the commit. Direct means without a spec; whether to propose
-  first still follows "How to work".
-- A feature with a real design choice, or a changed interface, takes the short
-  path: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`,
-  `/speckit-implement`, then `/speckit-converge` until it reports converged.
-  `/speckit-tasks` treats tests as requested for stories with logic of their
-  own, test tasks first; each story closes with the whole suite, the
-  project's mutation check (if any) on its changed code, and a fresh review.
+- Direct, no spec: a bug fix restoring intended behaviour, or a change altering
+  none (a bump, a package, a setting, docs, a rule's or skill's wording, a
+  refactor keeping public interfaces) whose alternative dies with the commit.
+- Short path, any size: new or changed behaviour other than a bug fix (a
+  feature, command, script, new skill, or check logic the project writes), a
+  changed interface or a choice later work builds on: `/speckit-specify`,
+  `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, then
+  `/speckit-converge` until it reports converged. `/speckit-tasks` treats tests
+  as requested for stories with logic of their own, test tasks first; each story
+  closes with the whole suite, the project's mutation check (if any) on its
+  changed code, and a fresh review.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
   `/speckit-checklist` after it and `/speckit-analyze` before implementing. A
   fresh context reviews each checklist it writes before `/speckit-tasks`: you
   mark what it finds met, I mark the rest or accept it open with the reason
   beside it, and `/speckit-implement`'s unchecked-items question is mine.
-- When the way to do something is unknown, spike on a throwaway branch and
-  specify from what it taught. A spec is not a way to explore.
 
 Setup and lifecycle:
 
@@ -151,7 +151,7 @@ Setup and lifecycle:
 - Such a Python, TypeScript or JavaScript project has a formatter, a linter and,
   outside plain JS, a type checker: dev dependencies, config in the repo, one
   command CI runs (else a pre-commit hook) and you run before calling work done.
-  Approved defaults, no question needed: ruff, mypy, pytest-timeout via
+  Approved defaults, no question or go needed: ruff, mypy, pytest-timeout via
   `uv add --dev`; prettier, eslint, typescript-eslint and `tsc --noEmit` for
   TypeScript. New projects get them at scaffold; an existing one gets a missing
   role once, as its own change, not mid-task. Scratch scripts: none, nor a lockfile.
