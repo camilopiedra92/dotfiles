@@ -266,7 +266,7 @@ check "one nerd font, declared everywhere it renders" one_nerd_font
 # as "none", so a Spanish file passed whenever the locale was not UTF-8.
 english_only() {
   local rc=0
-  LC_ALL=C.UTF-8 this_repo_git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude,attr:linguist-vendored)' || rc=$?
+  LC_ALL=C.UTF-8 git grep -nP '[\x{00A1}\x{00BF}\x{00C0}-\x{024F}]' -- . ':(exclude,attr:linguist-vendored)' || rc=$?
   case "$rc" in
     0) return 1 ;;
     1) return 0 ;;
@@ -281,8 +281,6 @@ check "english only" english_only
 # english_only against scratch repositories, under a locale without UTF-8 and
 # one with it: a clean tree passes, a tree with Spanish in it fails naming the
 # line, and a git grep that errors fails instead of reading as a clean tree.
-# THIS_INDEX is emptied so this_repo_git reads each scratch repository's own
-# index, not the one of a commit in progress.
 english_only_contract() {
   local tmp out loc
   tmp=$(mktemp -d) || return 1
@@ -291,7 +289,7 @@ english_only_contract() {
   echo plain > "$tmp/repo/clean.txt"
   git -C "$tmp/repo" add clean.txt
   for loc in C C.UTF-8; do
-    out=$(cd "$tmp/repo" && THIS_INDEX='' LC_ALL=$loc english_only 2>&1) || {
+    out=$(cd "$tmp/repo" && LC_ALL=$loc english_only 2>&1) || {
       echo "a clean tree failed under LC_ALL=$loc: $out"
       return 1
     }
@@ -300,7 +298,7 @@ english_only_contract() {
   printf 'a\xc3\xb1o\n' > "$tmp/repo/spanish.txt"
   git -C "$tmp/repo" add spanish.txt
   for loc in C C.UTF-8; do
-    if out=$(cd "$tmp/repo" && THIS_INDEX='' LC_ALL=$loc english_only 2>&1); then
+    if out=$(cd "$tmp/repo" && LC_ALL=$loc english_only 2>&1); then
       echo "missed spanish.txt under LC_ALL=$loc"
       return 1
     fi
@@ -318,38 +316,22 @@ english_only_contract() {
   printf 'a\xc3\xb1o\n' > "$tmp/sdd/.specify/scripts/bash/common.sh"
   printf 'a\xc3\xb1o\n' > "$tmp/sdd/.claude/skills/speckit-plan/SKILL.md"
   git -C "$tmp/sdd" add .
-  out=$(cd "$tmp/sdd" && THIS_INDEX='' english_only 2>&1) || {
+  out=$(cd "$tmp/sdd" && english_only 2>&1) || {
     echo "flagged a vendored file: $out"
     return 1
   }
   printf 'a\xc3\xb1o\n' > "$tmp/sdd/.specify/memory/constitution.md"
   git -C "$tmp/sdd" add .
-  if out=$(cd "$tmp/sdd" && THIS_INDEX='' english_only 2>&1); then
+  if out=$(cd "$tmp/sdd" && english_only 2>&1); then
     echo "missed Spanish in .specify/memory/constitution.md"
-    return 1
-  fi
-  # The commit's index, not the default one: a Spanish file staged only in an
-  # index of its own, as `git commit -a` or `git commit <paths>` hands one
-  # to the hook, is found through THIS_INDEX and not without it.
-  printf 'a\xc3\xb1o\n' > "$tmp/repo/staged-only.txt"
-  git -C "$tmp/repo" rm -q --cached spanish.txt
-  rm "$tmp/repo/spanish.txt"
-  cp "$tmp/repo/.git/index" "$tmp/commit-index"
-  GIT_INDEX_FILE=$tmp/commit-index git -C "$tmp/repo" add staged-only.txt
-  out=$(cd "$tmp/repo" && THIS_INDEX='' english_only 2>&1) || {
-    echo "found a file only the commit's index holds without being given that index: $out"
-    return 1
-  }
-  if out=$(cd "$tmp/repo" && THIS_INDEX=$tmp/commit-index english_only 2>&1); then
-    echo "missed a Spanish file staged in the commit's index"
     return 1
   fi
   mkdir "$tmp/bin"
   printf '#!/bin/sh\necho "fatal: grep broke" >&2\nexit 128\n' > "$tmp/bin/git"
   chmod +x "$tmp/bin/git"
-  if out=$(cd "$tmp/repo" && THIS_INDEX='' PATH="$tmp/bin:$PATH" english_only 2>&1); then
+  if out=$(cd "$tmp/repo" && PATH="$tmp/bin:$PATH" english_only 2>&1); then
     echo "a search that exited 128 read as a clean tree"
     return 1
   fi
 }
-check "english only finds Spanish whatever the locale, skips only what is vendored, reads the commit's index, and fails when its grep fails" english_only_contract
+check "english only finds Spanish whatever the locale, skips only what is vendored, and fails when its grep fails" english_only_contract

@@ -23,8 +23,9 @@ writes only through `sudo`, only for a difference, and never from `check`
 `macos/handlers.sh` change only what differs and skip, without failing, an app
 that is not installed (against a stub `dockutil` and `duti`), that
 `githooks/pre-push` refuses deleting or rewriting the remote's default branch
-and nothing else and `githooks/pre-commit` runs the checks in strict mode and
-refuses any commit they fail (through real pushes and commits in scratch
+and nothing else and `githooks/pre-commit` runs the checks in strict mode on
+exactly what is being committed and refuses any commit they fail, leaving the
+working tree as it was (through real pushes and commits in scratch
 repositories), that `bump-tools.sh` moves each pin with its checksum and
 refuses a downgrade, a 404 or a pin with no checksum line untouched (under a
 `PATH` holding only a stub `gh`, `curl` and `mktemp` and links to the
@@ -38,6 +39,16 @@ One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
 anything — checks written twice drift, and the moment CI and local disagree you
 stop trusting both. To bypass the hook once: `git commit --no-verify`.
+
+The hook judges the commit, not the working tree. It builds a throwaway tree of
+the index git hands it — a repository borrowing this one's objects, with the
+commit's parent as `HEAD` so gitleaks still reads history — runs `check.sh`
+there and removes it. Run in the working tree, an unstaged edit refused a good
+commit and a bad staged change passed behind a clean working copy (both seen
+2026-10-12). Stashing the unstaged changes around the run, as the pre-commit
+framework does, was the alternative; it rewrites files under the editor and can
+lose work if interrupted. Run by hand, `./check.sh` judges the working tree,
+which is what a person running it is looking at.
 
 A check either runs (`ok` / `FAIL`) or is skipped because its tool is missing.
 A skip is a hole in coverage, not a neutral third outcome, so both gates —

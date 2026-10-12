@@ -44,19 +44,16 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 # sdd-init check committed into the branch being committed and its `git init`
 # set core.bare in this repository's config. So no GIT_ variable reaches the
 # checks -- every one of them, not a list, since a list is what missed GIT_DIR.
-# The index is kept in THIS_INDEX for the two calls about this repository,
-# which must read what is being committed (this_repo_git).
+# githooks/pre-commit clears them itself before running this in a tree of the
+# commit; this covers every other way to start it with them set (by hand from
+# another hook, `git rebase -x`).
 drop_hook_git_env() {
   local name
-  THIS_INDEX=${GIT_INDEX_FILE:-}
   for name in $(compgen -e); do
     case "$name" in GIT_*) unset "$name" ;; esac
   done
 }
 drop_hook_git_env
-this_repo_git() {
-  if [ -n "$THIS_INDEX" ]; then GIT_INDEX_FILE=$THIS_INDEX git "$@"; else git "$@"; fi
-}
 
 # Every CI system sets CI, so the strict path needs no wiring in the workflow
 # and cannot be forgotten there. --strict reproduces it locally, which is the

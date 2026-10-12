@@ -100,7 +100,7 @@ exec_bits() {
         fi
         ;;
     esac
-  done < <(this_repo_git ls-files -s)
+  done < <(git ls-files -s)
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits

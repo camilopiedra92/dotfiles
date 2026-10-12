@@ -41,8 +41,12 @@
 
 ## R3. Cleanup
 
-- **Decision**: one `trap` on `EXIT` removes the tree; `INT`, `TERM` and `HUP`
-  exit through it. The tree's own config sets `core.fsmonitor false`.
+- **Decision**: one `trap` on `EXIT` removes the tree. No trap on `INT`,
+  `TERM` or `HUP`: bash runs the EXIT trap when killed by a TERM it does not
+  trap (seen with /bin/bash 3.2.57, the only bash on this machine,
+  2026-10-12), and a hook with an extra `trap 'exit 130' INT TERM HUP` and
+  one without left the same result in the interrupted case — so the extra
+  trap changed nothing. The tree's own config sets `core.fsmonitor false`.
 - **Rationale**: FR-003. The fsmonitor setting keeps the global
   `core.fsmonitor = true` from starting a daemon for a directory that lives
   for one commit (git/config's own warning about scratch repositories).
