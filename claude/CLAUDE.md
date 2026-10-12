@@ -93,22 +93,22 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
 
 ## Spec-driven development
 
-Spec Kit is the only spec or planning process here. The route follows what a
-change does, not its file count; if two fit, or in doubt, the later one below
-wins. An unknown way is spiked first, on a throwaway branch. Anything found
-mid-build that would have changed the route or the wait stops the work and is
-said. A spec starts from what was learned, not from what was built.
+Spec Kit is the only spec or planning process. The route follows what a change
+does, not its file count; a named example decides, and doubt goes short.
+An unknown way is spiked on a throwaway branch; any spec follows what it
+taught. A mid-build finding that changes route or wait stops work and is said.
 
-- Direct, no spec: a bug fix restoring intended behaviour, or a change adding or
-  altering none (a bump, a package, a setting, docs or instruction text, a
-  refactor keeping its interfaces) whose alternative dies with the commit.
+- Direct, no spec: a bug fix restoring intended behaviour, or a change altering
+  none (a bump, a package, a setting, docs, a rule's or skill's wording, a
+  refactor keeping public interfaces) whose alternative dies with the commit.
 - Short path, any size: new or changed behaviour other than a bug fix (a
-  feature, command, script, skill, or a check of its own), a changed interface
-  or a choice later work builds on: `/speckit-specify`, `/speckit-plan`,
-  `/speckit-tasks`, `/speckit-implement`, then `/speckit-converge` until it
-  reports converged. `/speckit-tasks` treats tests as requested for stories with
-  logic of their own, test tasks first; each story closes with the whole suite,
-  the project's mutation check (if any) on its changed code, and a fresh review.
+  feature, command, script, new skill, or check logic the project writes), a
+  changed interface or a choice later work builds on: `/speckit-specify`,
+  `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, then
+  `/speckit-converge` until it reports converged. `/speckit-tasks` treats tests
+  as requested for stories with logic of their own, test tasks first; each story
+  closes with the whole suite, the project's mutation check (if any) on its
+  changed code, and a fresh review.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
   `/speckit-checklist` after it and `/speckit-analyze` before implementing. A
@@ -151,7 +151,7 @@ Setup and lifecycle:
 - Such a Python, TypeScript or JavaScript project has a formatter, a linter and,
   outside plain JS, a type checker: dev dependencies, config in the repo, one
   command CI runs (else a pre-commit hook) and you run before calling work done.
-  Approved defaults, no question needed: ruff, mypy, pytest-timeout via
+  Approved defaults, no question or go needed: ruff, mypy, pytest-timeout via
   `uv add --dev`; prettier, eslint, typescript-eslint and `tsc --noEmit` for
   TypeScript. New projects get them at scaffold; an existing one gets a missing
   role once, as its own change, not mid-task. Scratch scripts: none, nor a lockfile.
