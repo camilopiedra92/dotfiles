@@ -163,8 +163,7 @@ check "the guard tests ignore the git environment a hook exports" guard_tests_un
 # The variables git hands a hook from a linked worktree -- GIT_DIR and an
 # absolute GIT_INDEX_FILE -- pointed at a decoy repository's worktree, then a
 # throwaway repository built and committed to, as the sdd-init check does.
-# After drop_hook_git_env the decoy must be untouched and the index kept for
-# the calls about this repository. Never this repository: a
+# After drop_hook_git_env the decoy must be untouched. Never this repository: a
 # check that mutates what it checks when it fails is worse than none.
 hook_git_env_dropped() {
   local tmp wt before after
@@ -184,7 +183,6 @@ hook_git_env_dropped() {
     GIT_CONFIG_PARAMETERS="'core.bare'='true'" GIT_NOT_YET_INVENTED=1 bash -c '
     . "'"$tmp"'/drop.sh"
     drop_hook_git_env
-    [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
     env | grep "^GIT_" | sed "s/^/still set: /"
     git init -q "'"$tmp"'/throwaway"
     echo x > "'"$tmp"'/throwaway/f"
@@ -204,28 +202,6 @@ hook_git_env_dropped() {
   # The function is only half of it: this script has to run it, at top level.
   grep -qx 'drop_hook_git_env' check.sh || {
     echo "check.sh never calls drop_hook_git_env"
-    return 1
-  }
-  # And the kept index has to be the one the calls about this repository read:
-  # an index in which install.sh lost its executable bit, as a `chmod -x` then
-  # `commit -a` would leave it, must fail exec_bits. Only the scratch index is
-  # written; read-tree and --chmod touch nothing else.
-  GIT_INDEX_FILE=$tmp/commit-index git read-tree HEAD &&
-    GIT_INDEX_FILE=$tmp/commit-index git update-index --chmod=-x install.sh || return 1
-  if THIS_INDEX=$tmp/commit-index exec_bits > /dev/null; then
-    echo "exec_bits did not read the commit's index"
-    return 1
-  fi
-  # Every other call about this repository goes through this_repo_git too:
-  # no bare `git ls-files` or `git grep` outside a comment or a `git -C`.
-  # Matched anywhere on a line on purpose. A pattern for where a command
-  # starts was tried and missed `if git grep`, `while`, `{` and backticks --
-  # a silent miss; anywhere-on-the-line can only err loudly, on prose such as
-  # a check's title, which then names the thing another way.
-  out=$(grep -nE '^[^#]*(^|[^_-])git (ls-files|grep)' check.sh checks/*.sh | grep -v -- 'git -C' || true)
-  [ -z "$out" ] || {
-    echo "a call about this repository bypasses this_repo_git:"
-    echo "$out"
     return 1
   }
 }

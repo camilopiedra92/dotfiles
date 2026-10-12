@@ -129,66 +129,247 @@ pre_push_guard() {
 }
 check "pre-push refuses deleting or rewriting the remote's default branch, and only that" pre_push_guard
 
-# pre-commit runs the checks of the repository being committed to, in strict
-# mode, refuses the commit when they fail for any reason, shows what they
-# printed, and says nothing when they pass. A stub check.sh in a scratch
-# repository stands in for them: it logs its canonical path and arguments,
-# prints a marker, and exits with the code in $CODE. The path is compared
-# canonically because git runs hooks from the top level with a canonical
-# PWD, so `./check.sh` and "$repo/check.sh" are the same call.
+# pre-commit judges the commit, not the working tree: the checks run in a
+# throwaway tree holding exactly the index git hands the hook, in strict mode,
+# and the commit is refused when they fail for any reason, with what they
+# printed and how to bypass; on a pass the hook adds nothing. The working
+# tree, the index of a refused commit and the stash are left as they were,
+# and the throwaway tree is gone after every run, an interrupted one too.
+#
+# A stub check.sh committed in a scratch repository stands in for the checks
+# (the throwaway tree holds only indexed files). It logs the directory it ran
+# in, the HEAD it sees -- the current HEAD, which gitleaks diffs the staged
+# content against -- and its arguments, and any GIT_ variable that reached it
+# (none may: one left set lets the tree's git calls write the user's index),
+# walks HEAD's history as gitleaks does, prints a marker, sends TERM to its parent when $HANG
+# is set, and fails with the code in $CODE, or 1 when any file around it
+# holds the reject marker -- spelled split in the stub, so the stub itself
+# does not match.
 pre_commit_gate() {
-  local tmp hooks out top code
+  local tmp hooks out repo top before after dir
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   hooks="$tmp/hooks"
   mkdir "$hooks" && cp -p githooks/pre-commit "$hooks/"
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-  export LOG="$tmp/log" CODE="$tmp/code"
-  git init -q "$tmp/repo"
-  cat > "$tmp/repo/check.sh" << 'STUB'
+  export LOG="$tmp/log" CODE="$tmp/code" HANG='' GITENV="$tmp/gitenv"
+  repo="$tmp/repo"
+  git init -q "$repo"
+  cat > "$repo/check.sh" << 'STUB'
 #!/bin/sh
-echo "$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0") $*" >> "$LOG"
+echo "$(pwd -P) $(git rev-parse -q --verify HEAD || echo unborn) $*" >> "$LOG"
+env | grep '^GIT_' >> "$GITENV"
 echo "stub-checks-output"
-exit "$(cat "$CODE")"
+if git rev-parse -q --verify HEAD > /dev/null; then
+  git rev-list HEAD > /dev/null 2>&1 || exit 3
+fi
+[ -n "$HANG" ] && kill -TERM "$PPID"
+code=$(cat "$CODE")
+[ "$code" = 0 ] && grep -rqs --exclude-dir=.git "REJ""ECT" . && code=1
+exit "$code"
 STUB
-  chmod +x "$tmp/repo/check.sh"
-  top=$(cd "$tmp/repo" && pwd -P)
-  commit() { git -C "$tmp/repo" -c user.name=t -c user.email=t@t -c core.hooksPath="$hooks" commit -q --allow-empty -m "$1" 2>&1; }
+  chmod +x "$repo/check.sh"
+  echo ok > "$repo/verdict"
+  g() { git -C "$repo" -c user.name=t -c user.email=t@t "$@"; }
+  g add check.sh verdict && g commit -q -m base || return 1
+  top=$(cd "$repo" && pwd -P)
+  commit() { git -C "${CWD:-$repo}" -c user.name=t -c user.email=t@t -c core.hooksPath="$hooks" commit -q "$@" 2>&1; }
+  # The directory the stub last ran in: the judging tree, which must not be
+  # the repository and must be gone once the hook returns.
+  judged_elsewhere() {
+    dir=$(tail -1 "$LOG" | cut -d' ' -f1)
+    case "$dir" in "$top" | "$top"/*)
+      echo "$1: the checks ran in the repository, not in a tree of the commit"
+      return 1
+      ;;
+    esac
+    [ ! -e "$dir" ] || {
+      echo "$1: the judging tree $dir was left behind"
+      return 1
+    }
+  }
+  # Contents, modification times to the nanosecond, untracked files and the
+  # stash list; with "index", also the index's entries and HEAD, which only a
+  # refused commit must leave alone. Entries, not the file's bytes: git itself
+  # rewrites .git/index on a refused commit, same entries, new extension
+  # (a hook that only exits 1 grew it from 110 to 129 bytes, git 2.56,
+  # 2026-10-12).
+  snapshot() {
+    (
+      cd "$repo" || exit 1
+      git ls-files -o --exclude-standard
+      find . -path ./.git -prune -o -type f -exec stat -f '%N %Fm' {} + | sort
+      find . -path ./.git -prune -o -type f -exec shasum {} + | sort
+      git stash list
+      [ "${1:-}" = index ] && git ls-files -s && git rev-parse HEAD
+    )
+  }
 
   echo 0 > "$CODE"
   : > "$LOG"
-  out=$(commit first) || {
-    echo "passing checks: refused the commit: $out"
+  # A good verdict staged, a rejected edit left unstaged on top, a rejected
+  # untracked file beside it: only the staged content counts, so it lands.
+  echo ok2 > "$repo/verdict"
+  g add verdict
+  echo "REJ""ECT" > "$repo/verdict"
+  echo "REJ""ECT" > "$repo/stray"
+  g update-index -q --refresh > /dev/null
+  local parent
+  parent=$(g rev-parse HEAD)
+  before=$(snapshot)
+  out=$(commit -m good) || {
+    echo "unstaged and untracked: refused a commit whose staged content passes: $out"
     return 1
   }
-  [ "$(cat "$LOG")" = "$top/check.sh --strict" ] || {
-    echo "strict mode: expected the repository's check.sh called once with --strict, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+  after=$(snapshot)
+  [ "$before" = "$after" ] || {
+    echo "working tree: a passing run changed files, their times, untracked files or the stash:"
+    diff <(echo "$before") <(echo "$after")
     return 1
   }
   [ "$out" = stub-checks-output ] || {
     echo "passing checks: the hook printed something other than exactly the checks' output: $out"
     return 1
   }
+  [ "$(cut -d' ' -f3- "$LOG")" = --strict ] || {
+    echo "strict mode: expected check.sh called once with --strict, got: $(cat "$LOG")"
+    return 1
+  }
+  [ "$(cut -d' ' -f2 "$LOG")" = "$parent" ] || {
+    echo "history: the judging tree's HEAD is not the commit's parent $parent: $(cat "$LOG")"
+    return 1
+  }
+  judged_elsewhere "passing run" || return 1
+  rm "$repo/stray"
 
-  # 1 is a failed check; 2 is check.sh's usage error. Both must refuse.
-  for code in 1 2; do
-    echo "$code" > "$CODE"
-    if out=$(commit "exit $code"); then
-      echo "failing checks: let the commit land when check.sh exited $code"
-      return 1
-    fi
-    case "$out" in *stub-checks-output*"Commit aborted"*"--no-verify"*) ;; *)
-      echo "failing checks: refused exit $code without showing the checks' output and how to bypass on purpose: $out"
-      return 1
-      ;;
-    esac
-  done
+  # A rejected verdict staged under a working copy that undoes it.
+  echo ok3 > "$repo/verdict"
+  cp "$repo/verdict" "$tmp/clean"
+  echo "REJ""ECT" > "$repo/verdict"
+  g add verdict
+  cp "$tmp/clean" "$repo/verdict"
+  g update-index -q --refresh > /dev/null
+  before=$(snapshot index)
+  if out=$(commit -m bad); then
+    echo "staged content: let a commit land whose staged content the checks reject"
+    return 1
+  fi
+  after=$(snapshot index)
+  [ "$before" = "$after" ] || {
+    echo "working tree: a refused run changed files, their times, the index, HEAD or the stash:"
+    diff <(echo "$before") <(echo "$after")
+    return 1
+  }
+  case "$out" in *stub-checks-output*"Commit aborted"*"--no-verify"*) ;; *)
+    echo "failing checks: refused without showing the checks' output and how to bypass on purpose: $out"
+    return 1
+    ;;
+  esac
+  judged_elsewhere "refused run" || return 1
+  g add verdict
 
-  # A check.sh that is gone is a gate that cannot run, not a gate that passed.
-  rm "$tmp/repo/check.sh"
-  if out=$(commit "no checks"); then
+  # Any failure refuses, a usage error (2) as much as a failed check (1).
+  echo 2 > "$CODE"
+  if out=$(commit --allow-empty -m usage); then
+    echo "failing checks: let the commit land when check.sh exited 2"
+    return 1
+  fi
+  echo 0 > "$CODE"
+
+  # commit -a and commit <paths> hand the hook an index of their own.
+  echo "REJ""ECT" > "$repo/verdict"
+  if out=$(commit -a -m all); then
+    echo "commit -a: judged the default index instead of the one commit -a builds"
+    return 1
+  fi
+  if out=$(commit -m paths verdict); then
+    echo "commit <paths>: judged the default index instead of the one for the paths"
+    return 1
+  fi
+  echo ok3 > "$repo/verdict"
+
+  # A linked worktree's commit is judged on that worktree's index.
+  g worktree add -q "$tmp/linked" 2> /dev/null || return 1
+  echo "REJ""ECT" > "$tmp/linked/verdict"
+  git -C "$tmp/linked" add verdict
+  if out=$(CWD="$tmp/linked" commit -m linked); then
+    echo "linked worktree: let a rejected commit land"
+    return 1
+  fi
+  echo ok4 > "$tmp/linked/verdict"
+  git -C "$tmp/linked" add verdict
+  out=$(CWD="$tmp/linked" commit -m linked) || {
+    echo "linked worktree: refused a passing commit: $out"
+    return 1
+  }
+
+  # Interrupted: the stub sends TERM to the process that started it.
+  if out=$(HANG=1 commit --allow-empty -m interrupted); then
+    echo "interrupted: let the commit land"
+    return 1
+  fi
+  judged_elsewhere "interrupted run" || return 1
+
+  # A split index: the index file is only the split part, so the tree's
+  # index has to be rebuilt from the entries, not copied.
+  g config core.splitIndex true
+  g update-index --split-index
+  echo "REJ""ECT" > "$repo/verdict"
+  g add verdict
+  if out=$(commit -m split); then
+    echo "split index: let a rejected commit land"
+    return 1
+  fi
+  echo ok5 > "$repo/verdict"
+  g add verdict
+  out=$(commit -m split) || {
+    echo "split index: refused a passing commit: $out"
+    return 1
+  }
+  g config core.splitIndex false
+  g update-index --no-split-index
+
+  # A sparse checkout's skip-worktree entry is still part of the commit.
+  echo "REJ""ECT" > "$repo/verdict"
+  g add verdict
+  g update-index --skip-worktree verdict
+  echo ok6 > "$repo/verdict"
+  if out=$(commit -m sparse); then
+    echo "skip-worktree: let a commit land whose skip-worktree entry the checks reject"
+    return 1
+  fi
+  g update-index --no-skip-worktree verdict
+  g add verdict
+
+  # A shallow clone: the tree has to know where history stops.
+  git clone -q --depth 1 "file://$repo" "$tmp/shallow" 2> /dev/null || return 1
+  echo ok7 > "$tmp/shallow/verdict"
+  git -C "$tmp/shallow" add verdict
+  out=$(CWD="$tmp/shallow" commit -m shallow) || {
+    echo "shallow clone: refused a passing commit: $out"
+    return 1
+  }
+
+  # A first commit has no HEAD.
+  git init -q "$tmp/first"
+  cp "$repo/check.sh" "$tmp/first/"
+  echo ok > "$tmp/first/verdict"
+  git -C "$tmp/first" add check.sh verdict
+  out=$(CWD="$tmp/first" commit -m first) || {
+    echo "first commit: refused a passing first commit: $out"
+    return 1
+  }
+
+  # A check.sh that is gone from the commit is a gate that cannot run.
+  g rm -q check.sh
+  if out=$(commit -m "no checks"); then
     echo "missing checks: let the commit land with no check.sh to run"
     return 1
   fi
+
+  [ ! -s "$GITENV" ] || {
+    echo "git environment: GIT_ variables reached the checks: $(sort -u "$GITENV" | tr '\n' ' ')"
+    return 1
+  }
 }
-check "pre-commit runs this repository's checks in strict mode and refuses a commit they fail" pre_commit_gate
+check "pre-commit judges the commit in a throwaway tree, strictly, and leaves the working tree as it was" pre_commit_gate

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the repo's checks before every commit.
+# Runs the repo's checks against the commit before it is made.
 #
 # Lives in githooks/ rather than .git/hooks/ because the latter is not
 # versioned: a hook nobody else receives is a hook that only protects the
@@ -8,7 +8,67 @@
 # Escape hatch:  git commit --no-verify
 set -uo pipefail
 
-repo=$(git rev-parse --show-toplevel)
+# The checks judge the commit, not the working tree. Run there, an unstaged
+# edit refused a good commit and a bad staged change passed behind a clean
+# working copy (both seen 2026-10-12, git 2.56). So they run in a throwaway
+# tree holding exactly the index git hands this hook -- for `commit -a` and
+# `commit <paths>` an index of its own -- in a repository that borrows this
+# one's objects through alternates and has the current HEAD as its own, so
+# gitleaks still reads the history and the staged diff. The current HEAD is
+# the new commit's parent, except under --amend, where it is the commit being
+# replaced: a hook cannot tell the two apart, and the hook before this one
+# judged an amend the same way. gitleaks now reads HEAD's history only, not
+# every local branch and the stash as it did from the working tree; that is
+# the history the commit joins, and what CI scans. The index is rebuilt from
+# its entries, so a split index, a sparse checkout's skip-worktree entries
+# and a shallow clone's cut-off history all reach the checks. Nothing is
+# written to this repository, its working tree or its index. A stash-and-restore around
+# the working tree, as the pre-commit framework does, was the alternative:
+# it rewrites files under the editor, and an interruption or a conflicting
+# restore can lose work. `git worktree add` was the other: it registers an
+# admin directory in this repository, and a first commit has no HEAD for it.
+index=${GIT_INDEX_FILE:-$(git rev-parse --git-path index)}
+case "$index" in /*) ;; *) index="$PWD/$index" ;; esac
+gitdir=$(git rev-parse --absolute-git-dir) || exit 1
+objects=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/objects
+parent=$(git rev-parse -q --verify HEAD) || parent=''
+
+# Git hands a hook GIT_INDEX_FILE, and GIT_DIR from a linked worktree; left
+# set, the throwaway tree's own git calls would write this index or reach
+# this repository. Nothing below needs them.
+for name in $(compgen -e); do
+  case "$name" in GIT_*) unset "$name" ;; esac
+done
+
+tree=$(mktemp -d) || exit 1
+# EXIT covers an interrupted run too: bash runs the EXIT trap when killed by
+# a TERM it does not trap (seen with /bin/bash 3.2.57, 2026-10-12), and the
+# interrupted case in checks/15-githooks.sh fails if the tree is left.
+trap 'rm -rf "$tree"' EXIT
+
+build_tree() {
+  git init -q "$tree" || return 1
+  echo "$objects" > "$tree/.git/objects/info/alternates" || return 1
+  # One commit's life: no fsmonitor daemon for it (git/config explains).
+  git -C "$tree" config core.fsmonitor false || return 1
+  # A shallow clone's history stops at the commits listed here; without the
+  # list, walking it (gitleaks does) fails on the first missing parent.
+  if [ -f "$gitdir/shallow" ]; then
+    cp "$gitdir/shallow" "$tree/.git/shallow" || return 1
+  fi
+  if [ -n "$parent" ]; then
+    git -C "$tree" update-ref --no-deref HEAD "$parent" || return 1
+  fi
+  # The entries, not the file: with core.splitIndex the file is only the
+  # split part, and the shared part lives beside it in this repository.
+  GIT_INDEX_FILE=$index git --git-dir="$gitdir" ls-files -s -z |
+    git -C "$tree" update-index -z --index-info || return 1
+  git -C "$tree" checkout-index -a -f -u
+}
+if ! build_tree; then
+  echo "Commit aborted: could not build a tree of the commit to check." >&2
+  exit 1
+fi
 
 # --strict, because this is a gate and not a report. check.sh has two audiences
 # and they need different answers to a missing tool: run by hand it prints an
@@ -24,7 +84,8 @@ repo=$(git rev-parse --show-toplevel)
 # strict on by itself, so without this the local run is the more permissive of
 # the two and waves through exactly what CI will reject -- the round trip this
 # hook exists to save.
-if ! "$repo/check.sh" --strict; then
+cd "$tree" || exit 1
+if ! ./check.sh --strict; then
   echo "Commit aborted. Fix the above, or bypass with: git commit --no-verify" >&2
   exit 1
 fi
