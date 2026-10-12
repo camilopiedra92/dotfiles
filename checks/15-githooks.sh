@@ -123,3 +123,52 @@ pre_push_guard() {
   refused "remote default unset" "refusing to force-push main" --force "$c2:refs/heads/main" || return 1
 }
 check "pre-push refuses deleting or rewriting the remote's default branch, and only that" pre_push_guard
+
+# pre-commit runs the checks of the repository being committed to, in strict
+# mode, and refuses the commit when they fail. A stub check.sh in a scratch
+# repository stands in for them: it logs how it was called and exits with
+# the code in $CODE.
+pre_commit_gate() {
+  local tmp hooks out top before
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  hooks="$PWD/githooks"
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  export LOG="$tmp/log" CODE="$tmp/code"
+  git init -q "$tmp/repo"
+  cat > "$tmp/repo/check.sh" << 'STUB'
+#!/bin/sh
+echo "$0 $*" >> "$LOG"
+exit "$(cat "$CODE")"
+STUB
+  chmod +x "$tmp/repo/check.sh"
+  top=$(git -C "$tmp/repo" rev-parse --show-toplevel)
+  commit() { git -C "$tmp/repo" -c user.name=t -c user.email=t@t -c core.hooksPath="$hooks" commit -q --allow-empty -m "$1" 2>&1; }
+
+  echo 0 > "$CODE"
+  out=$(commit first) || {
+    echo "passing checks: refused the commit: $out"
+    return 1
+  }
+  [ "$(cat "$LOG")" = "$top/check.sh --strict" ] || {
+    echo "strict mode: expected one call, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+    return 1
+  }
+
+  echo 1 > "$CODE"
+  before=$(git -C "$tmp/repo" rev-parse HEAD)
+  if out=$(commit second); then
+    echo "failing checks: let the commit land"
+    return 1
+  fi
+  [ "$(git -C "$tmp/repo" rev-parse HEAD)" = "$before" ] || {
+    echo "failing checks: HEAD moved although the commit was refused"
+    return 1
+  }
+  case "$out" in *"Commit aborted"*"--no-verify"*) ;; *)
+    echo "failing checks: refused without saying how to bypass on purpose: $out"
+    return 1
+    ;;
+  esac
+}
+check "pre-commit runs this repository's checks in strict mode and refuses a commit they fail" pre_commit_gate
