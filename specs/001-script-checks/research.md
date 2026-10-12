@@ -42,11 +42,19 @@ Each decision below names what was chosen, why, and what lost.
 ## R3. Driving the commit gate
 
 - **Decision**: a scratch repository holding a stub `check.sh` that records
-  its arguments and exits with a code read from a file; a real `git commit`
-  with `core.hooksPath` pointing at the real `githooks/`.
+  its canonical path and arguments, prints a marker and exits with a code
+  read from a file; a real `git commit` with `core.hooksPath` pointing at a
+  byte-identical copy of the hook in the scratch directory (both hooks are
+  run that way). Cases: passing checks land with only the checks' output;
+  exits 1 and 2 refuse, showing that output and the bypass; a missing
+  `check.sh` refuses.
 - **Rationale**: the hook resolves `check.sh` from the repository being
-  committed to, so the stub stands in without touching the hook; the stub's
-  recorded arguments show `--strict` reached it.
+  committed to, so the stub stands in without touching the hook. The copy
+  matters: run from `githooks/`, a hook that looked for `check.sh` beside
+  itself found this repository's, which reran this check and recursed (nine
+  levels in a minute, no verdict, seen in review 2026-10-12). The path is
+  compared canonically because git runs hooks from the top level with a
+  canonical `PWD`, so `./check.sh` is an equivalent spelling, not a break.
 - **Alternatives**: running this repository's own `check.sh` under the hook
   (lost: recursive, slow, and its verdict is not under the check's control).
 

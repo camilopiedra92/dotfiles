@@ -6,13 +6,17 @@
 
 # ── Git hooks ────────────────────────────────────────────────────────────────
 # The hooks in githooks/, driven by git itself against scratch repositories:
-# a real push to a scratch bare remote, a real commit, with core.hooksPath
-# pointing here on that one command. Feeding a hook a hand-written stdin line
-# would test it against a reading of git's protocol instead of against git.
+# a real push to a scratch bare remote, a real commit. Feeding a hook a
+# hand-written stdin line would test it against a reading of git's protocol
+# instead of against git. Each runs as a byte-identical copy in the scratch
+# directory, with core.hooksPath pointing there on that one command: a hook
+# that looked for check.sh beside itself would otherwise find this
+# repository's, which runs this check again, which commits again -- a review
+# saw nine nested levels in a minute and no verdict (2026-10-12).
 #
 # GIT_CONFIG_GLOBAL=/dev/null, as git/config asks of a suite that builds
 # scratch repositories: without it each one starts an fsmonitor daemon that
-# outlives the run, and the global hooks path, signing and defaults leak into
+# outlives the run, and the global signing and defaults leak into
 # repositories meant to behave like a runner's.
 printf '\n%sGit hooks%s\n' "$DIM" "$OFF"
 
@@ -20,7 +24,8 @@ pre_push_guard() {
   local tmp hooks out c1 c2 tip step
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
-  hooks="$PWD/githooks"
+  hooks="$tmp/hooks"
+  mkdir "$hooks" && cp -p githooks/pre-push "$hooks/"
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
   g() { git -C "$tmp/work" -c user.name=t -c user.email=t@t "$@"; }
   push() { git -C "$tmp/work" -c core.hooksPath="$hooks" push -q origin "$@" 2>&1; }
@@ -125,50 +130,65 @@ pre_push_guard() {
 check "pre-push refuses deleting or rewriting the remote's default branch, and only that" pre_push_guard
 
 # pre-commit runs the checks of the repository being committed to, in strict
-# mode, and refuses the commit when they fail. A stub check.sh in a scratch
-# repository stands in for them: it logs how it was called and exits with
-# the code in $CODE.
+# mode, refuses the commit when they fail for any reason, shows what they
+# printed, and says nothing when they pass. A stub check.sh in a scratch
+# repository stands in for them: it logs its canonical path and arguments,
+# prints a marker, and exits with the code in $CODE. The path is compared
+# canonically because git runs hooks from the top level with a canonical
+# PWD, so `./check.sh` and "$repo/check.sh" are the same call.
 pre_commit_gate() {
-  local tmp hooks out top before
+  local tmp hooks out top code
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
-  hooks="$PWD/githooks"
+  hooks="$tmp/hooks"
+  mkdir "$hooks" && cp -p githooks/pre-commit "$hooks/"
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
   export LOG="$tmp/log" CODE="$tmp/code"
   git init -q "$tmp/repo"
   cat > "$tmp/repo/check.sh" << 'STUB'
 #!/bin/sh
-echo "$0 $*" >> "$LOG"
+echo "$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0") $*" >> "$LOG"
+echo "stub-checks-output"
 exit "$(cat "$CODE")"
 STUB
   chmod +x "$tmp/repo/check.sh"
-  top=$(git -C "$tmp/repo" rev-parse --show-toplevel)
+  top=$(cd "$tmp/repo" && pwd -P)
   commit() { git -C "$tmp/repo" -c user.name=t -c user.email=t@t -c core.hooksPath="$hooks" commit -q --allow-empty -m "$1" 2>&1; }
 
   echo 0 > "$CODE"
+  : > "$LOG"
   out=$(commit first) || {
     echo "passing checks: refused the commit: $out"
     return 1
   }
   [ "$(cat "$LOG")" = "$top/check.sh --strict" ] || {
-    echo "strict mode: expected one call, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+    echo "call: expected one call, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+    return 1
+  }
+  [ "$out" = stub-checks-output ] || {
+    echo "passing checks: the hook printed something other than exactly the checks' output: $out"
     return 1
   }
 
-  echo 1 > "$CODE"
-  before=$(git -C "$tmp/repo" rev-parse HEAD)
-  if out=$(commit second); then
-    echo "failing checks: let the commit land"
+  # 1 is a failed check; 2 is check.sh's usage error. Both must refuse.
+  for code in 1 2; do
+    echo "$code" > "$CODE"
+    if out=$(commit "exit $code"); then
+      echo "failing checks: let the commit land when check.sh exited $code"
+      return 1
+    fi
+    case "$out" in *stub-checks-output*"Commit aborted"*"--no-verify"*) ;; *)
+      echo "failing checks: refused exit $code without showing the checks' output and how to bypass on purpose: $out"
+      return 1
+      ;;
+    esac
+  done
+
+  # A check.sh that is gone is a gate that cannot run, not a gate that passed.
+  rm "$tmp/repo/check.sh"
+  if out=$(commit "no checks"); then
+    echo "missing checks: let the commit land with no check.sh to run"
     return 1
   fi
-  [ "$(git -C "$tmp/repo" rev-parse HEAD)" = "$before" ] || {
-    echo "failing checks: HEAD moved although the commit was refused"
-    return 1
-  }
-  case "$out" in *"Commit aborted"*"--no-verify"*) ;; *)
-    echo "failing checks: refused without saying how to bypass on purpose: $out"
-    return 1
-    ;;
-  esac
 }
 check "pre-commit runs this repository's checks in strict mode and refuses a commit they fail" pre_commit_gate
