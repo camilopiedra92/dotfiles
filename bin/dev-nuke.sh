@@ -82,7 +82,14 @@ done
 # Only this socket, by exact path. The previous version deleted every *.lock
 # under /tmp, which is shared: it also removed lock files belonging to programs
 # that had nothing to do with development and were running fine.
-PG_SOCKET="/tmp/.s.PGSQL.5432"
+#
+# DEV_NUKE_PG_SOCKET exists for checks/55-dev-nuke.sh: `[ -e ]` is a builtin
+# no stub can answer, and /tmp/.s.PGSQL.5432 is a live socket on a machine
+# running Postgres. sudoers(5) resets the environment by default (env_reset),
+# so `sudo dev-nuke` acts on the default; passing it on purpose (`sudo VAR=`,
+# `-E`) takes a sudoer, who already has root. This machine's own sudoers is
+# not readable without root and was not checked (sudo 1.9.17p2, 2026-10-12).
+PG_SOCKET="${DEV_NUKE_PG_SOCKET:-/tmp/.s.PGSQL.5432}"
 if [ -e "$PG_SOCKET" ]; then
   log "removing stale socket $PG_SOCKET"
   rm -f "$PG_SOCKET"
