@@ -52,19 +52,26 @@ Each decision below names what was chosen, why, and what lost.
 
 ## R4. Driving the pin updater
 
-- **Decision**: a scratch directory holding a symlink to the real
+- **Decision**: a scratch directory holding a byte-identical copy of
   `bump-tools.sh`, synthetic `.github/workflows/ci.yml` and
   `.github/tool-checksums.txt` with the seven pins, and stub `gh` and `curl`
   first on `PATH`. `gh` answers from a table of latest versions; `curl` writes
   bytes derived from the URL, or fails for URLs listed as missing. `shasum` is
-  the real one, so the expected hash is computed the same way.
-- **Rationale**: the script `cd`s to its own directory, and `dirname` of a
-  symlink is the symlink's directory, so the real file runs against the
-  fixtures unmodified (the same device `checks/90-spec-kit.sh` uses for
-  `sdd-init`). Synthetic pins keep the check independent of today's versions.
-- **Alternatives**: copies of the real `ci.yml` (lost: the check would change
-  meaning with every bump); a flag pointing the script at other files (lost:
-  an option only the check needs, when the symlink already does it).
+  the real one, so the expected hash is computed the same way. The "moved"
+  case moves all seven tools against URLs and artifact names written out
+  literally, so every entry of the script's per-tool tables is checked;
+  Ghostty is pinned at 1.10.0 with tags that only a release-shaped filter and
+  a version sort resolve.
+- **Rationale**: the script `cd`s to its own directory, so a copy runs against
+  the fixtures unmodified. Synthetic pins keep the check independent of
+  today's versions.
+- **Alternatives**: a symlink to the real script (lost in review: a later
+  version resolving its link before `cd` would reach this repository's real
+  pins); copies of the real `ci.yml` (lost: the check would change meaning
+  with every bump); a flag pointing the script at other files (lost: an
+  option only the check needs). A first version moved two tools and derived
+  the expected names with the script's own shapes; review showed five tools'
+  table entries and the Ghostty filter surviving mutation.
 
 ## R5. Driving the machine reset without touching the machine
 

@@ -60,13 +60,17 @@ versions_match() {
 }
 check "installed tools match the ci.yml pins" versions_match
 
-# bump-tools.sh against a scratch copy of the two files it rewrites: a symlink
-# to the real script (it cds to its own directory, and dirname of the link is
-# the scratch one), synthetic pins so the check does not change meaning with
-# every bump, and stubs for the network. The gh stub answers from $LATEST, one
-# "api-path answer" line per tool; the curl stub writes "artifact:<url>" to
-# its -o file, or fails like a 404 for a URL listed in $MISSING. The real
-# shasum hashes that, so the expected hash is computed the way the script's is.
+# bump-tools.sh against a scratch copy of itself and of the two files it
+# rewrites, with stubs for the network. A copy rather than a symlink: the
+# script cds to its own directory, and a later version that resolved its
+# link there would find this repository's real pins. The pins are synthetic
+# so the check does not change meaning with every bump. The gh stub answers
+# from $LATEST, one "api-path answer" line per tool; the curl stub writes
+# "artifact:<url>" to its -o file, or fails like a 404 for a URL listed in
+# $MISSING. The real shasum hashes that, so the expected hash is computed
+# the way the script's is. The expected URLs and artifact names are written
+# out here rather than derived, so every entry of the script's per-tool
+# tables is checked.
 bump_tools() {
   local tmp dir out
   tmp=$(mktemp -d) || return 1
@@ -92,18 +96,22 @@ printf 'artifact:%s' "$url" > "$file"
 STUB
   chmod +x "$tmp/bin/gh" "$tmp/bin/curl"
 
-  # The pins and checksum lines as ci.yml and tool-checksums.txt hold them.
-  # taplo's and zizmor's artifact names carry no version, as upstream's do not.
+  # sed -i takes its suffix differently in BSD and GNU sed; this needs neither.
+  edit() { sed "$2" "$1" > "$1.new" && mv "$1.new" "$1"; }
+
+  # Ghostty's answer is its tag list, which the script filters to
+  # release-shaped tags and orders by version: 1.10.0 sorts before 1.9.0 as
+  # text, and the release candidate after its release under sort -V.
   fixture() {
     dir="$tmp/$1"
     mkdir -p "$dir/.github/workflows"
-    ln -s "$PWD/bump-tools.sh" "$dir/bump-tools.sh"
+    cp bump-tools.sh "$dir/"
     cat > "$dir/.github/workflows/ci.yml" << 'YML'
 env:
   SHELLCHECK_VERSION: v0.10.0
   SHFMT_VERSION: v3.13.0
   ACTIONLINT_VERSION: 1.7.0
-  GHOSTTY_VERSION: 1.3.0
+  GHOSTTY_VERSION: 1.10.0
   TAPLO_VERSION: 0.9.0
   ZIZMOR_VERSION: 1.30.0
   GITLEAKS_VERSION: 8.30.0
@@ -113,7 +121,7 @@ YML
 aaaa  shellcheck-v0.10.0.darwin.aarch64.tar.xz
 bbbb  shfmt_v3.13.0_darwin_arm64
 cccc  actionlint_1.7.0_darwin_arm64.tar.gz
-dddd  ghostty-1.3.0-macos-universal.zip
+dddd  ghostty-1.10.0-macos-universal.zip
 eeee  taplo-darwin-aarch64.gz
 ffff  zizmor-aarch64-apple-darwin.tar.gz
 9999  gitleaks_8.30.0_darwin_arm64.tar.gz
@@ -121,63 +129,81 @@ SUMS
     cp "$dir/.github/workflows/ci.yml" "$dir/ci.before"
     cp "$dir/.github/tool-checksums.txt" "$dir/sums.before"
     : > "$dir/missing"
-    # Every tool current unless a case says otherwise. Ghostty's answer is
-    # its tag list, which the script filters to release-shaped tags.
+    # Every tool current unless a case says otherwise.
     cat > "$dir/latest" << 'LATEST'
 repos/koalaman/shellcheck/releases/latest v0.10.0
 repos/mvdan/sh/releases/latest v3.13.0
 repos/rhysd/actionlint/releases/latest v1.7.0
 repos/ghostty-org/ghostty/tags?per_page=100 tip
-repos/ghostty-org/ghostty/tags?per_page=100 v1.2.9
-repos/ghostty-org/ghostty/tags?per_page=100 v1.3.0
+repos/ghostty-org/ghostty/tags?per_page=100 v1.9.0
+repos/ghostty-org/ghostty/tags?per_page=100 v1.10.0
 repos/tamasfe/taplo/releases/latest 0.9.0
 repos/zizmorcore/zizmor/releases/latest v1.30.0
 repos/gitleaks/gitleaks/releases/latest v8.30.0
 LATEST
   }
-  latest() { sed -i '' "s|^\\($1\\) .*|\\1 $2|" "$dir/latest"; }
+  latest() { edit "$dir/latest" "s|^\\($1\\) .*|\\1 $2|"; }
   run() { (cd "$dir" && LATEST="$dir/latest" MISSING="$dir/missing" PATH="$tmp/bin:$PATH" ./bump-tools.sh 2>&1); }
   untouched() {
     cmp -s "$dir/ci.before" "$dir/.github/workflows/ci.yml" &&
       cmp -s "$dir/sums.before" "$dir/.github/tool-checksums.txt"
   }
   sum_of() { printf 'artifact:%s' "$1" | shasum -a 256 | cut -d' ' -f1; }
-  # The files as they should read once the named moves are made, built from
-  # the originals line by line: "VAR spelled-version old-name new-line".
-  expect() {
-    cp "$dir/ci.before" "$dir/ci.want"
-    cp "$dir/sums.before" "$dir/sums.want"
-    while [ $# -gt 0 ]; do
-      sed -i '' "s|^\\(  $1: \\).*|\\1$2|" "$dir/ci.want"
-      sed -i '' "s|^[^ ]*  $3\$|$4|" "$dir/sums.want"
-      shift 4
-    done
-  }
   as_expected() {
     cmp -s "$dir/ci.want" "$dir/.github/workflows/ci.yml" &&
       cmp -s "$dir/sums.want" "$dir/.github/tool-checksums.txt"
   }
+  differences() {
+    diff "$dir/ci.want" "$dir/.github/workflows/ci.yml"
+    diff "$dir/sums.want" "$dir/.github/tool-checksums.txt"
+  }
 
-  local sc_url taplo_url
-  sc_url=https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz
-  taplo_url=https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz
+  local gh=https://github.com
+  local sc_url=$gh/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz
 
   fixture moved
   latest repos/koalaman/shellcheck/releases/latest v0.11.0
+  latest repos/mvdan/sh/releases/latest v3.14.0
+  latest repos/rhysd/actionlint/releases/latest v1.7.1
+  printf '%s\n' 'repos/ghostty-org/ghostty/tags?per_page=100 v1.11.0' \
+    'repos/ghostty-org/ghostty/tags?per_page=100 v1.11.0-rc1' >> "$dir/latest"
   latest repos/tamasfe/taplo/releases/latest 0.10.0
+  latest repos/zizmorcore/zizmor/releases/latest v1.31.0
+  latest repos/gitleaks/gitleaks/releases/latest v8.31.0
   out=$(run) || {
-    echo "move: refused two newer, downloadable releases: $out"
+    echo "move: refused newer, downloadable releases: $out"
     return 1
   }
-  expect SHELLCHECK_VERSION v0.11.0 shellcheck-v0.10.0.darwin.aarch64.tar.xz \
-    "$(sum_of "$sc_url")  shellcheck-v0.11.0.darwin.aarch64.tar.xz" \
-    TAPLO_VERSION 0.10.0 taplo-darwin-aarch64.gz "$(sum_of "$taplo_url")  taplo-darwin-aarch64.gz"
+  cat > "$dir/ci.want" << 'YML'
+env:
+  SHELLCHECK_VERSION: v0.11.0
+  SHFMT_VERSION: v3.14.0
+  ACTIONLINT_VERSION: 1.7.1
+  GHOSTTY_VERSION: 1.11.0
+  TAPLO_VERSION: 0.10.0
+  ZIZMOR_VERSION: 1.31.0
+  GITLEAKS_VERSION: 8.31.0
+YML
+  cat > "$dir/sums.want" << SUMS
+# fixture
+$(sum_of "$sc_url")  shellcheck-v0.11.0.darwin.aarch64.tar.xz
+$(sum_of $gh/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_darwin_arm64)  shfmt_v3.14.0_darwin_arm64
+$(sum_of $gh/rhysd/actionlint/releases/download/v1.7.1/actionlint_1.7.1_darwin_arm64.tar.gz)  actionlint_1.7.1_darwin_arm64.tar.gz
+$(sum_of https://release.files.ghostty.org/1.11.0/ghostty-macos-universal.zip)  ghostty-1.11.0-macos-universal.zip
+$(sum_of $gh/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz)  taplo-darwin-aarch64.gz
+$(sum_of $gh/zizmorcore/zizmor/releases/download/v1.31.0/zizmor-aarch64-apple-darwin.tar.gz)  zizmor-aarch64-apple-darwin.tar.gz
+$(sum_of $gh/gitleaks/gitleaks/releases/download/v8.31.0/gitleaks_8.31.0_darwin_arm64.tar.gz)  gitleaks_8.31.0_darwin_arm64.tar.gz
+SUMS
   as_expected || {
-    echo "move: the files differ from each pin and checksum moved together, spelling kept, nothing else changed:"
-    diff "$dir/ci.want" "$dir/.github/workflows/ci.yml"
-    diff "$dir/sums.want" "$dir/.github/tool-checksums.txt"
+    echo "move: each pin, its spelling and its checksum line are not what moving all seven gives:"
+    differences
     return 1
   }
+  case "$out" in *"Everything is on its latest release"*)
+    echo "move: said every tool is current after moving them: $out"
+    return 1
+    ;;
+  esac
 
   fixture current
   out=$(run) || {
@@ -203,14 +229,14 @@ LATEST
 
   fixture undownloadable
   latest repos/rhysd/actionlint/releases/latest v1.7.1
-  echo https://github.com/rhysd/actionlint/releases/download/v1.7.1/actionlint_1.7.1_darwin_arm64.tar.gz > "$dir/missing"
+  echo $gh/rhysd/actionlint/releases/download/v1.7.1/actionlint_1.7.1_darwin_arm64.tar.gz > "$dir/missing"
   if out=$(run) || ! untouched; then
     echo "undownloadable: did not refuse, untouched, a release whose artifact 404s: $out"
     return 1
   fi
 
   fixture no-checksum-line
-  sed -i '' '/zizmor-aarch64-apple-darwin/d' "$dir/.github/tool-checksums.txt"
+  edit "$dir/.github/tool-checksums.txt" '/zizmor-aarch64-apple-darwin/d'
   cp "$dir/.github/tool-checksums.txt" "$dir/sums.before"
   latest repos/zizmorcore/zizmor/releases/latest v1.31.0
   if out=$(run) || ! untouched; then
@@ -218,21 +244,24 @@ LATEST
     return 1
   fi
 
-  # The script moves shellcheck before it reaches shfmt.
+  # The script reaches shellcheck before shfmt. Moving shellcheck and then
+  # stopping, or moving nothing, both leave every pin agreeing with its
+  # checksum; anything else does not.
   fixture partial
   latest repos/koalaman/shellcheck/releases/latest v0.11.0
   latest repos/mvdan/sh/releases/latest v3.14.0
-  echo https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_darwin_arm64 > "$dir/missing"
+  echo $gh/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_darwin_arm64 > "$dir/missing"
   if out=$(run); then
     echo "partial: succeeded although shfmt's artifact 404s"
     return 1
   fi
-  expect SHELLCHECK_VERSION v0.11.0 shellcheck-v0.10.0.darwin.aarch64.tar.xz \
-    "$(sum_of "$sc_url")  shellcheck-v0.11.0.darwin.aarch64.tar.xz"
-  as_expected || {
-    echo "partial: a failure on shfmt left shellcheck's pin and checksum disagreeing, or touched shfmt:"
-    diff "$dir/ci.want" "$dir/.github/workflows/ci.yml"
-    diff "$dir/sums.want" "$dir/.github/tool-checksums.txt"
+  cp "$dir/ci.before" "$dir/ci.want"
+  cp "$dir/sums.before" "$dir/sums.want"
+  edit "$dir/ci.want" 's|SHELLCHECK_VERSION: v0.10.0|SHELLCHECK_VERSION: v0.11.0|'
+  edit "$dir/sums.want" "s|^aaaa  shellcheck-v0.10.0.darwin.aarch64.tar.xz\$|$(sum_of "$sc_url")  shellcheck-v0.11.0.darwin.aarch64.tar.xz|"
+  untouched || as_expected || {
+    echo "partial: a failure on shfmt left a pin and its checksum disagreeing, or touched shfmt:"
+    differences
     return 1
   }
 }
