@@ -105,9 +105,9 @@ taught. A mid-build finding that changes route or wait stops work and is said.
   feature, command, script, new skill, or check logic the project writes), a
   changed interface or a choice later work builds on: `/speckit-specify`,
   `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, then
-  `/speckit-converge`, a coverage check and not a review, until it reports
-  converged. `/speckit-tasks` treats tests as requested for stories with logic
-  of their own, test tasks first; each story closes with the whole suite, the
+  `/speckit-converge` until a pass adds no task above LOW; implement its tasks
+  last. `/speckit-tasks` treats tests as requested for stories with logic of
+  their own, test tasks first; each story closes with the whole suite, the
   project's mutation check (if any) on its changed code, and a fresh review.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
