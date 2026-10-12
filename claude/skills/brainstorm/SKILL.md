@@ -59,7 +59,7 @@ choice between approaches: propose a spike (step 5).
 
 ## 5. Hand off
 
-Size the path with the "Spec-driven development" section of the global
+Choose the path with the "Spec-driven development" section of the global
 CLAUDE.md and say which one and why; the user can override. Hidden complexity
 found later moves the path up, never down.
 
