@@ -19,7 +19,7 @@ the whole suite and a fresh-context review.
 
 ## Phase 3: User Story 2 - The working tree is left as it was (P1)
 
-- [x] T006 [US2] Add to `pre_commit_gate`: a snapshot of contents, modification times, untracked files, the stash list and the index checksum before and after a passing and a refused commit; the judging tree gone after each; an interrupted run (stub sends `TERM` to the hook) refused and cleaned up
+- [x] T006 [US2] Add to `pre_commit_gate`: a snapshot of contents, modification times, untracked files, the stash list and the index entries before and after a passing and a refused commit; the judging tree gone after each; an interrupted run (stub sends `TERM` to the hook) refused and cleaned up
 - [x] T007 [US2] Run `./check.sh`; break the hook by hand (no trap, `GIT_INDEX_FILE` kept for the tree's calls, checking out into the working tree) and record each red run
 
 ## Phase 4: Orphans (FR-004)
@@ -32,3 +32,11 @@ the whole suite and a fresh-context review.
 - [x] T010 Say in `docs/checks.md` that the hook judges the commit in a throwaway tree, and why
 - [x] T011 Time a gated commit against T001's baseline (SC-003)
 - [ ] T012 Fresh-context review of the whole diff; then `/speckit-converge` until a pass finds nothing above LOW
+
+## Phase 6: Convergence
+
+- [x] T013 Make the stub log every `GIT_` variable it sees and require none, in every run of `pre_commit_gate`, and see a hook that keeps `GIT_INDEX_FILE`, or unsets only `GIT_DIR`, go red per FR-002 (partial)
+- [x] T014 Add a first commit (unborn HEAD) case and see an unconditional `update-ref` go red per research R1 (partial)
+- [x] T015 Build the judging tree's index from `git ls-files -s` of the hook's index instead of copying the file, carry the shallow list, and check out skip-worktree entries; add split-index, shallow-clone and sparse cases, each seen red against the copying hook, per FR-001 (partial)
+- [x] T016 Say HEAD is the current HEAD (what `--amend` replaces), and that gitleaks now scans HEAD's history only, in `githooks/pre-commit`, `docs/checks.md` and research R1 per Constitution VI (partial)
+- [x] T017 Bring spec Assumptions, research R5 and T006's wording in line with what was built (contradicts)

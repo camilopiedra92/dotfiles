@@ -42,8 +42,10 @@ stop trusting both. To bypass the hook once: `git commit --no-verify`.
 
 The hook judges the commit, not the working tree. It builds a throwaway tree of
 the index git hands it — a repository borrowing this one's objects, with the
-commit's parent as `HEAD` so gitleaks still reads history — runs `check.sh`
-there and removes it. Run in the working tree, an unstaged edit refused a good
+current `HEAD` as its own so gitleaks still reads the history the commit joins
+(only that history: not other branches or the stash, as CI) — runs `check.sh`
+there and removes it. Under `--amend` that `HEAD` is the commit being
+replaced, which a hook cannot tell apart. Run in the working tree, an unstaged edit refused a good
 commit and a bad staged change passed behind a clean working copy (both seen
 2026-10-12). Stashing the unstaged changes around the run, as the pre-commit
 framework does, was the alternative; it rewrites files under the editor and can

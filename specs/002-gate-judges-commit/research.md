@@ -4,9 +4,16 @@
 
 - **Decision**: a judging tree built per commit in a `mktemp -d` directory: a
   fresh repository whose `objects/info/alternates` points at this
-  repository's object store, whose `HEAD` is the commit's parent (left unborn
-  for a first commit), whose index is a copy of the index git hands the hook,
-  and whose files come from `git checkout-index -a -u` of that index.
+  repository's object store, whose `HEAD` is the current `HEAD` (left
+  unborn for a first commit; under `--amend` the commit being replaced, which
+  a hook cannot distinguish, as the previous hook could not either), whose
+  index is rebuilt from the entries of the index git hands the hook
+  (`ls-files -s` into `update-index --index-info`: a copied file breaks
+  under a split index, and checkout skips skip-worktree entries), whose
+  shallow list is this repository's, and whose files come from `git
+  checkout-index -a -u`. gitleaks then scans `HEAD`'s history only, where
+  from the working tree it scanned every local ref and the stash: the
+  history the commit joins, and what CI scans.
 - **Rationale**: the checks see exactly what is being committed, with the
   history and the staged diff gitleaks reads (`gitleaks git` walks `git log`;
   `--staged` diffs the index against `HEAD`). Nothing is written to this
@@ -32,7 +39,7 @@
 - **Decision**: the hook resolves the index path (`GIT_INDEX_FILE`, relative
   to the top level for a plain commit, absolute otherwise; `git rev-parse
   --git-path index` when unset), the object store (`--git-common-dir`) and
-  the parent (`rev-parse -q --verify HEAD`), then unsets every `GIT_`
+  the current `HEAD` (`rev-parse -q --verify HEAD`), then unsets every `GIT_`
   variable before any git call on the judging tree.
 - **Rationale**: with `GIT_INDEX_FILE` still set, `git -C <tree>
   checkout-index -u` would write stat data into the user's index, and a
@@ -69,8 +76,13 @@
 
 - **Decision**: rework `pre_commit_gate` in `checks/15-githooks.sh`: the stub
   `check.sh` is committed in the scratch repository (the judging tree holds
-  only indexed files), fails when a tracked file `verdict` says `bad`, logs
-  its canonical directory and arguments, and prints a marker. Cases: each
+  only indexed files), fails when any file around it holds a reject marker,
+  logs its canonical directory, the `HEAD` it sees and its arguments, logs
+  any `GIT_` variable that reached it (none may), walks `HEAD`'s history as
+  gitleaks does, and prints a marker. The working-tree snapshot compares the
+  index's entries, not its bytes: git rewrites `.git/index` itself on a
+  refused commit (seen 2026-10-12). Added after review: a first commit, a
+  split index, a skip-worktree entry and a shallow clone. Cases: each
   acceptance scenario of US1 (including `commit -a`, `commit <paths>` and a
   linked worktree), US2's snapshot of contents, modification times,
   untracked files, the stash list and the index before and after a passing

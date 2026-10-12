@@ -7,8 +7,8 @@
 ## Summary
 
 `githooks/pre-commit` builds a judging tree from the index git hands it — a
-throwaway repository borrowing this one's objects, with the commit's parent
-as `HEAD` — runs `check.sh --strict` there, and removes it on every exit path
+throwaway repository borrowing this one's objects, with the current `HEAD`
+as its own — runs `check.sh --strict` there, and removes it on every exit path
 ([research R1-R3](research.md)). `THIS_INDEX` and `this_repo_git`, which let
 the checks read the commit's index from the working tree, are removed with
 the tests that only covered them (R4).

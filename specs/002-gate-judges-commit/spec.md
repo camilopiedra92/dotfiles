@@ -106,8 +106,9 @@ times, untracked files and the stash list; commit; compare.
 
 ## Assumptions
 
-- `git worktree` (available since git 2.5) is the mechanism; the spike
-  observed it judging the commit in both directions on git 2.56.
+- A throwaway repository borrowing this one's objects is the mechanism
+  (research R1 records why not `git worktree`); the spike observed the
+  approach judging the commit in both directions on git 2.56.
 - Checks that read machine state outside the repository (installed tool
   versions, `~/.claude` wiring) keep reading the machine; only the
   repository's content comes from the commit.

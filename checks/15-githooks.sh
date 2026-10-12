@@ -138,8 +138,10 @@ check "pre-push refuses deleting or rewriting the remote's default branch, and o
 #
 # A stub check.sh committed in a scratch repository stands in for the checks
 # (the throwaway tree holds only indexed files). It logs the directory it ran
-# in, the HEAD it sees -- the commit's parent, which gitleaks diffs the staged
-# content against -- and its arguments, prints a marker, sends TERM to its parent when $HANG
+# in, the HEAD it sees -- the current HEAD, which gitleaks diffs the staged
+# content against -- and its arguments, and any GIT_ variable that reached it
+# (none may: one left set lets the tree's git calls write the user's index),
+# walks HEAD's history as gitleaks does, prints a marker, sends TERM to its parent when $HANG
 # is set, and fails with the code in $CODE, or 1 when any file around it
 # holds the reject marker -- spelled split in the stub, so the stub itself
 # does not match.
@@ -150,13 +152,17 @@ pre_commit_gate() {
   hooks="$tmp/hooks"
   mkdir "$hooks" && cp -p githooks/pre-commit "$hooks/"
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-  export LOG="$tmp/log" CODE="$tmp/code" HANG=''
+  export LOG="$tmp/log" CODE="$tmp/code" HANG='' GITENV="$tmp/gitenv"
   repo="$tmp/repo"
   git init -q "$repo"
   cat > "$repo/check.sh" << 'STUB'
 #!/bin/sh
 echo "$(pwd -P) $(git rev-parse -q --verify HEAD || echo unborn) $*" >> "$LOG"
+env | grep '^GIT_' >> "$GITENV"
 echo "stub-checks-output"
+if git rev-parse -q --verify HEAD > /dev/null; then
+  git rev-list HEAD > /dev/null 2>&1 || exit 3
+fi
 [ -n "$HANG" ] && kill -TERM "$PPID"
 code=$(cat "$CODE")
 [ "$code" = 0 ] && grep -rqs --exclude-dir=.git "REJ""ECT" . && code=1
@@ -304,11 +310,66 @@ STUB
   fi
   judged_elsewhere "interrupted run" || return 1
 
+  # A split index: the index file is only the split part, so the tree's
+  # index has to be rebuilt from the entries, not copied.
+  g config core.splitIndex true
+  g update-index --split-index
+  echo "REJ""ECT" > "$repo/verdict"
+  g add verdict
+  if out=$(commit -m split); then
+    echo "split index: let a rejected commit land"
+    return 1
+  fi
+  echo ok5 > "$repo/verdict"
+  g add verdict
+  out=$(commit -m split) || {
+    echo "split index: refused a passing commit: $out"
+    return 1
+  }
+  g config core.splitIndex false
+  g update-index --no-split-index
+
+  # A sparse checkout's skip-worktree entry is still part of the commit.
+  echo "REJ""ECT" > "$repo/verdict"
+  g add verdict
+  g update-index --skip-worktree verdict
+  echo ok6 > "$repo/verdict"
+  if out=$(commit -m sparse); then
+    echo "skip-worktree: let a commit land whose skip-worktree entry the checks reject"
+    return 1
+  fi
+  g update-index --no-skip-worktree verdict
+  g add verdict
+
+  # A shallow clone: the tree has to know where history stops.
+  git clone -q --depth 1 "file://$repo" "$tmp/shallow" 2> /dev/null || return 1
+  echo ok7 > "$tmp/shallow/verdict"
+  git -C "$tmp/shallow" add verdict
+  out=$(CWD="$tmp/shallow" commit -m shallow) || {
+    echo "shallow clone: refused a passing commit: $out"
+    return 1
+  }
+
+  # A first commit has no HEAD.
+  git init -q "$tmp/first"
+  cp "$repo/check.sh" "$tmp/first/"
+  echo ok > "$tmp/first/verdict"
+  git -C "$tmp/first" add check.sh verdict
+  out=$(CWD="$tmp/first" commit -m first) || {
+    echo "first commit: refused a passing first commit: $out"
+    return 1
+  }
+
   # A check.sh that is gone from the commit is a gate that cannot run.
   g rm -q check.sh
   if out=$(commit -m "no checks"); then
     echo "missing checks: let the commit land with no check.sh to run"
     return 1
   fi
+
+  [ ! -s "$GITENV" ] || {
+    echo "git environment: GIT_ variables reached the checks: $(sort -u "$GITENV" | tr '\n' ' ')"
+    return 1
+  }
 }
 check "pre-commit judges the commit in a throwaway tree, strictly, and leaves the working tree as it was" pre_commit_gate
