@@ -46,10 +46,10 @@ refusal — MUST ship with a check in `checks/` that drives it against scratch
 fixtures, and that check MUST have been seen to fail on the behaviour broken
 by hand before it is trusted. The one exemption, which wins over that list: a
 wrapper whose only branches choose which command to exec, or stop because a
-prerequisite — a file, a command, a variable — is absent, without parsing or
-computing anything to decide it, needs none; `bin/aware.sh` is one. Passing
-on another command's verdict with an option this repository chose, as
-`githooks/pre-commit` does with `check.sh --strict`, is logic of its own.
+prerequisite — such as a file, a command or a variable — is absent, without
+parsing or computing anything to decide it, needs none; `bin/aware.sh` is
+one. Acting on another command's verdict — `githooks/pre-commit` aborting the
+commit when `check.sh --strict` fails — is logic of its own.
 
 Checked by a reviewer: each new or changed script, verb, hook or guard with
 logic of its own has its check in `checks/`, and the pull request or commit
