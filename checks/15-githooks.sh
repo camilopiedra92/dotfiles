@@ -162,7 +162,7 @@ STUB
     return 1
   }
   [ "$(cat "$LOG")" = "$top/check.sh --strict" ] || {
-    echo "call: expected one call, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+    echo "strict mode: expected the repository's check.sh called once with --strict, \"$top/check.sh --strict\", got: $(cat "$LOG")"
     return 1
   }
   [ "$out" = stub-checks-output ] || {

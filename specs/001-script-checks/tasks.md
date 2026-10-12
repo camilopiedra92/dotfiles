@@ -91,3 +91,13 @@ None: each story's fixtures are its own (research R2-R5); nothing is shared.
 ## Implementation Strategy
 
 US1 first (MVP: the guard on the branch everything lands on), then US2-US4 in priority order, one PR for the feature as the spec defines it.
+
+## Phase 8: Convergence
+
+- [x] T022 Make the curl stub in `checks/20-tool-versions.sh` honour `-f` (exit 22 on a listed URL only with `-f`, else write a 404 body and exit 0) and `-L` (write a redirect body unless `-L`), and see `curl -sSL` and `curl -fsS` breaks of `bump-tools.sh` go red per US3/AC4 (partial)
+- [x] T023 Require `as=me tee -a` and `as=me mkdir -p` on the scratch home's log path in `checks/55-dev-nuke.sh`, and see a `>> "$LOG_FILE"` redirection break go red per US4/AC6 (partial)
+- [x] T024 Reword the dev-nuke clause of `docs/checks.md` to say what the hermetic PATH contains and what escapes it per FR-002 (contradicts)
+- [x] T025 Name redirections and builtins among the escapes in the header comment of `checks/55-dev-nuke.sh` per Constitution VI (partial)
+- [x] T026 Update research.md R2's Decision to the scratch copy of the hook per research R2 (contradicts)
+- [x] T027 Give `bump_tools` a hermetic PATH as R5 reasons for dev-nuke, and record it in research.md R4, per FR-002 (partial)
+- [x] T028 Name the strict-mode case in `pre_commit_gate`'s call failure, matching quickstart.md, per FR-003 (partial)

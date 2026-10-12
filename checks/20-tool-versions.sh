@@ -61,14 +61,18 @@ versions_match() {
 check "installed tools match the ci.yml pins" versions_match
 
 # bump-tools.sh against a scratch copy of itself and of the two files it
-# rewrites, with stubs for the network. A copy rather than a symlink: the
+# rewrites, under a PATH of stubs for the network and links to the utilities
+# it uses, and nothing else, so a version that fetched with another tool
+# fails rather than reaching the network. A copy rather than a symlink: the
 # script cds to its own directory, and a later version that resolved its
 # link there would find this repository's real pins. The pins are synthetic
 # so the check does not change meaning with every bump. The gh stub answers
-# from $LATEST, one "api-path answer" line per tool; the curl stub writes
-# "artifact:<url>" to its -o file, or fails like a 404 for a URL listed in
-# $MISSING. The real shasum hashes that, so the expected hash is computed
-# the way the script's is. The expected URLs and artifact names are written
+# from $LATEST, one "api-path answer" line per tool. The curl stub answers
+# as GitHub's release downloads do: every URL redirects, so without -L the
+# -o file gets the redirect's body; a URL listed in $MISSING is a 404, which
+# fails only under -f and otherwise saves the error page. A real download
+# writes "artifact:<url>". The real shasum hashes that, so the expected hash
+# is computed the way the script's is. The expected URLs and artifact names are written
 # out here rather than derived, so every entry of the script's per-tool
 # tables is checked.
 bump_tools() {
@@ -82,19 +86,34 @@ awk -v p="$2" '$1 == p { print $2 }' "$LATEST"
 STUB
   cat > "$tmp/bin/curl" << 'STUB'
 #!/usr/bin/env bash
-url='' file=''
+url='' file='' fail=0 follow=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) file=$2; shift ;;
-    -*) ;;
+    --*) ;;
+    -*)
+      case "$1" in *f*) fail=1 ;; esac
+      case "$1" in *L*) follow=1 ;; esac
+      ;;
     *) url=$1 ;;
   esac
   shift
 done
-grep -qxF "$url" "$MISSING" && exit 22
-printf 'artifact:%s' "$url" > "$file"
+if [ "$follow" -eq 0 ]; then
+  printf 'redirect:%s' "$url" > "$file"
+elif grep -qxF "$url" "$MISSING"; then
+  [ "$fail" -eq 1 ] && exit 22
+  printf '404:%s' "$url" > "$file"
+else
+  printf 'artifact:%s' "$url" > "$file"
+fi
 STUB
   chmod +x "$tmp/bin/gh" "$tmp/bin/curl"
+  local tool real
+  for tool in awk bash cut dirname grep mktemp mv rm sed shasum sort tail; do
+    real=$(command -v "$tool") || return 1
+    ln -s "$real" "$tmp/bin/$tool"
+  done
 
   # sed -i takes its suffix differently in BSD and GNU sed; this needs neither.
   edit() { sed "$2" "$1" > "$1.new" && mv "$1.new" "$1"; }
@@ -143,7 +162,7 @@ repos/gitleaks/gitleaks/releases/latest v8.30.0
 LATEST
   }
   latest() { edit "$dir/latest" "s|^\\($1\\) .*|\\1 $2|"; }
-  run() { (cd "$dir" && LATEST="$dir/latest" MISSING="$dir/missing" PATH="$tmp/bin:$PATH" ./bump-tools.sh 2>&1); }
+  run() { (cd "$dir" && LATEST="$dir/latest" MISSING="$dir/missing" PATH="$tmp/bin" ./bump-tools.sh 2>&1); }
   untouched() {
     cmp -s "$dir/ci.before" "$dir/.github/workflows/ci.yml" &&
       cmp -s "$dir/sums.before" "$dir/.github/tool-checksums.txt"

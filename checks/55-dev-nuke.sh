@@ -11,9 +11,9 @@
 # the harmless utilities it needs, and nothing else. A stub-first PATH that
 # fell through to the real one would let a command the stubs miss -- today's
 # or one added later -- act on the machine; here a command looked up on PATH
-# fails as "command not found" instead. Two escapes PATH cannot close: an
-# absolute path, and bash's builtin kill if the script stopped going through
-# xargs. Against the second, the fixture's PIDs are six digits, above the
+# fails as "command not found" instead. What PATH cannot close: an absolute
+# path, a shell redirection, and builtins -- bash's kill, if the script
+# stopped going through xargs, is the dangerous one. Against kill, the fixture's PIDs are six digits, above the
 # five macOS gives out, so a real kill finds no such process (`kill -0 900101`
 # answered "No such process" here, 2026-10-12). rm is a stub that removes
 # nothing outside the scratch directory, so even a script that ignored
@@ -240,7 +240,14 @@ PROCS
     echo "as user: ran osascript, brew, or wrote the log, as root: $(grep -E '^as=root (osascript|brew|tee|mkdir)' "$tmp/calls")"
     return 1
   fi
-  grep -q 'done' "$tmp/home/.local/state/dev-nuke.log" 2> /dev/null || {
+  # Asserted as calls, not only as the file: root writing the log through a
+  # shell redirection reaches the same file and no stub would see it.
+  local log="$tmp/home/.local/state/dev-nuke.log"
+  if ! called "as=me mkdir -p $tmp/home/.local/state" || ! called "as=me tee -a $log"; then
+    echo "as user: did not create and write the log as the invoking user"
+    return 1
+  fi
+  grep -q 'done' "$log" 2> /dev/null || {
     echo "as user: the log did not reach the invoking user's home"
     return 1
   }

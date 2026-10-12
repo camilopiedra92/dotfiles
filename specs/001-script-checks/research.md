@@ -20,7 +20,9 @@ Each decision below names what was chosen, why, and what lost.
 ## R2. Driving the push guard
 
 - **Decision**: a real `git push` from a scratch clone to a scratch bare
-  remote, with `git -c core.hooksPath=<repo>/githooks` on the push alone.
+  remote, with `git -c core.hooksPath=<scratch>/hooks` on the push alone,
+  that directory holding a byte-identical copy of the hook (R3 says why a
+  copy).
 - **Rationale**: it proves the stdin format git hands the hook and the
   `origin/HEAD` lookup, which feeding the hook a hand-written line cannot.
   Setting the hooks path only on the push keeps the scratch commits free of
@@ -62,10 +64,16 @@ Each decision below names what was chosen, why, and what lost.
 
 - **Decision**: a scratch directory holding a byte-identical copy of
   `bump-tools.sh`, synthetic `.github/workflows/ci.yml` and
-  `.github/tool-checksums.txt` with the seven pins, and stub `gh` and `curl`
-  first on `PATH`. `gh` answers from a table of latest versions; `curl` writes
-  bytes derived from the URL, or fails for URLs listed as missing. `shasum` is
-  the real one, so the expected hash is computed the same way. The "moved"
+  `.github/tool-checksums.txt` with the seven pins, and a hermetic `PATH`
+  (as R5 reasons): stub `gh` and `curl` and links to the utilities the script
+  uses, nothing else, so a version that fetched with another tool fails
+  rather than reaching the network. `gh` answers from a table of latest
+  versions. `curl` answers as GitHub's release downloads do: without `-L` it
+  saves a redirect's body, and a missing artifact is a 404 that fails only
+  under `-f`, otherwise saving the error page -- a first version ignored both
+  flags, and convergence review showed a script dropping either staying
+  green. `shasum` is the real one, so the expected hash is computed the same
+  way. The "moved"
   case moves all seven tools against URLs and artifact names written out
   literally, so every entry of the script's per-tool tables is checked;
   Ghostty is pinned at 1.10.0 with tags that only a release-shaped filter and
