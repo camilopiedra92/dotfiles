@@ -79,8 +79,15 @@ bump_tools() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   mkdir -p "$tmp/bin"
+  # gh answers only the exact call the script must make: `api PATH --jq
+  # FILTER`, with .tag_name for a release and .[].name for a tag list.
   cat > "$tmp/bin/gh" << 'STUB'
 #!/usr/bin/env bash
+case "$2" in
+  *'/tags?'*) want='.[].name' ;;
+  *) want=.tag_name ;;
+esac
+[ "$1 $3 $4 $#" = "api --jq $want 4" ] || exit 93
 awk -v p="$2" '$1 == p { print $2 }' "$LATEST"
 STUB
   cat > "$tmp/bin/curl" << 'STUB'

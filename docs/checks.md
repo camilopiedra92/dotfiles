@@ -23,10 +23,12 @@ writes only through `sudo`, only for a difference, and never from `check`
 `macos/handlers.sh` change only what differs and skip, without failing, an app
 that is not installed (against a stub `dockutil` and `duti`), that
 `githooks/pre-push` refuses deleting or rewriting the remote's default branch
-and nothing else and `githooks/pre-commit` refuses any commit the checks fail
-(through real pushes and commits in scratch repositories), that `bump-tools.sh`
-moves each pin with its checksum and refuses a downgrade or a 404 untouched
-(against a stub `gh` and `curl`), and that `bin/dev-nuke.sh` signals, quits
+and nothing else and `githooks/pre-commit` runs the checks in strict mode and
+refuses any commit they fail (through real pushes and commits in scratch
+repositories), that `bump-tools.sh` moves each pin with its checksum and
+refuses a downgrade, a 404 or a pin with no checksum line untouched (under a
+`PATH` holding only a stub `gh`, `curl` and `mktemp` and links to the
+utilities it uses), and that `bin/dev-nuke.sh` signals, quits
 and deletes only what it should, as whom it should (under a `PATH` holding
 only stubs and links to harmless utilities, so a command it looks up there
 cannot act on the machine; absolute paths, redirections and builtins are not

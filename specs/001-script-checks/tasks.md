@@ -108,3 +108,8 @@ US1 first (MVP: the guard on the branch everything lands on), then US2-US4 in pr
 - [x] T030 Run `bump-tools.sh` in the check with `TMPDIR` inside the scratch directory and assert it is left empty, and see a break that drops the script's EXIT trap go red per FR-002 (partial)
 - [x] T031 Reflow the comment paragraphs at `checks/55-dev-nuke.sh:16` and `checks/20-tool-versions.sh:75` per Constitution VI (partial)
 - [ ] T032 Write each scenario's break and its failure line into the PR #144 body before it is marked ready per FR-004 (partial)
+
+## Phase 10: Convergence
+
+- [x] T033 Make the gh stub in `checks/20-tool-versions.sh` answer only for the exact `--jq` filter the script must ask (`.tag_name` for releases, `.[].name` for Ghostty's tags), and see a changed or dropped filter go red per US3/AC1 (partial)
+- [x] T034 Name the hermetic PATH and stub `mktemp`, the missing-line refusal and strict mode in `docs/checks.md` per T019 (partial)
