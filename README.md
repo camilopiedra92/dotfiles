@@ -85,6 +85,9 @@ githooks/pre-push      refuses to rewrite or delete main
 .editorconfig          formatting, read by shfmt and by the editor
 .taplo.toml            which schema validates which TOML, for taplo and the editor
 schemas/               vendored JSON schemas for starship.toml and mise/config.toml
+.gitattributes         marks the vendored trees, which the English-only check skips
+.specify/              Spec Kit; memory/constitution.md holds the principles every change meets
+CLAUDE.md              this repo's instructions for Claude Code; imports the constitution
 ```
 
 `$ZDOTDIR/.zsh_plugins.zsh` is **generated**, not versioned: antidote
