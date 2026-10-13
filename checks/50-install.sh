@@ -693,8 +693,8 @@ STUB
     git -C "$home/work/client/repo" init -q
     git -C "$home/elsewhere" init -q
     local inside outside
-    inside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_NOSYSTEM=1 git -C "$home/work/client/repo" config user.email)
-    outside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_NOSYSTEM=1 git -C "$home/elsewhere" config user.email)
+    inside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_GLOBAL="$home/.config/git/config" git -C "$home/work/client/repo" config user.email)
+    outside=$(HOME="$home" XDG_CONFIG_HOME="$home/.config" GIT_CONFIG_GLOBAL="$home/.config/git/config" git -C "$home/elsewhere" config user.email)
     [ "$inside" = c@client.example ] && [ "$outside" = t@example.com ] || {
       echo "$start: expected c@client.example inside the scoped directory and t@example.com outside, got '$inside' and '$outside'"
       return 1

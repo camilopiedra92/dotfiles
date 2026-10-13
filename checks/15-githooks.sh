@@ -13,11 +13,7 @@
 # that looked for check.sh beside itself would otherwise find this
 # repository's, which runs this check again, which commits again -- a review
 # saw nine nested levels in a minute and no verdict (2026-10-12).
-#
-# GIT_CONFIG_GLOBAL=/dev/null, as git/config asks of a suite that builds
-# scratch repositories: without it each one starts an fsmonitor daemon that
-# outlives the run, and the global signing and defaults leak into
-# repositories meant to behave like a runner's.
+# check.sh isolates git from the global config for every check.
 printf '\n%sGit hooks%s\n' "$DIM" "$OFF"
 
 pre_push_guard() {
@@ -26,7 +22,6 @@ pre_push_guard() {
   trap 'rm -rf "$tmp"' RETURN
   hooks="$tmp/hooks"
   mkdir "$hooks" && cp -p githooks/pre-push "$hooks/"
-  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
   g() { git -C "$tmp/work" -c user.name=t -c user.email=t@t "$@"; }
   push() { git -C "$tmp/work" -c core.hooksPath="$hooks" push -q origin "$@" 2>&1; }
   remote_tips() { git -C "$tmp/remote.git" for-each-ref --format='%(refname) %(objectname)'; }
@@ -142,7 +137,6 @@ pre_commit_gate() {
   trap 'rm -rf "$tmp"' RETURN
   hooks="$tmp/hooks"
   mkdir "$hooks" && cp -p githooks/pre-commit "$hooks/"
-  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
   export LOG="$tmp/log" CODE="$tmp/code"
   git init -q "$tmp/repo"
   cat > "$tmp/repo/check.sh" << 'STUB'

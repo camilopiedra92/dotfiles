@@ -186,6 +186,9 @@ hook_git_env_dropped() {
     drop_hook_git_env
     [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
     env | grep "^GIT_" | sed "s/^/still set: /"
+    # check.sh isolates git from the global config after dropping the hook
+    # variables; without it this commit signs with the real agent.
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
     git init -q "'"$tmp"'/throwaway"
     echo x > "'"$tmp"'/throwaway/f"
     git -C "'"$tmp"'/throwaway" add f
