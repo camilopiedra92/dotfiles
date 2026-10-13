@@ -52,20 +52,20 @@ drop_hook_git_env() {
   for name in $(compgen -e); do
     case "$name" in GIT_*) unset "$name" ;; esac
   done
+  # Nor does this machine's git config: the checks build throwaway
+  # repositories meant to behave as on a CI runner, and the global config
+  # (signing, hooks, fsmonitor) would make them behave as on this laptop. With
+  # commit.gpgsign on and an empty ssh-agent, every scratch `git commit`
+  # failed (observed 2026-10-13: 2 failures, "failed to write commit object").
+  # Set here, after the loop above would have erased them, and not at the call
+  # site, so the order cannot drift. A check that needs a global config of its
+  # own points GIT_CONFIG_GLOBAL at a file in its scratch HOME.
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 }
 drop_hook_git_env
 this_repo_git() {
   if [ -n "$THIS_INDEX" ]; then GIT_INDEX_FILE=$THIS_INDEX git "$@"; else git "$@"; fi
 }
-
-# Nor does this machine's git config: the checks build throwaway repositories
-# meant to behave as on a CI runner, and the global config (signing, hooks,
-# fsmonitor) would make them behave as on this laptop. With commit.gpgsign on
-# and an empty ssh-agent, every scratch `git commit` failed (observed
-# 2026-10-13: 2 failures, "failed to write commit object"). Set once here, as
-# git's own test-lib does, rather than per check. A check that needs a global
-# config of its own points GIT_CONFIG_GLOBAL at a file in its scratch HOME.
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 
 # Every CI system sets CI, so the strict path needs no wiring in the workflow
 # and cannot be forgotten there. --strict reproduces it locally, which is the
