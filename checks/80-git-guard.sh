@@ -185,7 +185,8 @@ hook_git_env_dropped() {
     . "'"$tmp"'/drop.sh"
     drop_hook_git_env
     [ "$THIS_INDEX" = "'"$wt"'/index" ] || echo "the commit index was not kept: $THIS_INDEX"
-    env | grep "^GIT_" | sed "s/^/still set: /"
+    env | grep "^GIT_" | grep -vxE "GIT_CONFIG_(GLOBAL=/dev/null|NOSYSTEM=1)" | sed "s/^/still set: /"
+    [ "${GIT_CONFIG_GLOBAL:-}" = /dev/null ] || echo "git still reads the global config"
     git init -q "'"$tmp"'/throwaway"
     echo x > "'"$tmp"'/throwaway/f"
     git -C "'"$tmp"'/throwaway" add f
