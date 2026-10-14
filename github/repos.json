@@ -4,5 +4,6 @@
   "camilopiedra92/homebrew-tap": {"checks": ["test-bot (macos-26)"]},
   "camilopiedra92/ibkr-control": {"checks": ["backend", "frontend"]},
   "camilopiedra92/spec-kit-preset-constitution-authoring": {"checks": ["compose (pinned)"]},
+  "camilopiedra92/spec-kit-preset-story-workers": {"checks": ["compose (pinned)"]},
   "camilopiedra92/workstation": {"checks": ["ubuntu-checks", "windows-checks"]}
 }
