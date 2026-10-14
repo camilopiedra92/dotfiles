@@ -123,15 +123,8 @@ FAKE
     echo "sdd-init does not install the constitution-authoring preset"
     return 1
   }
-  # story-workers composes onto core speckit-implement; it goes after
-  # constitution-authoring, the order the calls above are checked in.
   grep -q "^PRESET_STORY_WORKERS_URL=https://github.com/[^/]*/spec-kit-preset-story-workers/" bin/sdd-init.sh || {
     echo "sdd-init does not install the story-workers preset"
-    return 1
-  }
-  [ "$(sed -n 's/^\(PRESET_[A-Z_]*\)_URL=.*/\1/p' bin/sdd-init.sh | tr '\n' ' ')" = \
-    "PRESET_CONSTITUTION_AUTHORING PRESET_STORY_WORKERS " ] || {
-    echo "sdd-init's presets are not constitution-authoring then story-workers"
     return 1
   }
   diff -u "$tmp/want" "$tmp/calls" || return 1
@@ -185,6 +178,18 @@ FAKE
     echo "called specify over an existing .specify/"
     return 1
   }
+  # Its hint is a command per preset the user can paste: update for one the
+  # repo has, add for one it does not have yet.
+  mkdir -p "$repo/.specify/presets/constitution-authoring"
+  rm -rf "$repo/.specify/presets/story-workers"
+  out=$(run) || true
+  ca=$(sed -n 's/^PRESET_CONSTITUTION_AUTHORING_URL=//p' bin/sdd-init.sh)
+  sw=$(sed -n 's/^PRESET_STORY_WORKERS_URL=//p' bin/sdd-init.sh)
+  if ! grep -qF "specify preset update constitution-authoring --from $ca" <<< "$out" ||
+    ! grep -qF "specify preset add --from $sw" <<< "$out"; then
+    echo "the hint is not update for an installed preset and add for a missing one: $out"
+    return 1
+  fi
 }
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 

@@ -23,6 +23,7 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   for this reason, as a record of a choice made in a session rather than a
   policy. `max` is accepted by neither key: it is reached with `/effort`,
   `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`.
+
   The one written level is outside these settings: the story-workers preset,
   which `sdd-init` installs, starts each worker with `effort: "medium"` on the
   Agent call, so raising this session's effort to plan a hard feature does not
