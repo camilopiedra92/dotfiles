@@ -123,6 +123,17 @@ FAKE
     echo "sdd-init does not install the constitution-authoring preset"
     return 1
   }
+  # story-workers composes onto core speckit-implement; it goes after
+  # constitution-authoring, the order the calls above are checked in.
+  grep -q "^PRESET_STORY_WORKERS_URL=https://github.com/[^/]*/spec-kit-preset-story-workers/" bin/sdd-init.sh || {
+    echo "sdd-init does not install the story-workers preset"
+    return 1
+  }
+  [ "$(sed -n 's/^\(PRESET_[A-Z_]*\)_URL=.*/\1/p' bin/sdd-init.sh | tr '\n' ' ')" = \
+    "PRESET_CONSTITUTION_AUTHORING PRESET_STORY_WORKERS " ] || {
+    echo "sdd-init's presets are not constitution-authoring then story-workers"
+    return 1
+  }
   diff -u "$tmp/want" "$tmp/calls" || return 1
   [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
     ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {

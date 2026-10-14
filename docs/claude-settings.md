@@ -23,6 +23,12 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   for this reason, as a record of a choice made in a session rather than a
   policy. `max` is accepted by neither key: it is reached with `/effort`,
   `--effort` or `CLAUDE_CODE_EFFORT_LEVEL`.
+  The one written level is outside these settings: the story-workers preset,
+  which `sdd-init` installs, starts each worker with `effort: "medium"` on the
+  Agent call, so raising this session's effort to plan a hard feature does not
+  raise every Sonnet worker's with it; reviews inherit this session's effort.
+  Its reason and its revisit are in that preset's
+  [decision 0001](https://github.com/camilopiedra92/spec-kit-preset-story-workers/blob/v0.1.0/docs/decisions/0001-worker-effort.md).
 - **`model` is not set.** The default on this plan is already Opus 5.5 with
   the 1M context window, so the `opus[1m]` that used to be here selected
   nothing the default did not; it only kept a newer default from applying.

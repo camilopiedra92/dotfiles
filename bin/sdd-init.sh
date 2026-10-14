@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Puts Spec Kit into the current repository with the constitution-authoring
-# preset, as one commit of its own.
+# and story-workers presets, as one commit of its own.
 #
 # Usage:  sdd-init        from the root of the repository, at its first feature
 #
@@ -9,13 +9,17 @@
 # --integration, init scaffolds for Copilot; without a TTY it refuses any
 # non-empty directory unless --force (both seen on 1.1.0, 2026-10-05).
 #
-# The preset lives in its own repository, released by tag, and is installed
+# Each preset lives in its own repository, released by tag, and is installed
 # from the tag's archive: each repo then holds a copy of a known version under
 # .specify/presets/, and moving one on is `specify preset update <id> --from
-# <newer tag's zip>`. The URL below is the version new repos get.
+# <newer tag's zip>`. The URLs below are the versions new repos get, installed
+# in this order. story-workers appends to core speckit-implement: each phase to
+# a Sonnet worker, the main session verifying; released on the owner's
+# acceptance, not on a measured saving (its README, "The owner's decision").
 set -euo pipefail
 
 PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.2.1.zip
+PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.1.0.zip
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
   echo "sdd-init: not inside a git repository" >&2
@@ -28,8 +32,10 @@ fi
 if [ -e .specify ]; then
   # Re-running init would put the template back over a constitution that has
   # been written. A preset update is its own command.
-  echo "sdd-init: .specify/ already exists; to move its preset to this version run" >&2
+  echo "sdd-init: .specify/ already exists; to move its presets to these versions run" >&2
   echo "          specify preset update constitution-authoring --from $PRESET_CONSTITUTION_AUTHORING_URL" >&2
+  echo "          specify preset update story-workers --from $PRESET_STORY_WORKERS_URL" >&2
+  echo "          (or specify preset add --from it, where story-workers is not installed yet)" >&2
   exit 1
 fi
 if ! git diff --cached --quiet; then
@@ -47,10 +53,11 @@ fi
 
 specify init --here --force --integration claude
 specify preset add --from "$PRESET_CONSTITUTION_AUTHORING_URL"
+specify preset add --from "$PRESET_STORY_WORKERS_URL"
 
 # Only what init and the preset wrote. .claude/skills/ is committed whatever
 # init's closing advice says about .claude/: that advice is about credentials,
 # and the skills are what makes the workflow the same on every checkout.
 git add .specify .claude/skills
-git commit -q -m "Initialize Spec Kit with the constitution-authoring preset"
+git commit -q -m "Initialize Spec Kit with the constitution-authoring and story-workers presets"
 echo "sdd-init: committed. Next: /speckit-constitution"
