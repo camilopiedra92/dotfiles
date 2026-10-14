@@ -76,9 +76,9 @@ write to you in Spanish, which I sometimes will: my language is not the file's.
   when and how it was observed, and say "not tested" or "pending" when it was
   not — those are valid states, and a plan's expectation written as a finding
   is not. The reader cannot tell the two apart, and will build on either.
-- The one who reviews cannot be the one who wrote. Re-reading your own diff in
-  the context that produced it finds the typos and none of the assumptions;
-  what is needed is a different context, not a particular tool.
+- The one who reviews cannot be the one who wrote: your own diff, reread where
+  it was written, shows the typos and none of the assumptions. Any fresh
+  context does; a subagent reviews at high effort, cheap on a small context.
 - The review comes before the PR is ready: if CI only runs on pull requests,
   open it as a draft and mark it ready once the review is back.
 - Ready is not merged: a PR merges only on green CI, for the commit that was
