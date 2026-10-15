@@ -190,6 +190,12 @@ FAKE
     echo "the hint is not update for an installed preset and add for a missing one: $out"
     return 1
   fi
+  # Then a commit: an update left uncommitted outside the feature directory
+  # sends story-workers' next run to core (its v0.2.0 README, Install).
+  if ! grep -qF 'git add .specify .claude/skills && git commit -m "Update Spec Kit presets"' <<< "$out"; then
+    echo "the hint does not end with the commit to paste: $out"
+    return 1
+  fi
 }
 check "sdd-init refuses staged work, no PyYAML python and a second run, and commits only what init wrote" sdd_init
 
