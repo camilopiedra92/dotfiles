@@ -29,7 +29,7 @@ That file is strict JSON with no room for comments, so the reasoning lives here:
   Agent call, so raising this session's effort to plan a hard feature does not
   raise every Sonnet worker's with it; reviews inherit this session's effort.
   Its reason and its revisit are in that preset's
-  [decision 0001](https://github.com/camilopiedra92/spec-kit-preset-story-workers/blob/v0.1.0/docs/decisions/0001-worker-effort.md).
+  [decision 0001](https://github.com/camilopiedra92/spec-kit-preset-story-workers/blob/v0.2.0/docs/decisions/0001-worker-effort.md).
 - **`model` is not set.** The default on this plan is already Opus 5.5 with
   the 1M context window, so the `opus[1m]` that used to be here selected
   nothing the default did not; it only kept a newer default from applying.

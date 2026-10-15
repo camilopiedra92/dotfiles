@@ -12,14 +12,14 @@
 # Each preset lives in its own repository, released by tag, and is installed
 # from the tag's archive: each repo then holds a copy of a known version under
 # .specify/presets/, and moving one on is `specify preset update <id> --from
-# <newer tag's zip>`. The URLs below are the versions new repos get.
+# <newer tag's zip>`, then a commit. The URLs below are the versions new repos get.
 # story-workers appends to core speckit-implement: each phase to
 # a Sonnet worker, the main session verifying; released on the owner's
 # acceptance, not on a measured saving (its README, "The owner's decision").
 set -euo pipefail
 
 PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.2.1.zip
-PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.1.0.zip
+PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.2.0.zip
 presets=("$PRESET_CONSTITUTION_AUTHORING_URL" "$PRESET_STORY_WORKERS_URL")
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
@@ -45,6 +45,9 @@ if [ -e .specify ]; then
       echo "          specify preset add --from $url" >&2
     fi
   done
+  # Committed, as init's own files are: from story-workers v0.2.0, a change left
+  # uncommitted outside the feature directory sends the next run to core.
+  echo '          git add .specify .claude/skills && git commit -m "Update Spec Kit presets"' >&2
   exit 1
 fi
 if ! git diff --cached --quiet; then
