@@ -19,7 +19,7 @@
 set -euo pipefail
 
 PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.2.1.zip
-PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.1.0.zip
+PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.2.0.zip
 presets=("$PRESET_CONSTITUTION_AUTHORING_URL" "$PRESET_STORY_WORKERS_URL")
 
 top=$(git rev-parse --show-toplevel 2> /dev/null) || {
