@@ -16,3 +16,10 @@ Host *
   AddKeysToAgent yes
   UseKeychain yes
   IdentityFile ~/.ssh/id_ed25519
+
+Host ha-recovery
+  HostName ssh.camilo-systems.com
+  User root
+  IdentityFile ~/.ssh/ha_recovery_ed25519
+  IdentitiesOnly yes
+  ProxyCommand /Users/camilopiedra/.local/share/mise/shims/cloudflared access ssh --hostname %h
