@@ -52,3 +52,4 @@ python = "3.14"
 #
 # The major is the pin because the lockfile format travels with it.
 pnpm = "11"
+cloudflared = "2026.10.0"
