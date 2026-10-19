@@ -6,9 +6,17 @@
 # the one below is still offered after it. Nothing in config.local can take
 # it away, because Host * matches every host; a host that must never see it
 # needs the pattern here to exclude it, as `Host * !name`.
+#
+# The one exception to config.local is ha-recovery below: versioned here since
+# #151, so a rebuilt Mac has it, and temporary, until the ha repository's CLI
+# owns that connection (its feature 007); it names a public endpoint, gated by
+# Cloudflare Access and its key.
 Include config.local
 
-Host *
+# ha-recovery is excluded so the Pi is offered only its own key, never this
+# one (IdentityFile accumulates). The block goes once the ha repository's CLI
+# owns that connection (its feature 007).
+Host * !ha-recovery
   # Load keys into the agent on first use and remember the passphrase in
   # the Keychain, so it is typed once per machine and never per push. Both
   # act only when ssh runs, and git here goes over HTTPS, so for signing
@@ -22,4 +30,4 @@ Host ha-recovery
   User root
   IdentityFile ~/.ssh/ha_recovery_ed25519
   IdentitiesOnly yes
-  ProxyCommand /Users/camilopiedra/.local/share/mise/shims/cloudflared access ssh --hostname %h
+  ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname %h

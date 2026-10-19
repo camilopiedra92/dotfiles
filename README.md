@@ -104,7 +104,7 @@ they are usually installed to:
 | `~/.config/zsh/` | `.zshenv` again — the same file, linked twice, see [Shell](docs/shell.md) — plus `.zprofile`, `.zshrc`, `.zsh_plugins.txt` and the generated `.zsh_plugins.zsh` |
 | `~/.local/state/zsh/history` | state the shell writes, not config you edit |
 | `~/.config/git/` | `config`, `ignore`, and two files `install.sh` writes and never versions: `config.local` (name, email, signing key) and `allowed_signers` (what local signature verification checks against); plus `identities/`, one file per identity scoped to a directory, written by hand (see [Git](docs/git.md)) |
-| `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first |
+| `~/.ssh/` | `config`, linked; the key pair `install.sh` generates; and an optional `config.local` for hosts that need their own key or user, which `ssh/config` includes first (one temporary exception, `ha-recovery`, is versioned in `ssh/config`; its header says why) |
 | `~/Library/LaunchAgents/` | `com.piedrac.ssh-add-keychain.plist`, linked: the login agent that puts the signing key in the agent, bootstrapped by `install.sh` |
 | `~/.local/bin/` | `dev-nuke`, `aware`, `ynab-mcp` |
 | `~/.local/state/ynab-mcp/` | where the YNAB MCP server logs, once it is started through the wrapper — see [Claude Code](docs/claude-code.md) |
