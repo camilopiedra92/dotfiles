@@ -8,7 +8,10 @@
 # needs the pattern here to exclude it, as `Host * !name`.
 Include config.local
 
-Host *
+# ha-recovery is excluded so the Pi is offered only its own key, never this
+# one (IdentityFile accumulates). The block goes once the ha repository's CLI
+# owns that connection (its feature 007).
+Host * !ha-recovery
   # Load keys into the agent on first use and remember the passphrase in
   # the Keychain, so it is typed once per machine and never per push. Both
   # act only when ssh runs, and git here goes over HTTPS, so for signing

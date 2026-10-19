@@ -15,13 +15,13 @@ cask "notion-calendar"
 cask "rectangle"
 cask "stats"
 cask "tradingview"
-# Mac App Store apps, by id (`mas search <name>` finds one). Both are in the Dock.
 # The proxy of the ha repository's recovery ssh path (its docs/recovery.md),
-# which calls it as `cloudflared access ssh`. From Homebrew, not mise: a mise
-# shim with no mise config declaring the tool refuses to run.
+# which calls it as `cloudflared access ssh`. A program, so Homebrew owns it
+# (constitution principle II), not mise.
 brew "cloudflared"
 # The decompiler REA drives (see mcp.json). The bottle builds the native
 # decompiler for arm64 and brings openjdk@21, which Ghidra runs on.
 brew "ghidra"
+# Mac App Store apps, by id (`mas search <name>` finds one). Both are in the Dock.
 mas "Todoist", id: 585829637
 mas "WhatsApp", id: 310633997
