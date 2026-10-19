@@ -18,6 +18,7 @@ cask "tradingview"
 # Mac App Store apps, by id (`mas search <name>` finds one). Both are in the Dock.
 # The decompiler REA drives (see mcp.json). The bottle builds the native
 # decompiler for arm64 and brings openjdk@21, which Ghidra runs on.
+brew "cloudflared"
 brew "ghidra"
 mas "Todoist", id: 585829637
 mas "WhatsApp", id: 310633997
