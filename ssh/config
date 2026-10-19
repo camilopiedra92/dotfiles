@@ -22,4 +22,4 @@ Host ha-recovery
   User root
   IdentityFile ~/.ssh/ha_recovery_ed25519
   IdentitiesOnly yes
-  ProxyCommand /Users/camilopiedra/.local/share/mise/shims/cloudflared access ssh --hostname %h
+  ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname %h
