@@ -711,40 +711,67 @@ print(json.dumps({
 PY
 }
 
-# Usage: worker_pin_report <Containerfile> <latest json>
+# Usage: worker_pin_report <worker dir> <latest json> <today as YYYYMMDD>
 worker_pin_report() {
-  python3 - "$1" "$2" << 'PY'
+  python3 - "$1" "$2" "$3" << 'PY'
+import datetime
 import json
+import os
 import re
 import sys
 
-text = open(sys.argv[1], encoding="utf-8").read()
-latest = json.loads(sys.argv[2])
-pins = [
-    ("node:24-bookworm-slim", "node", r"^FROM \S*node:24-bookworm-slim@(sha256:[0-9a-f]+)"),
-    ("Claude Code", "claude_code", r"^ARG CLAUDE_CODE_VERSION=(\S+)"),
-    ("pi", "pi", r"^ARG PI_VERSION=(\S+)"),
-    ("mise", "mise", r"^ARG MISE_VERSION=(\S+)"),
-    ("uv", "uv", r"^ARG UV_VERSION=(\S+)"),
-]
-for name, key, pattern in pins:
+worker, latest, today = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+text = open(os.path.join(worker, "Containerfile"), encoding="utf-8").read()
+try:
+    lock = json.load(open(os.path.join(worker, "package-lock.json"), encoding="utf-8"))["packages"]
+except (OSError, ValueError, KeyError):
+    lock = {}
+
+
+def recipe(pattern):
     match = re.search(pattern, text, re.M)
-    if not match:
-        print("%s: no pin found in the Containerfile" % name)
-        continue
-    pinned, now = match.group(1), latest.get(key)
-    if isinstance(now, dict) or not now:
+    return match.group(1) if match else None
+
+
+def locked(package):
+    # The top-level install of the package; nested copies are other
+    # packages' dependencies, moved by the lockfile, not pinned here.
+    return (lock.get("node_modules/" + package) or {}).get("version")
+
+
+pins = [
+    ("node:24-bookworm-slim", "node", recipe(r"^FROM \S*node:24-bookworm-slim@(sha256:[0-9a-f]+)"), "the Containerfile"),
+    ("Claude Code", "claude_code", locked("@anthropic-ai/claude-code"), "package-lock.json"),
+    ("pi", "pi", locked("@earendil-works/pi-coding-agent"), "package-lock.json"),
+    ("mise", "mise", recipe(r"^ARG MISE_VERSION=(\S+)"), "the Containerfile"),
+    ("uv", "uv", recipe(r"^ARG UV_VERSION=(\S+)"), "the Containerfile"),
+]
+for name, key, pinned, where in pins:
+    now = latest.get(key)
+    if not pinned:
+        print("%s: no pin found in %s" % (name, where))
+    elif isinstance(now, dict) or not now:
         print("%s: could not ask upstream (%s)" % (name, (now or {}).get("error", "no answer")))
     elif key == "node":
         if now != pinned:
             print("%s: pinned to %s, the tag now points at %s" % (name, pinned, now))
     elif now.lstrip("v") != pinned.lstrip("v"):
         print("%s: pinned to %s, upstream now releases %s" % (name, pinned, now.lstrip("v")))
+
+# The snapshot has no "latest": the base's packages, and those added from
+# the same moment, get Debian's security updates only when it moves.
+snapshot = recipe(r"^ARG DEBIAN_SNAPSHOT=(\d{8})T\d{6}Z")
+if not snapshot:
+    print("Debian snapshot: no pin found in the Containerfile")
+else:
+    age = (datetime.datetime.strptime(today, "%Y%m%d") - datetime.datetime.strptime(snapshot, "%Y%m%d")).days
+    if age > 30:
+        print("Debian snapshot: pinned to %s, %d days old" % (recipe(r"^ARG DEBIAN_SNAPSHOT=(\S+)"), age))
 PY
 }
 report "no worker image pin is behind upstream" \
-  "move the pin in containers/worker/Containerfile (a digest or a version with its checksum), then sdd-step prepare-worker" \
-  "$(worker_pin_report containers/worker/Containerfile "$(worker_pins_latest)")"
+  "move the pin (Containerfile: the base's digest and its snapshot together, a tool with its checksum; package.json then npm install --package-lock-only), regenerate inventory.txt, then sdd-step prepare-worker" \
+  "$(worker_pin_report containers/worker "$(worker_pins_latest)" "$(date -u +%Y%m%d)")"
 
 # SPECKIT_PYTHON_EXECUTABLE in zsh/.zshenv is upstream's own answer to
 # github/spec-kit#4443 (shipped in #4445): its scripts run on python3 and need

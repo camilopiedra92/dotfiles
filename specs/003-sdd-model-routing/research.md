@@ -819,6 +819,18 @@ package with its version, committed beside the recipe; `prepare-worker`
 reads the built image's inventory and refuses any difference. drift.sh reports
 the snapshot's age and the pins behind upstream, so the pins move on purpose.
 
+**Observed** (T060, T061, 2026-10-21): on the base the tag pointed at that
+evening (`55fb5f5a…`, the second move that day, caught by drift.sh), two
+`container build --no-cache` runs gave different digests (`0c4a5099…`,
+`b17ddf10…`) and the same 254-line inventory: 131 Debian packages, 120 npm
+packages (the lockfile's, filtered to linux/arm64/glibc, exactly), node
+24.22.1, mise 2026.10.17, uv 0.13.4. The base's snapshot did not move with
+its digest (`20261020T213255Z` both times), nor did the five pinned Debian
+versions. `prepare-worker` built the recipe, accepted it, and refused a
+planted difference naming the package. A check compares the lockfile with
+the inventory, so a Dependabot PR that moves only the lockfile fails in CI
+until the inventory is regenerated.
+
 **Alternatives**: Nix or apko/melange — reproducible bits, at the price of a
 second build toolchain beside the one the machine already runs; Docker with
 BuildKit's `rewrite-timestamp` — Docker Desktop is installed but undeclared

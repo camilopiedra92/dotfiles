@@ -1,7 +1,8 @@
 #!/bin/sh
 # Every package the worker image installs, with its version, one per line and
 # sorted: what prepare-worker compares with inventory.txt beside it (FR-032,
-# research R26). Debian packages from dpkg; npm packages by walking the tree
+# research R26). Debian packages from dpkg; node, mise and uv from
+# themselves; npm packages by walking the tree
 # npm ci installed under /opt/sdd — scoped and nested ones included — so a
 # transitive dependency that moved shows as well as a direct one.
 #
@@ -10,6 +11,11 @@
 set -eu
 {
   dpkg-query -W -f='deb ${Package} ${Version}\n'
+  # The tools neither dpkg nor npm installed: node from the base, mise and uv
+  # from their checked downloads.
+  echo "tool node $(node --version | sed 's/^v//')"
+  echo "tool mise $(mise --version | awk '{ print $1 }')"
+  echo "tool uv $(uv --version | awk '{ print $2 }')"
   node -e '
 const fs = require("fs"), path = require("path");
 function walk(dir) {

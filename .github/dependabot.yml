@@ -18,3 +18,16 @@ updates:
       # Matches the style of the rest of the history: a plain imperative
       # subject, no conventional-commits prefixes.
       prefix: ""
+  # The worker image's agents (containers/worker/package.json, FR-032): the
+  # same cadence and cooldown. A PR here moves only the lockfile; the check
+  # "the worker's inventory lists exactly the npm packages its lockfile
+  # installs" fails until inventory.txt is regenerated from a fresh build, so
+  # nothing merges with an inventory prepare-worker would refuse.
+  - package-ecosystem: npm
+    directory: /containers/worker
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ""

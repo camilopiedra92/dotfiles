@@ -471,10 +471,14 @@ sdd_ep_ca() {
 check "the worker entrypoint trusts the run's authority before the firewall, and only an authority" sdd_ep_ca
 
 # drift.sh reports each pin of the worker image that upstream has moved past
-# (constitution V): worker_pin_report compares the Containerfile with the
-# latest values worker_pins_latest fetched, and is run here on a fixture and
-# canned answers, so no network is needed. A pin it cannot read, or an
-# upstream that did not answer, is reported, never read as current.
+# (constitution V): worker_pin_report compares the recipe — the Containerfile
+# for the base, the Debian snapshot, mise and uv; package-lock.json for the
+# agents (FR-032) — with the latest values worker_pins_latest fetched, and is
+# run here on a fixture and canned answers, so no network is needed. The
+# snapshot has no "latest"; it is reported once older than 30 days, so the
+# base and its packages are moved on for their security updates. A pin it
+# cannot read, or an upstream that did not answer, is reported, never read
+# as current.
 sdd_worker_pin_drift() {
   local tmp fn out
   tmp=$(mktemp -d) || return 1
@@ -485,27 +489,37 @@ sdd_worker_pin_drift() {
     echo "could not extract worker_pin_report from drift.sh"
     return 1
   }
-  cat > "$tmp/Containerfile" << 'CF'
+  mkdir "$tmp/worker"
+  cat > "$tmp/worker/Containerfile" << 'CF'
 FROM docker.io/library/node:24-bookworm-slim@sha256:aaaa
-ARG CLAUDE_CODE_VERSION=2.1.306
-ARG PI_VERSION=1.3.0
+ARG DEBIAN_SNAPSHOT=20261001T120000Z
 ARG MISE_VERSION=2026.10.7
 ARG UV_VERSION=0.13.0
 CF
-  report_with() { bash -c '. "$1" && worker_pin_report "$2" "$3"' _ "$fn" "$tmp/Containerfile" "$1"; }
-  out=$(report_with '{"node":"sha256:aaaa","claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}') || {
+  cat > "$tmp/worker/package-lock.json" << 'LOCK'
+{"lockfileVersion": 3, "packages": {
+  "": {"dependencies": {"@anthropic-ai/claude-code": "2.1.306", "@earendil-works/pi-coding-agent": "1.3.0"}},
+  "node_modules/@anthropic-ai/claude-code": {"version": "2.1.306"},
+  "node_modules/@earendil-works/pi-coding-agent": {"version": "1.3.0"},
+  "node_modules/@earendil-works/pi-coding-agent/node_modules/@anthropic-ai/claude-code": {"version": "1.0.0"}
+}}
+LOCK
+  local current='{"node":"sha256:aaaa","claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}'
+  report_with() { bash -c '. "$1" && worker_pin_report "$2" "$3" "$4"' _ "$fn" "$tmp/worker" "$1" "${2:-20261021}"; }
+  out=$(report_with "$current") || {
     echo "current: failed: $out"
     return 1
   }
   [ -z "$out" ] || {
-    echo "current: reported drift with every pin current: $out"
+    echo "current: reported drift with every pin current and a 20-day-old snapshot: $out"
     return 1
   }
-  out=$(report_with '{"node":"sha256:bbbb","claude_code":"2.1.310","pi":"1.4.0","mise":"v2026.10.17","uv":"0.13.4"}')
+  out=$(report_with '{"node":"sha256:bbbb","claude_code":"2.1.310","pi":"1.4.0","mise":"v2026.10.17","uv":"0.13.4"}' 20261101)
   local want
   for want in "node:24-bookworm-slim: pinned to sha256:aaaa, the tag now points at sha256:bbbb" \
     "Claude Code: pinned to 2.1.306, upstream now releases 2.1.310" "pi: pinned to 1.3.0, upstream now releases 1.4.0" \
-    "mise: pinned to 2026.10.7, upstream now releases 2026.10.17" "uv: pinned to 0.13.0, upstream now releases 0.13.4"; do
+    "mise: pinned to 2026.10.7, upstream now releases 2026.10.17" "uv: pinned to 0.13.0, upstream now releases 0.13.4" \
+    "Debian snapshot: pinned to 20261001T120000Z, 31 days old"; do
     grep -qxF "$want" <<< "$out" || {
       echo "moved: missing '$want' in:"
       printf '%s\n' "$out"
@@ -517,11 +531,52 @@ CF
     echo "unanswered: an upstream that did not answer was not reported: $out"
     return 1
   }
-  sed -i.bak '/^ARG PI_VERSION/d' "$tmp/Containerfile"
-  out=$(report_with '{"node":"sha256:aaaa","claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}')
-  grep -q "pi: no pin found in the Containerfile" <<< "$out" || {
-    echo "missing pin: a pin it could not read was not reported: $out"
+  /usr/bin/python3 -I -c '
+import json, sys
+p = sys.argv[1]; d = json.load(open(p))
+del d["packages"]["node_modules/@earendil-works/pi-coding-agent"]
+json.dump(d, open(p, "w"))' "$tmp/worker/package-lock.json"
+  sed -i.bak '/^ARG DEBIAN_SNAPSHOT/d' "$tmp/worker/Containerfile"
+  out=$(report_with "$current")
+  grep -q "pi: no pin found in package-lock.json" <<< "$out" || {
+    echo "missing pin: a lockfile without pi was not reported: $out"
+    return 1
+  }
+  grep -q "Debian snapshot: no pin found in the Containerfile" <<< "$out" || {
+    echo "missing pin: a Containerfile without a snapshot was not reported: $out"
     return 1
   }
 }
 check "drift.sh reports each worker image pin upstream has moved past, and any it cannot check" sdd_worker_pin_drift
+
+# inventory.txt's npm packages are exactly package-lock.json's, for the
+# image's platform (linux, arm64, glibc): a lockfile moved without the
+# inventory — Dependabot's PRs move only the lockfile — fails here, in CI,
+# rather than at the next prepare-worker, which would refuse the build.
+# Regenerate with containers/worker/inventory.sh in a fresh build.
+sdd_worker_inventory_matches_lock() {
+  /usr/bin/python3 -I - containers/worker/package-lock.json containers/worker/inventory.txt << 'PY'
+import json, sys
+
+lock = json.load(open(sys.argv[1]))["packages"]
+inventory = {tuple(l.split(" ", 2)[1:]) for l in open(sys.argv[2]).read().splitlines() if l.startswith("npm ")}
+
+
+def installed(entry):
+    # Optional platform packages install only where os, cpu and libc fit.
+    if not entry.get("optional"):
+        return True
+    fits = {"os": "linux", "cpu": "arm64", "libc": "glibc"}
+    return all(not entry.get(field) or value in entry[field] for field, value in fits.items())
+
+
+locked = {(e.get("name") or path.rsplit("node_modules/", 1)[1], e["version"])
+          for path, e in lock.items() if path and installed(e)}
+for name, version in sorted(locked - inventory):
+    print("in package-lock.json, not in inventory.txt: %s %s" % (name, version))
+for name, version in sorted(inventory - locked):
+    print("in inventory.txt, not in package-lock.json: %s %s" % (name, version))
+sys.exit(1 if locked != inventory else 0)
+PY
+}
+check "the worker's inventory lists exactly the npm packages its lockfile installs" sdd_worker_inventory_matches_lock

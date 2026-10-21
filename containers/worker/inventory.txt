@@ -249,3 +249,6 @@ npm web-streams-polyfill 3.3.3
 npm which 2.0.2
 npm ws 8.22.0
 npm yaml 2.9.0
+tool mise 2026.10.17
+tool node 24.22.1
+tool uv 0.13.4
