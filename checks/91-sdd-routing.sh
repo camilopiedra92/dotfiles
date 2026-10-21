@@ -464,6 +464,137 @@ sys.exit("\n".join(bad) or 0)
     "$repo/$f/.sdd/implement.json" || status=1
   clean_after deepseek
 
+  # Review of Phase 2 (2026-10-21): each case below got through before.
+  sonnet_route() {
+    mkdir -p "$repo/$f/.sdd"
+    printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  }
+  # 14. The protected set on a case-insensitive filesystem: any spelling APFS
+  # folds onto a protected name is that name (a long s, U+017F, folds to s).
+  local spelling
+  for spelling in .Claude/settings.json src/Claude.md claude.local.md .MCP.json agents.md .GITATTRIBUTES $'.mcp.j\xc5\xbfon'; do
+    fresh || return 1
+    sonnet_route
+    result "implemented"
+    edit "$spelling" "planted"
+    if out=$(pass implement); then fail "spelling $spelling: succeeded"; fi
+    clean_after "spelling $spelling"
+  done
+  # 15. A judgment row's /** writes do not open the protected set.
+  for spelling in "$f/contracts/CLAUDE.md" "$f/contracts/.claude/skills/x/SKILL.md" "$f/contracts/.gitattributes" "$f/contracts/AGENTS.md"; do
+    fresh || return 1
+    result "planned"
+    edit "$spelling" "planted"
+    if out=$(pass agent plan); then fail "judgment $spelling: succeeded"; fi
+    clean_after "judgment $spelling"
+  done
+  # 16. A path that would land through an untracked symlink, or in an ignored
+  # directory, of the owner's worktree is refused.
+  fresh || return 1
+  sonnet_route
+  mkdir -p "$tmp/case/outside"
+  ln -s ../outside "$repo/out"
+  result "implemented"
+  edit out/pwn "planted"
+  if out=$(pass implement); then fail "worktree symlink: succeeded"; fi
+  [ ! -e "$tmp/case/outside/pwn" ] || fail "worktree symlink: wrote outside the repository"
+  clean_after "worktree symlink"
+  fresh || return 1
+  sonnet_route
+  printf '.venv/\n' > "$repo/.gitignore"
+  tgit add .gitignore && tgit commit -qm ignore
+  result "implemented"
+  edit .venv/lib/evil.pth "import os"
+  if out=$(pass implement); then fail "ignored path: succeeded"; fi
+  [ ! -e "$repo/.venv/lib/evil.pth" ] || fail "ignored path: written"
+  clean_after "ignored path"
+  # 17. The credential scan fails closed, and reads binary files as bytes.
+  fresh || return 1
+  mv "$sa/secrets/claude-oauth" "$sa/secrets/claude-oauth.gone"
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  if out=$(pass agent plan); then fail "scan without the Keychain: succeeded"; fi
+  clean_after "scan without the Keychain"
+  fresh || return 1
+  result "planned"
+  mkdir -p "$sa/fixture/edits/$f/contracts"
+  printf 'blob\0\1%s\0' "$claude_secret" > "$sa/fixture/edits/$f/contracts/raw.bin"
+  if out=$(pass agent plan); then fail "binary secret: succeeded"; fi
+  printf '%s' "$out" | grep -qF claude-oauth || fail "binary secret: credential not named: $out"
+  clean_after "binary secret"
+  # 18. A tracked top-level export/ directory is judged at its own path.
+  fresh || return 1
+  sonnet_route
+  mkdir -p "$repo/export" && printf 'x\n' > "$repo/export/x"
+  tgit add export && tgit commit -qm export
+  result "implemented"
+  edit export/x "y"
+  out=$(pass implement) || fail "export/ dir: failed: $out"
+  if [ "$(cat "$repo/export/x")" != y ] || [ -e "$repo/x" ]; then fail "export/ dir: applied at the wrong path"; fi
+  clean_after "export/ dir"
+  # 19. .gitkeep is not a git file that governs anything.
+  fresh || return 1
+  sonnet_route
+  result "implemented"
+  edit src/empty/.gitkeep ""
+  out=$(pass implement) || fail ".gitkeep: refused: $out"
+  clean_after ".gitkeep"
+  # 20. Invalid structured output fails the step with nothing committed.
+  fresh || return 1
+  result "reviewed" '{"findings":[{"severity":"BAD","text":"x"}],"done":[]}'
+  edit "$f/contracts/x.md" "x"
+  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["phases"]["review"]["writes"]["value"]=["<f>/contracts/**"]; json.dump(d,open(p,"w"))' "$run/routing.json"
+  before=$(commits)
+  if out=$(pass agent review); then fail "invalid outcome: succeeded"; fi
+  [ "$(commits)" -eq "$before" ] || fail "invalid outcome: committed"
+  clean_after "invalid outcome"
+  # 21. The owner's staged work is never swept into a pass's commit.
+  fresh || return 1
+  printf 'owner\n' > "$repo/owner.txt" && tgit add owner.txt
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  out=$(pass agent plan)
+  tgit log --name-only --format= base..HEAD 2> /dev/null | grep -qx owner.txt && fail "staged: the owner's staged file went into a pass commit"
+  tgit log --all --name-only --format= | grep -qx owner.txt && fail "staged: the owner's staged file was committed"
+  tgit diff --cached --name-only | grep -qx owner.txt || fail "staged: the owner's staged file is no longer staged"
+  clean_after staged
+  # 22. Repository diff configuration never runs on the host.
+  fresh || return 1
+  printf '#!/bin/sh\ntouch %s/pwned-diffext\n' "$tmp/case" > "$tmp/case/evil/diffext"
+  chmod +x "$tmp/case/evil/diffext"
+  tgit config diff.external "$tmp/case/evil/diffext"
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  out=$(pass agent plan) || fail "diff.external: failed: $out"
+  rm -rf "$sa/fixture/edits"
+  result "reviewed" '{"findings":[],"done":[]}'
+  out=$(pass agent review) || fail "diff.external review: failed: $out"
+  clean_after "diff.external"
+  # 23. Check changes (FR-029) are every path the check command names,
+  # however it spells them, and automation (FR-030) includes the
+  # repository's own hooks directory.
+  fresh || return 1
+  sonnet_route
+  mkdir -p "$repo/ci" && printf '#!/bin/sh\nexit 0\n' > "$repo/ci/check-app.sh" && chmod 644 "$repo/ci/check-app.sh"
+  tgit add ci && tgit commit -qm ci
+  printf '{"command":"sh ./ci/check-app.sh --strict"}\n' > "$run/check.json"
+  result "implemented"
+  edit ci/check-app.sh "exit 0"
+  edit githooks/post-merge "#!/bin/sh"
+  out=$(pass implement) || fail "flags: failed: $out"
+  out=$(pass verify) || fail "flags: verify failed: $out"
+  /usr/bin/python3 -I -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+if d["check_changes"] != ["ci/check-app.sh"]:
+    bad.append("flags: check_changes is %s, wanted ci/check-app.sh" % d["check_changes"])
+if "githooks/post-merge" not in d["automation_changes"]:
+    bad.append("flags: the hooks directory change is not an automation change: %s" % d["automation_changes"])
+sys.exit("\n".join(bad) or 0)
+' "$repo/$f/.sdd/verify.json" || status=1
+  clean_after flags
+
   return "$status"
 }
 if command -v check-jsonschema > /dev/null 2>&1; then

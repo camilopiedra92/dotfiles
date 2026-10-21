@@ -141,6 +141,18 @@ def proxy_token(headers):
     return bearer(headers, "Proxy-Authorization")
 
 
+# The only requests that carry the owner's credential, by provider: what
+# Claude Code and pi call (seen 2026-10-21: Claude Code's POST /v1/messages;
+# pi's POST /chat/completions). Anything else on the provider's host — keys,
+# batches, files, admin — is refused, so a pass cannot mint or spend beyond
+# its own conversation (review of Phase 2). A refusal is logged, so an agent
+# that needs a new endpoint shows up there.
+ENDPOINTS = {
+    "anthropic": {("POST", "/v1/messages"), ("POST", "/v1/messages/count_tokens")},
+    "deepseek": {("POST", "/chat/completions")},
+}
+
+
 def who(token):
     return "pass " + token[:6] if token and TOKEN.fullmatch(token) else "no pass"
 
@@ -180,6 +192,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if len(providers) != 1 or len(admit - {"registries"}) != 1:
             return self.refuse(403, "the pass admits no single provider this run holds", token)
         name = providers.pop()
+        if (self.command, self.path.split("?")[0]) not in ENDPOINTS.get(name, set()):
+            return self.refuse(403, "not an endpoint the agents use", token)
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            # Bodies are read by Content-Length; the agents send one.
+            return self.refuse(411, "a chunked body is not forwarded", token)
         host, port, credential, _ = self.state.providers[name]
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROPPED}
         headers["Authorization"] = "Bearer " + credential

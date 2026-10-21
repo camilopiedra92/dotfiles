@@ -426,6 +426,66 @@ PY
 }
 check "a client resetting its connection leaves one line in the log, not a traceback" ep_reset_quiet
 
+# Only the endpoints the agents call carry the owner's credential: Claude
+# Code's messages (and token counting), DeepSeek's chat completions. Anything
+# else on the provider's host — key minting, batches, files, admin — is
+# refused (review of Phase 2). A body sent chunked is refused too, rather
+# than forwarded without it.
+ep_paths() {
+  local judge impl out case method path
+  judge=$(ep_admit '["anthropic"]')
+  impl=$(ep_admit '["deepseek", "registries"]')
+  for case in "GET /v1/organizations" "POST /v1/messages/batches" "POST /v1/files" "GET /api/oauth/profile" "POST /v1/messagesX"; do
+    read -r method path <<< "$case"
+    out=$(ep_client api "$EP_API" "$judge" "$method" "$path")
+    case "$out" in "403 "*) ;; *)
+      echo "anthropic $case was not refused: $out"
+      return 1
+      ;;
+    esac
+  done
+  for case in "POST /v1/messages" "POST /v1/messages?beta=true" "POST /v1/messages/count_tokens?beta=true"; do
+    read -r method path <<< "$case"
+    out=$(ep_client api "$EP_API" "$judge" "$method" "$path")
+    case "$out" in "403 "*)
+      echo "anthropic $case was refused: $out"
+      return 1
+      ;;
+    esac
+  done
+  for case in "POST /user/balance" "GET /v1/models" "POST /beta/completions"; do
+    read -r method path <<< "$case"
+    out=$(ep_client api-key "$EP_API" "$impl" "$method" "$path")
+    case "$out" in "403 "*) ;; *)
+      echo "deepseek $case was not refused: $out"
+      return 1
+      ;;
+    esac
+  done
+  grep -q "refused GET /v1/organizations" "$EP_TMP/main.log" || {
+    echo "a refused endpoint is not in the log"
+    return 1
+  }
+  out=$(
+    python3 -I - "$EP_API" "$judge" << 'PY'
+import http.client, sys
+c = http.client.HTTPConnection("127.0.0.1", int(sys.argv[1]), timeout=10)
+c.putrequest("POST", "/v1/messages")
+c.putheader("Authorization", "Bearer " + sys.argv[2])
+c.putheader("Transfer-Encoding", "chunked")
+c.endheaders()
+c.send(b"2\r\n{}\r\n0\r\n\r\n")
+r = c.getresponse()
+print(r.status)
+PY
+  )
+  [ "$out" = 411 ] || {
+    echo "a chunked request body was not refused with 411: $out"
+    return 1
+  }
+}
+check "only the agents' endpoints reach a provider, and a chunked body is refused" ep_paths
+
 # A run that never opted in hands the proxy no DeepSeek key, and then no pass
 # reaches DeepSeek whatever its admission says. Started with a heartbeat
 # window of two seconds, which the next case uses.

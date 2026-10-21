@@ -27,6 +27,7 @@ import signal
 import subprocess
 import sys
 import time
+import unicodedata
 from datetime import datetime, timezone
 
 DOTFILES = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -38,13 +39,18 @@ HOST_ENV = {
     "GIT_CONFIG_NOSYSTEM": "1",
     "GIT_CONFIG_GLOBAL": "/dev/null",
     "LC_ALL": "C",
+    # Paths go to git as data: no pathspec magic in a name an agent chose.
+    "GIT_LITERAL_PATHSPECS": "1",
 }
 GIT_OFF = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false"]
 # Paths whose members govern the run or instruct a later agent; no implement
 # pass may touch them, at any depth (contracts/pass.md, Judge).
+# Compared folded (fold() below), since APFS is case-insensitive and folds
+# more than case: .Claude/ is .claude/ there, and so is a long s (review of
+# Phase 2, proved).
 PROTECTED_DIRS = {".git", ".claude", ".specify", ".sdd"}
-PROTECTED_FILES = {"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", ".mcp.json"}
-AUTOMATION = re.compile(r"^(\.github/|\.husky/|githooks/|\.vscode/tasks\.json$|\.zed/tasks\.json$)")
+PROTECTED_FILES = {"claude.md", "claude.local.md", "agents.md", ".mcp.json"}
+AUTOMATION = re.compile(r"^(\.github/|\.husky/|\.vscode/tasks\.json$|\.zed/tasks\.json$)")
 CREDENTIALS = {"claude": "claude-oauth", "pi": "deepseek-api"}
 SCHEMA_STEPS = {"clarify", "review", "converge"}
 
@@ -121,12 +127,19 @@ def feature_dir(repo):
     return d
 
 
+def fold(name):
+    """A name as a case- and normalization-insensitive filesystem sees it."""
+    return unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", name).casefold())
+
+
 def protected(path):
-    parts = path.split("/")
+    parts = [fold(p) for p in path.split("/")]
     if any(p in PROTECTED_DIRS for p in parts[:-1]):
         return True
     name = parts[-1]
-    return name.startswith(".git") or name in PROTECTED_DIRS or name in PROTECTED_FILES
+    # .gitattributes, .gitignore, .gitmodules and the like govern git itself;
+    # .gitkeep is only a placeholder that keeps a directory.
+    return (name.startswith(".git") and name != ".gitkeep") or name in PROTECTED_DIRS or name in PROTECTED_FILES
 
 
 def allowed(path, writes, feature):
@@ -163,9 +176,12 @@ class Pass:
         os.makedirs(self.inputs)
         os.makedirs(os.path.join(self.run.dir, "admissions"), exist_ok=True)
         if feature:
+            # Only the feature directory: whatever else the owner has staged
+            # stays staged and out of the run's commits.
             self.run.git("add", "--", feature)
-            if self.run.git("diff", "--cached", "--quiet", check=False).returncode != 0:
-                self.run.git("commit", "-q", "-m", f"sdd: {os.path.basename(feature)} before {self.phase or self.kind}")
+            if self.run.git("diff", "--cached", "--quiet", "--", feature, check=False).returncode != 0:
+                self.run.git("commit", "-q", "-m", f"sdd: {os.path.basename(feature)} before {self.phase or self.kind}",
+                             "--", feature)
         for target in (self.baseline, self.export):
             os.makedirs(target)
             archive = self.run.git("archive", "--format=tar", "HEAD").stdout
@@ -218,9 +234,9 @@ class Pass:
     def changes(self):
         """Every created, changed or deleted path, with its new mode, read from
         the same two trees the patch is made from."""
-        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--raw", "-z", "--no-renames", "--no-abbrev",
-                            "baseline", "export"], env=HOST_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           cwd=self.dir)
+        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--raw", "-z",
+                            "--no-renames", "--no-abbrev", "baseline", "export"], env=self.isolated_env(),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
         if r.returncode not in (0, 1):
             raise PassFailed("judge: listing the changes failed: " + r.stderr.decode(errors="replace").strip())
         fields = r.stdout.decode("utf-8", errors="surrogateescape").split("\0")
@@ -231,9 +247,12 @@ class Pass:
             i += 2
             _, new_mode = meta.lstrip(":").split(" ")[0:2]
             status = meta.split(" ")[-1]
+            # One prefix only: a tracked export/x is reported as
+            # baseline/export/x and is export/x (review of Phase 2, proved).
             for prefix in ("baseline/", "export/"):
                 if path.startswith(prefix):
                     path = path[len(prefix):]
+                    break
             out.append((status, new_mode, path))
         for root, dirs, files in os.walk(self.export):
             for name in dirs + files:
@@ -242,29 +261,48 @@ class Pass:
                     raise PassFailed(f"judge: {os.path.relpath(full, self.export)} is not a regular file")
         return out
 
+    def isolated_env(self):
+        # The bundle lives in the repository's .git, so a no-index diff run
+        # here would find that repository and its diff configuration (review
+        # of Phase 2, proved with diff.external): no discovery above the pass.
+        return dict(HOST_ENV, GIT_CEILING_DIRECTORIES=os.path.dirname(self.dir))
+
     def patch(self):
-        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--binary", "--no-prefix", "--no-renames",
-                            "baseline", "export"], env=HOST_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           cwd=self.dir)
+        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--binary",
+                            "--no-prefix", "--no-renames", "baseline", "export"], env=self.isolated_env(),
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
         if r.returncode not in (0, 1):
             raise PassFailed("making the patch failed: " + r.stderr.decode(errors="replace").strip())
         return r.stdout
 
     def judge(self, changes, writes, feature, implement):
         refused = []
+        # A judgment row may name a protected file exactly (specify's
+        # .specify/feature.json); a pattern never opens the protected set.
+        exact = {w.replace("<f>", feature) for w in writes if not any(c in w for c in "*?[")}
         for status, mode, path in changes:
-            if implement:
-                if protected(path):
-                    refused.append(f"{path}: in the protected set")
-                    continue
-            elif not allowed(path, writes, feature):
+            if protected(path) and (implement or path not in exact):
+                refused.append(f"{path}: in the protected set")
+                continue
+            if not implement and not allowed(path, writes, feature):
                 refused.append(f"{path}: outside this step's writes")
                 continue
             if status != "D" and mode not in ("100644", "100755"):
                 refused.append(f"{path}: mode {mode} (a symlink, submodule or unusual mode)")
+                continue
+            landing = self.landing(path)
+            if landing:
+                refused.append(f"{path}: {landing}")
         if refused:
             raise PassFailed("judge refused the patch:\n  " + "\n  ".join(refused))
         flagged = {"check_changes": [], "automation_changes": []}
+        # Every path the frozen check command names; only those, and its
+        # callees are not followed (research R20, accepted: the review reads
+        # the whole diff).
+        command = load(os.path.join(self.run.dir, "check.json"))["command"]
+        check_paths = {os.path.normpath(t) for t in command.split() if not t.startswith("-")}
+        hooks = self.run.git("config", "--local", "--get", "core.hooksPath", check=False).stdout.decode().strip()
+        hooks = os.path.normpath(hooks) + "/" if hooks and not os.path.isabs(hooks) else ""
         if implement:
             guard = os.path.join(self.run.dir, "hooks", "config-guard.sh")
             if not os.access(guard, os.X_OK):
@@ -286,30 +324,58 @@ class Pass:
                         raise PassFailed(f"judge: config-guard answered unreadably on {path}")
                 if decision in ("ask", "deny"):
                     raise PassFailed(f"judge: {path} changes a guarded check configuration (config-guard: {decision}); nothing applied")
-                check = load(os.path.join(self.run.dir, "check.json"))["command"].split()[0]
-                if path == check.lstrip("./"):
+                if path in check_paths:
                     flagged["check_changes"].append(path)
-                if AUTOMATION.match(path) or mode == "100755":
+                if AUTOMATION.match(path) or (hooks and (path + "/").startswith(hooks)) or mode == "100755":
                     flagged["automation_changes"].append(path)
         return flagged
 
-    def scan(self, blobs, agent):
+    def landing(self, path):
+        """Why writing path into the owner's worktree would land somewhere
+        else than the repository's tracked tree, or None. git apply follows
+        an untracked symlink in the worktree, and writes into ignored
+        directories (.venv/, node_modules/) as readily (review of Phase 2,
+        proved)."""
+        here = self.run.repo
+        for part in path.split("/"):
+            here = os.path.join(here, part)
+            if os.path.islink(here):
+                return "the worktree has a symlink on its way"
+        # check-ignore refuses literal pathspecs (exit 128), so it runs without
+        # them; any answer but "ignored" (0) or "not ignored" (1) fails closed.
+        env = {k: v for k, v in HOST_ENV.items() if k != "GIT_LITERAL_PATHSPECS"}
+        r = subprocess.run([GIT, "-C", self.run.repo, *GIT_OFF, "check-ignore", "-q", "--no-index", "--", path],
+                           env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.run.dir)
+        if r.returncode == 0:
+            return "an ignored path in the worktree"
+        if r.returncode != 1:
+            raise PassFailed("judge: git check-ignore failed: " + r.stderr.decode(errors="replace").strip())
+        return None
+
+    def scan(self, changes, blobs, agent):
+        """The exact value of every credential of the run, in each changed
+        file's bytes as the agent left them (a patch encodes binaries) and in
+        what the agent returned. Fails closed: a credential that cannot be
+        read cannot be looked for."""
         services = {"claude-oauth"}
         if agent == "pi" or load(os.path.join(self.run.dir, "optin.json")).get("implement") == "deepseek":
             services.add("deepseek-api")
+        files = []
+        for status, _, path in changes:
+            if status != "D":
+                with open(os.path.join(self.export, path), "rb") as f:
+                    files.append(f.read())
         for service in sorted(services):
-            try:
-                value = self.run.secret(service)
-            except PassFailed:
-                continue
-            for blob in blobs:
-                if value.encode() in blob:
-                    raise PassFailed(f"the output holds the exact value of the credential {service}; nothing applied")
+            value = self.run.secret(service).encode()
+            if any(value in blob for blob in files + blobs):
+                raise PassFailed(f"the output holds the exact value of the credential {service}; nothing applied")
 
     # 7. Apply
-    def apply(self, patch, message):
+    def apply(self, patch, paths, message):
         self.run.git("apply", "-p1", "--index", "--whitespace=nowarn", input=patch)
-        self.run.git("commit", "-q", "-m", message)
+        # Only the patch's paths: the owner's own staged work stays staged.
+        self.run.git("commit", "-q", "-m", message, "--pathspec-from-file=-", "--pathspec-file-nul",
+                     input="\0".join(paths).encode())
         return self.run.git("rev-parse", "HEAD").stdout.decode().strip()
 
     def cleanup(self):
@@ -373,11 +439,14 @@ def parse_result(agent, stdout):
     return text, None, {"input": u.get("input", 0), "cached": u.get("cacheRead", 0), "output": u.get("output", 0)}, last.get("model")
 
 
-def write_outcome(run, feature, step, fields):
+def stage_outcome(run, feature, step, fields):
+    """Validates an outcome against its schema into a file beside its place,
+    and returns the move that puts it there: a pass validates before it
+    applies anything, so an invalid outcome leaves no commit behind."""
     path = os.path.join(run.repo, feature, ".sdd", f"{step}.json")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     doc = {"schema": f"urn:dotfiles:sdd:{step}:1", "step": step, "at": now(), **fields}
-    tmp = path + ".tmp"
+    tmp = os.path.join(run.dir, f"{step}.outcome.json")
     with open(tmp, "w") as f:
         json.dump(doc, f, indent=1)
     schema = os.path.join(DOTFILES, "claude", "speckit", "schemas", f"{step}.schema.json")
@@ -386,7 +455,11 @@ def write_outcome(run, feature, step, fields):
     if r.returncode != 0:
         os.remove(tmp)
         raise PassFailed(f"the {step} outcome does not match its schema: {r.stdout.decode(errors='replace')[-400:]}")
-    os.replace(tmp, path)
+    return lambda: shutil.move(tmp, path)
+
+
+def write_outcome(run, feature, step, fields):
+    stage_outcome(run, feature, step, fields)()
 
 
 def run_agent(run, phase, implement=False):
@@ -420,7 +493,7 @@ def run_agent(run, phase, implement=False):
             diff_dir = os.path.join(p.dir, "input")
             os.makedirs(diff_dir)
             with open(os.path.join(diff_dir, "diff.patch"), "wb") as f:
-                f.write(run.git("diff", "--binary", run.lock["base"], "HEAD").stdout)
+                f.write(run.git("diff", "--no-ext-diff", "--no-textconv", "--binary", run.lock["base"], "HEAD").stdout)
             mounts.append(f"{diff_dir}:/input:ro")
         p.admit(hosts)
         run.usage({"event": "start", "phase": phase, "model": row["model"], "effort": row["effort"]})
@@ -438,13 +511,16 @@ def run_agent(run, phase, implement=False):
         changes = p.changes()
         patch = p.patch() if changes else b""
         flagged = p.judge(changes, row["writes"], feature, implement)
-        p.scan([patch, text.encode(), json.dumps(structured).encode()], row["agent"])
+        p.scan(changes, [text.encode(), json.dumps(structured).encode()], row["agent"])
+        place_outcome = None
+        if structured is not None and row.get("schema"):
+            place_outcome = stage_outcome(run, feature, row["schema"], structured)
         commit = None
         if changes:
             step = "implement" if implement else phase
-            commit = p.apply(patch, f"{step}: {os.path.basename(feature)} ({served})")
-        if structured is not None and row.get("schema"):
-            write_outcome(run, feature, row["schema"], structured)
+            commit = p.apply(patch, [c[2] for c in changes], f"{step}: {os.path.basename(feature)} ({served})")
+        if place_outcome:
+            place_outcome()
         if row.get("result_to"):
             with open(os.path.join(run.repo, feature, row["result_to"]), "w") as f:
                 f.write(text)
