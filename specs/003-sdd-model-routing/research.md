@@ -94,10 +94,14 @@ gate's options, so free answers do not fit.
 
 ## R4 — Headless permissions fail closed, one profile per step
 
+*Since R21 the boundary is the worker container and each step's write allow
+list; the profiles below remain inside it as least privilege, and the
+host-side `--setting-sources` and sandbox questions no longer bear on safety.*
+
 **Decision**: every Claude step runs with `--permission-mode dontAsk` and
 the `--settings` file its routing row names — a profile in
-`claude/speckit/profiles/`. `judgment` (specify, clarify, plan, checklist, tasks, converge) allows the
-file tools, the named Spec Kit scripts (R19) and exact read-only git; `readonly` (analyze,
+`claude/speckit/profiles/` (names as of R21). `author` (specify, clarify, plan, checklist, tasks, converge) allows the
+file tools, the named Spec Kit scripts (R19) and exact read-only git; `reader` (analyze,
 review) allows reading and nothing that writes; every step also runs with
 `--setting-sources ""`, so its profile — which carries the config-guard and
 git-guard hooks — is its only source of permissions and hooks, and neither the
@@ -128,7 +132,7 @@ devcontainer pattern (`anthropics/claude-code/.devcontainer`, read
 2026-10-21): an `ipset` of allowed domains, `iptables -P OUTPUT DROP`, a
 `REJECT` for everything else, the `NET_ADMIN` and `NET_RAW` capabilities
 granted only for the firewall script that runs at start, and the agent as the
-non-root user `node`. The allowed domains are `containers/pi-worker/egress.txt`:
+non-root user `node`. The allowed domains are `containers/worker/egress-registries.txt` plus the pass's provider host:
 DeepSeek's API host and the registries the toolchain installs from.
 
 **Why the firewall lives in the container, not the runtime**: Apple's
@@ -164,7 +168,7 @@ the pass's changes as a patch (`git diff --binary` plus new files), judges it
 checkout. A pass that fails, times out or crashes leaves the feature's
 worktree untouched, so resume finds it clean (US2 AS7). The Sonnet path uses
 the same checkout, judgment and time limit, running `claude -p` on the host
-in it under the `implement-sonnet` profile (R4); no code leaves for a new
+in it under the `implementer` profile (R4); superseded by R21, where it runs in the worker container; no code leaves for a new
 provider, and its JSON result goes into `implement.json`. Every checkout,
 container and volume is labelled with its run id, so `sdd-step cleanup` can
 remove what a killed pass left.
@@ -174,7 +178,7 @@ completes, so concurrent runs share no writable state. Ceiling: each run
 installs its toolchain afresh; if that takes long enough to matter, a
 read-only shared cache populated on the host is the next step.
 
-**Image**: `containers/pi-worker/Containerfile`, digest-pinned Node base,
+**Image**: `containers/worker/Containerfile`, digest-pinned Node base,
 `@earendil-works/pi-coding-agent@1.3.0` (`npm view` 2026-10-21; the
 `@mariozechner` package is deprecated in its favour), mise, uv, `iptables` and
 `ipset`, the firewall script of R5 and a non-root `node` user; DeepSeek's
@@ -194,7 +198,7 @@ session directory is outside `/work` and discarded with the container
 are taken on the host.
 **Firewall and entrypoint scripts**: `init-firewall.sh` is adapted from
 Anthropic's reference (`anthropics/claude-code/.devcontainer/init-firewall.sh`,
-read 2026-10-21) — the allow list read from `egress.txt` instead of hard-coded
+read 2026-10-21) — the allow list read from `egress-registries.txt` and the pass's provider host instead of hard-coded
 domains — so it is owned and checked here (constitution III), not vendored;
 its source and date sit in a comment beside it (constitution VI).
 
@@ -245,7 +249,7 @@ missing or invalid file (FR-016). Verify is `sdd-step verify`: it runs
 `sdd.check`, and writes the exit status and the tail of its output (FR-020).
 Clarify-ask, review and converge return their outcome as structured output
 (`--json-schema`), which the dispatcher writes to the outcome file; review's
-`readonly` profile could not write it itself.
+`reader` profile could not write it itself.
 
 **Source**: proposed by the owner, checked against Anthropic's engineering
 posts. "How we built our multi-agent research system": "Subagent output to a
@@ -316,7 +320,7 @@ refused exits, version matching, held-out tests). Measuring from tasks onward
 is exact rather than a shortcut: every earlier phase runs on Opus in both
 arms. Correction, the same day: the harness runs single-step arms only (one
 `claude -p /speckit-implement` per run), so it does not "already settle" a
-multi-step arm's gates and counting; SC-001 now fixes those, and T046
+multi-step arm's gates and counting; SC-001 now fixes those, and T050
 extends the harness to them. Three counted runs per arm on both fixtures,
 from Anthropic's "Demystifying evals for AI agents". The routed arm starts with `sdd-run start --from`, the fixture's state
 carrying `.sdd/phases.json` with specify and plan done.
@@ -456,6 +460,10 @@ cannot hold values the workflow does not carry (research R2).
 
 ## R19 — The run bundle and defence in depth
 
+*The bundle stands. Its host-side defences — deny lists and Claude Code's Bash
+sandbox around agents running on the host — are superseded by R21, which runs
+every agent step in the worker container.*
+
 **Finding** (fresh-context analysis, 2026-10-21): with profiles, hooks, skills
 and the opt-in read live, a judgment step allowed `Bash(.specify/scripts/bash/*)`
 and unrestricted Write could write a script there and run it — `git config
@@ -506,6 +514,47 @@ the whole pass; the check command is frozen in the bundle.
 another; a container for every Claude step too — the strongest boundary, but
 the subscription login would have to enter it, which this feature does not
 move (R19).
+
+## R21 — Every agent step is a contained pass
+
+**Finding** (adversarial analysis, 2026-10-21): enforcing R20 by listing
+forbidden files kept leaving the next file out. Proven: an untracked
+`mise.toml` in a directory makes mise refuse to run `python3` there ("Config
+files in …/mise.toml are not trusted", exit 1), and config-guard, which fails
+open, then passes everything. The judgment agents, as untrusted as the
+implementers, wrote straight into the worktree host tools run in.
+
+**Decision**: every agent step and every verify run the same contained pass
+(contracts/pass.md): a `git archive` export with no `.git`, the agent in the
+worker container behind the firewall, its output returned as a patch computed
+outside any repository with git's configuration disabled and absolute paths,
+judged against the row's positive `writes` list — deny by default, like the
+firewall — then applied by git with hooks and fsmonitor off on a worktree no
+agent touched. Claude runs in the container with the owner's subscription
+token from `claude setup-token` ("a one-year OAuth token for CI pipelines and
+scripts", requiring a Pro, Max, Team or Enterprise plan; code.claude.com,
+authentication, read 2026-10-21), read from the Keychain item `claude-oauth`
+and passed on stdin like the DeepSeek key. The container's home holds no
+settings, MCP server or global CLAUDE.md of the owner's, so each step's
+context is the export plus its profile — what R4 and R16 sought with
+`--setting-sources ""`, here by construction.
+
+**What it replaces**: host-side profiles with deny lists and Claude Code's
+Bash sandbox as the boundary for the judgment steps (R4, R19), and the
+pending question of `--setting-sources ""`. The sandbox and the deny lists
+were defence by enumeration; the container and the write allow list are
+defence by construction.
+
+**Cost**: every routed run needs the container runtime and the owner's
+Claude token; each pass starts a container (seconds). The prompt cache is
+held by the API, not the machine, so R16's cache reuse is unchanged.
+`--bare`, the mode the headless docs recommend for scripts, does not read the
+subscription token, so it is not used.
+
+**Alternatives**: host-side enforcement by deny lists (R19) — refuted by the
+`mise.toml` finding; Claude Code's sandbox — covers shell commands, not the
+file tools or host tools run afterwards; an API key for the Claude steps —
+billed per token outside the subscription this feature exists to save.
 
 ## R13 — Time and spend
 

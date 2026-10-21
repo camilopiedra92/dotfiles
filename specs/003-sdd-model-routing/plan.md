@@ -36,7 +36,7 @@ Claude Code CLI; new and approved by the owner on 2026-10-21: a container
 runtime — Apple `container` 1.5.0, or colima if `container` cannot run the
 firewall (research R5) — in the `Brewfile`, `check-jsonschema`
 (`uv-tools.txt`), and, inside the image only, Node, `iptables`/`ipset`,
-`@earendil-works/pi-coding-agent@1.3.0`, mise
+`@earendil-works/pi-coding-agent@1.3.0`, the Claude Code CLI at a pinned version, mise
 and uv.
 
 **Storage**: files only — the feature directory and its `.sdd/` outcome files,
@@ -68,7 +68,7 @@ at once in separate worktrees.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Declared, never hand-installed | the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/pi-worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
+| I. Declared, never hand-installed | the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
 | II. One owner per layer | the container runtime is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand; so do `init-firewall.sh` and `entrypoint.sh`, adapted from Anthropic's reference and owned here, not vendored (research R6). The workflow and the schemas are driven by the same checks. |
 | IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds the chosen runtime's first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
@@ -91,6 +91,7 @@ specs/003-sdd-model-routing/
 │   ├── sdd-run.md          # the owner's command
 │   ├── sdd-step.md         # the workflow's deterministic steps and the worker
 │   ├── routing.md          # the routing table, its layers and the dispatcher
+│   ├── pass.md             # the contained pass every agent step and verify run
 │   └── workflow.md         # sdd-routed's steps, models, gates, loops, outcomes
 └── tasks.md
 ```
@@ -107,7 +108,7 @@ bin/
 claude/speckit/
 ├── sdd-routed.yml               # new: the workflow
 ├── routing.yml                  # new: the routing table, one row per phase
-├── profiles/                    # new: judgment, readonly, implement-sonnet (--settings)
+├── profiles/                    # new: author, reader, implementer (inside the container)
 └── schemas/                     # new: the routing table's and each outcome file's
     ├── routing-table.schema.json
     ├── routing-layer.schema.json
@@ -119,12 +120,12 @@ claude/speckit/
     ├── verify.schema.json
     ├── review.schema.json
     └── converge.schema.json
-containers/pi-worker/
+containers/worker/
 ├── Containerfile                # new
 ├── init-firewall.sh             # new: deny-by-default egress, Anthropic's reference pattern
 ├── entrypoint.sh                # new: firewall, then the credential from stdin, then pi as node
 ├── models.json                  # new: DeepSeek provider entry for pi
-├── egress.txt                   # new: the hosts the worker may reach
+├── egress-registries.txt        # new: package registries; each agent pass adds only its provider's API host
 └── brief.md                     # new: the implementing agent's rules (FR-017)
 checks/91-sdd-routing.sh         # new
 docs/sdd-routing.md              # new: how to run it, and the eval's result

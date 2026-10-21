@@ -44,7 +44,7 @@ offline against stand-ins; the last two need the real services.
 11. **Containment** (US2 AS2, SC-003): with the real container runtime research R5 settled on, a probe image
     tries to read `~/.ssh`, the Keychain and another repository, to write the
     home directory, another repository and the feature's worktree, and to
-    reach a host outside `egress.txt` after the firewall is up, and as the
+    reach a host outside its pass's allow list after the firewall is up, and as the
     `node` user to change the firewall. All fail; nothing on the host
     changes.
 12. **SC-001 and SC-002**: on story-workers' eval harness, with the routed

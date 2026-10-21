@@ -14,7 +14,7 @@ No database: each entity is a file or a setting that already has an owner.
 | Run bundle | `$SDD_RUN_DIR/` = `$(git rev-parse --git-common-dir)/sdd/<run_id>/`: `lock.json`, `optin.json`, `routing.json`, `profiles/`, `hooks/`, `usage.jsonl` (contracts/routing.md) | — | `sdd-run`, `sdd-step` |
 | Check command | `git config --local sdd.check` | the command verify runs | the owner |
 | Credential | Keychain, generic password, service `deepseek-api` | the API key | the owner |
-| Worker image | the container runtime's image store | tag `sdd-pi-worker:<hash>` | `sdd-step implement` |
+| Worker image | the container runtime's image store | tag `sdd-worker:<hash>` | `sdd-step implement` |
 | Tool cache | volume in the container runtime `sdd-cache-<run_id>` | — | `sdd-step implement`; removed when the run completes |
 
 ## Outcome files

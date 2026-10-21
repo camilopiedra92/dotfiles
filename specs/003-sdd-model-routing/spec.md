@@ -338,15 +338,15 @@ what landed in the commit, and what was printed.
   prompt cache.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
   the repository's check command, and nothing wider than its
-  `implement-sonnet` profile; its Edit and Write tool calls MUST be
-  limited to its disposable checkout, and one outside it fails the pass.
+  `implementer` profile; its writes reach the repository only as a patch
+  judged against the protected set (FR-028).
   What the check command itself writes outside the checkout (caches, temporary
   files) is not judged: the same command runs unattended in verify.
-- **FR-028**: Code an agent wrote MUST NOT run outside a boundary: the
-  implementing agent's tests run inside its sandbox or container, and verify
-  runs the check command inside the worker container on a fresh copy, with
-  egress limited to the allow list; and nothing an agent wrote may be read as
-  configuration by a tool the run executes on the host.
+- **FR-028**: Every agent step and every verify MUST run inside the worker
+  container on a copy with no repository metadata, and its output MUST reach
+  the repository only as a patch limited to the paths that step may write; no
+  agent writes the worktree directly, no code an agent wrote runs outside the
+  container, and no host tool reads anything an agent wrote as configuration.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
