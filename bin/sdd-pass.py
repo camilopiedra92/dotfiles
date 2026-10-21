@@ -645,10 +645,35 @@ def prepare_worker(run):
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=run.dir)
         if r.returncode != 0:
             raise PassFailed("building the worker image failed:\n" + r.stdout.decode(errors="replace")[-1500:])
+        verify_inventory(run, rt, tag, ctx)
     with open(os.path.join(run.dir, "worker.json"), "w") as f:
         json.dump({"image": tag}, f)
     prune_workers(run, rt, tag)
     print(tag)
+
+
+def verify_inventory(run, rt, tag, ctx):
+    """Refuses a fresh build whose installed packages differ from the
+    inventory committed beside its recipe (FR-032, research R26): every
+    input is pinned, so a difference means an input moved. The refused image
+    is deleted, because an image present under its tag is one this check
+    accepted, and the next prepare-worker would otherwise use it unchecked."""
+    r = subprocess.run([rt, "run", "--rm", "--entrypoint", "/usr/local/lib/sdd/inventory.sh", tag], env=HOST_ENV,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=run.dir)
+    built = r.stdout.decode(errors="replace").splitlines() if r.returncode == 0 else None
+    with open(os.path.join(ctx, "inventory.txt")) as f:
+        committed = f.read().splitlines()
+    if built == committed:
+        return
+    subprocess.run([rt, "image", "delete", tag], env=HOST_ENV, stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, cwd=run.dir)
+    if built is None:
+        raise PassFailed("reading the built image's inventory failed: " + r.stderr.decode(errors="replace").strip()[-500:])
+    added = sorted(set(built) - set(committed))
+    missing = sorted(set(committed) - set(built))
+    raise PassFailed("the built worker image differs from containers/worker/inventory.txt; refused and deleted:\n"
+                     + "".join(f"  + {line}\n" for line in added) + "".join(f"  - {line}\n" for line in missing)
+                     + "  An input moved: pin it, or regenerate the inventory on purpose (containers/worker/inventory.sh).")
 
 
 def prune_workers(run, rt, current):

@@ -12,6 +12,8 @@
 #   ANTHROPIC_BASE_URL       for a Claude pass; must be the proxy
 #   CLAUDE_CODE_OAUTH_TOKEN  for a Claude pass; must be the pass's placeholder
 # and, from the pass's read-only mounts:
+#   /bundle/proxy-ca.pem     the run's certificate authority, with which the
+#                            proxy reads the registries' TLS (required)
 #   /bundle/models.json      for a pi pass: pi's provider, every baseUrl the
 #                            proxy and every apiKey the pass's placeholder
 #   /cache                   the pass kind's cache volume, when mounted
@@ -52,9 +54,10 @@ if [ -n "${ANTHROPIC_BASE_URL:-}" ] && ! at_proxy "$ANTHROPIC_BASE_URL"; then
   fail "ANTHROPIC_BASE_URL must point at the egress proxy ($proxy_url)"
 fi
 
-# The mount points of contracts/pass.md. SDD_MOUNT_ROOT is unset in the image;
-# checks/92-sdd-worker.sh sets it to a scratch directory, since a test on the
-# host cannot create /bundle, and nothing in a pass sets it.
+# The mount points of contracts/pass.md, and the system trust directory. SDD_MOUNT_ROOT
+# is unset in the image; checks/92-sdd-worker.sh sets it to a scratch
+# directory, since a test on the host cannot create /bundle or write
+# /usr/local/share, and nothing in a pass sets it.
 root=${SDD_MOUNT_ROOT:-}
 bundle=$root/bundle
 cache=$root/cache
@@ -81,6 +84,17 @@ PY
     fail "/bundle/models.json must give every provider the proxy as baseUrl and the pass's placeholder as apiKey"
 fi
 
+# The run's authority (FR-031, research R25): the egress proxy terminates the
+# registries' TLS with it, so it is trusted before anything reaches out, and
+# only if it is an authority; anything else here is a host-side mistake.
+ca=$bundle/proxy-ca.pem
+[ -f "$ca" ] || fail "/bundle/proxy-ca.pem is missing; the pass did not pass the run's authority"
+openssl x509 -in "$ca" -noout -text 2> /dev/null | awk '/X509v3 Basic Constraints/ { getline; found = /CA:TRUE/ } END { exit !found }' ||
+  fail "/bundle/proxy-ca.pem is not a certificate authority"
+mkdir -p "$root/usr/local/share/ca-certificates"
+cp "$ca" "$root/usr/local/share/ca-certificates/sdd-run.crt"
+update-ca-certificates > /dev/null 2>&1 || fail "update-ca-certificates failed"
+
 "$here/init-firewall.sh" "$proxy_ip" "$proxy_port"
 
 home=$(getent passwd node | cut -d: -f6)
@@ -98,6 +112,15 @@ env=(
   LOGNAME=node
   PATH=/usr/local/bin:/usr/bin:/bin
   LANG=C.UTF-8
+  # The system store, with the run's authority in it: Node, Python and
+  # requests keep their own trust lists unless pointed here.
+  NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+  SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+  REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+  # npm's audit and funding calls are POSTs the read-only proxy refuses
+  # (research R25); nothing a pass needs comes from them.
+  npm_config_audit=false
+  npm_config_fund=false
   # Claude Code otherwise opens its own connections to api.anthropic.com
   # (telemetry, error reports), outside ANTHROPIC_BASE_URL; the proxy refuses
   # them, so they are only noise (seen in the first real pass, 2026-10-21).
