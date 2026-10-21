@@ -26,7 +26,7 @@ work and goes to the owner (plan.md, "Phase order").
 **Purpose**: observe on this machine what the design rests on, before building on it. Each records its result, with date and command, in research.md under the entry it settles.
 
 - [ ] T001 Declare Apple `container` in `Brewfile` and `check-jsonschema` with a pinned reference in `uv-tools.txt` (owner-approved 2026-10-21); install both with the commands `install.sh` runs for them; confirm `./drift.sh` is clean for both
-- [ ] T002 Probe `container` (research R5): the macOS version it requires, `container system start`, a throwaway `container run --rm` that mounts one scratch directory, and whether its networking can restrict egress to named hosts; record in research.md R5. If egress cannot be restricted by the runtime, stop and take it to the owner
+- [ ] T002 Probe `container` (research R5): the macOS version it requires, `container system start`, a throwaway `container run --rm` that mounts one scratch directory, and whether its networking can restrict egress to named hosts; record in research.md R5, including what `container system start` leaves on the machine (services, kernel images, state that survives a reboot); if it persists, add its apply step to `install.sh` and its report to `drift.sh` in this task (constitution IV). If egress cannot be restricted by the runtime, stop and take it to the owner
 - [ ] T003 [P] Probe Claude Code headless (research R4, R14): a `-p --permission-mode dontAsk --output-format json` call refused a tool not allowed — record the result's shape and exit status; a `--settings` `modelSettings` level against the user file's for a `-p` run, and where the result reports the level; record in research.md R4 and R14. If `--settings` does not win, stop and take it to the owner (FR-021)
 - [ ] T004 [P] Probe Spec Kit 1.2.2's engine (research R3, R11, R12): a gate's `retry` and `abort` options inside a `do-while`; that a failed then resumed step's earlier attempt is still in `state.json` or `log.jsonl`; what `state.json` holds after the run's process is killed mid-step; record in research.md R3, R11, R12
 - [ ] T005 [P] Probe `claude/config-guard.sh` (research R7): its verdict on a `Write` with empty content to `ruff.toml`, and on a `pyproject.toml` that loses `[tool.ruff]`; record in research.md R7
@@ -40,10 +40,11 @@ work and goes to the owner (plan.md, "Phase order").
 
 **Purpose**: what every story's checks stand on.
 
-- [ ] T007 Create `checks/91-sdd-routing.sh` with its section header and the stand-ins its checks share: a scratch repository set up with `specify init --here --force --integration claude` on a temporary `HOME`, and stand-ins for `claude` (records every argument, writes canned outcome files from a fixture directory, prints a JSON result), `container` and `security`, on a temporary `PATH`; the real Spec Kit 1.2.2 engine runs the workflow, since FR-025's assertions are about it (a stand-in `specify` is used only by T036); nothing reaches the network or the real Keychain
-- [ ] T008 [P] Write the schemas in `claude/speckit/schemas/`: `route`, `routing`, `phases`, `clarify`, `implement`, `verify`, `review`, `converge` (`*.schema.json`, draft 2020-12), with the common fields `schema`, `step`, `at` and the fields of data-model.md "Outcome files", quoted there: `severity: CRITICAL/HIGH/MEDIUM/LOW`, `questions: integer 0–5`, `outcome: converged/tasks_appended`, `agent: deepseek/sonnet`, `additionalProperties: false`
-- [ ] T009 Test first, in `checks/91-sdd-routing.sh`: each schema accepts its valid sample and refuses a missing field, an extra field and a wrong enum value (`check-jsonschema`), and `sdd-step outcome <step>` prints each step's token from a valid file and exits non-zero on a missing or invalid one (FR-016); run it red against a stub `bin/sdd-step.sh` that exits 0
-- [ ] T010 Implement `sdd-step outcome` in `bin/sdd-step.sh` (contracts/sdd-step.md): validate with `check-jsonschema`, print `yes/no`, `pass/fail`, `blocking/clear`, `converged/open` as data-model.md defines them — `converged` only when `outcome` is `converged` and no finding is above LOW; T009 green
+- [ ] T007 Install `uv` in `.github/workflows/ci.yml` the way the other CI tools are installed — a pinned version, its checksum in `.github/tool-checksums.txt`, moved by `bump-tools.sh` — then `uv tool install` the `uv-tools.txt` entries `specify-cli` and `check-jsonschema` at their pins, so the routing checks run the same on the runner as here (constitution III); extend "installed tools match the ci.yml pins" to `uv`; see a CI run green with the new checks before relying on them
+- [ ] T008 Create `checks/91-sdd-routing.sh` with its section header and the stand-ins its checks share: a scratch repository set up with `specify init --here --force --integration claude` on a temporary `HOME`, and stand-ins for `claude` (records every argument, writes canned outcome files from a fixture directory, prints a JSON result), `container` and `security`, on a temporary `PATH`; the real Spec Kit 1.2.2 engine runs the workflow, since FR-025's assertions are about it (a stand-in `specify` is used only by T040); nothing reaches the network or the real Keychain
+- [ ] T009 Test first, in `checks/91-sdd-routing.sh`: each schema accepts its valid sample and refuses a missing field, an extra field and a wrong enum value (`check-jsonschema`), and `sdd-step outcome <step>` prints each step's token from a valid file and exits non-zero on a missing or invalid one (FR-016); run it red against empty schemas (`{}`) and a stub `bin/sdd-step.sh` that exits 0
+- [ ] T010 [P] Write the schemas in `claude/speckit/schemas/`: `route`, `routing`, `phases`, `clarify`, `implement`, `verify`, `review`, `converge` (`*.schema.json`, draft 2020-12), with the common fields `schema`, `step`, `at` and the fields of data-model.md "Outcome files", quoted there: `severity: CRITICAL/HIGH/MEDIUM/LOW`, `questions: integer 0–5`, `outcome: converged/tasks_appended`, `agent: deepseek/sonnet`, `additionalProperties: false`
+- [ ] T011 Implement `sdd-step outcome` in `bin/sdd-step.sh` (contracts/sdd-step.md): validate with `check-jsonschema`, print `yes/no`, `pass/fail`, `blocking/clear`, `converged/open` as data-model.md defines them — `converged` only when `outcome` is `converged` and no finding is above LOW; T009 green
 
 **Checkpoint**: outcome files are a contract a check enforces.
 
@@ -57,29 +58,31 @@ work and goes to the owner (plan.md, "Phase order").
 
 ### Tests for User Story 1 (first, each run red before its code exists)
 
-- [ ] T011 [P] [US1] Check routing and dispatch (quickstart 1, FR-001, FR-025): specify, clarify, plan, checklist, analyze, review and converge called with `--model claude-opus-5-5`, tasks with `claude-sonnet-5-5`, verify with no `claude` call, in that order; every call carries `--permission-mode dontAsk`, `--settings` and `--output-format json`; the engine's run id equals `SPECKIT_WORKFLOW_RUN_ID`; each Claude step's stdout is in `state.json`
-- [ ] T012 [P] [US1] Check checkpoints (quickstart 2, FR-004): without a TTY the run pauses at each gate and prints the `sdd-run resume` command; `approve` continues, `reject` aborts, for every gate in contracts/workflow.md
-- [ ] T013 [P] [US1] Check clarify through a file (quickstart 3, FR-005): two canned questions pause the run at `answer-clarify` and `clarify-apply` runs after approval; zero questions skip the gate
-- [ ] T014 [P] [US1] Check loops and retries (quickstart 5, FR-014, FR-015): a check command that always fails gives three implement passes then `fix-stuck`; `retry` gives exactly one more; a converge that never converges gives three passes then `converge-stuck`
-- [ ] T015 [P] [US1] Check marking (quickstart 6, FR-006): `sdd-step mark` refuses on `verify` = fail or `review` = blocking, and marks only the task ids `review.json` lists
-- [ ] T016 [P] [US1] Check `sdd-run` prerequisites (contracts/sdd-run.md, FR-011, FR-024, US1 AS7, FR-021): each missing prerequisite stops with exit 1 naming it — Spec Kit older than 1.2.1, no `.specify/`, the workflow missing or at an older version, a missing CLI, `sdd.check` unset; `CLAUDE_CODE_EFFORT_LEVEL` exported is unset before dispatch; `.sdd/routing.json` records each model's id and effort
-- [ ] T017 [P] [US1] Check the Sonnet implementation pass (quickstart 7–8, FR-008, FR-018, FR-023, US2 AS6–7): the feature directory is committed first; the stand-in agent works in a detached checkout; a created, changed or deleted `ruff.toml`, or a `pyproject.toml` without `[tool.ruff]`, exits 1 naming it with nothing applied; a judged patch is applied and committed as `worker: <feature> (claude-sonnet-5-5)`; an agent that outlives the limit is stopped and nothing applied; a crash leaves the feature's worktree unchanged and no checkout behind; `implement.json` records the usage from the JSON result
-- [ ] T018 [P] [US1] Check interrupted runs (FR-022): a run lock naming a dead process (process id and start time) makes `cleanup` remove that run's leftovers and `resume` report the phases that will run again; `sdd-run start --from <feature dir>` passes `spec.md` and skips every phase in `.sdd/phases.json`, and is refused when no phase is finished; a run paused outside a gate resumes with no verdict and reruns the interrupted step; a lock whose process id was reused by another process is not taken for dead
-- [ ] T019 [US1] Run T011–T018 once against stubs of `bin/sdd-run.sh`, `bin/sdd-step.sh` and `claude/speckit/sdd-routed.yml`; confirm each fails for the reason its case predicts; commit the red run's output summary in the commit message
+- [ ] T012 [P] [US1] Check routing and dispatch (quickstart 1, FR-001, FR-025): specify, clarify, plan, checklist, analyze, review and converge called with `--model claude-opus-5-5`, tasks with `claude-sonnet-5-5`, verify with no `claude` call, in that order; every call carries `--permission-mode dontAsk`, `--settings` and `--output-format json`; the engine's run id equals `SPECKIT_WORKFLOW_RUN_ID`; each Claude step's stdout is in `state.json`; no call carries `--resume` or `--continue` (FR-002); a stand-in result with a `permission_denials` entry fails the step naming the refused tool and `docs/sdd-routing.md`'s section on widening the list (spec, Edge Cases)
+- [ ] T013 [P] [US1] Check checkpoints (quickstart 2, FR-004): without a TTY the run pauses at each gate and prints the `sdd-run resume` command; `approve` continues, `reject` aborts, for every gate in contracts/workflow.md
+- [ ] T014 [P] [US1] Check clarify through a file (quickstart 3, FR-005): two canned questions pause the run at `answer-clarify` and `clarify-apply` runs after approval; zero questions skip the gate
+- [ ] T015 [P] [US1] Check loops and retries (quickstart 5, FR-014, FR-015): a check command that always fails gives three implement passes then `fix-stuck`; `retry` gives exactly one more; a converge that never converges gives three passes then `converge-stuck`; on a fix round the agent's brief names `.sdd/verify.json` with the latest failures (FR-017)
+- [ ] T016 [P] [US1] Check marking (quickstart 6, FR-006): `sdd-step mark` refuses on `verify` = fail or `review` = blocking, and marks only the task ids `review.json` lists
+- [ ] T017 [P] [US1] Check `sdd-run` prerequisites (contracts/sdd-run.md, FR-011, FR-024, US1 AS7, FR-021): each missing prerequisite stops with exit 1 naming it — Spec Kit older than 1.2.1, no `.specify/`, the workflow missing or at an older version, a missing CLI, `sdd.check` unset; `CLAUDE_CODE_EFFORT_LEVEL` exported is unset before dispatch; `.sdd/routing.json` records each model's id and configured effort, and `sdd-run usage` reports the level each step's result reports, where it reports one (FR-021)
+- [ ] T018 [P] [US1] Check the Sonnet implementation pass (quickstart 7–8, FR-008, FR-018, FR-023, US2 AS6–7): the feature directory is committed first; the stand-in agent works in a detached checkout; a created, changed or deleted `ruff.toml`, or a `pyproject.toml` without `[tool.ruff]`, exits 1 naming it with nothing applied; a judged patch is applied and committed as `worker: <feature> (claude-sonnet-5-5)`; an agent that outlives the limit is stopped and nothing applied; `sdd.implementTimeout` lower than 1800 is honoured and one above 1800 refused (FR-018); an Edit or Write outside the checkout is refused by the per-pass settings and fails the pass naming it (FR-023); a crash leaves the feature's worktree unchanged and no checkout behind; `implement.json` records the usage from the JSON result
+- [ ] T019 [P] [US1] Check interrupted runs (FR-022): a run lock naming a dead process (process id and start time) makes `cleanup` remove that run's leftovers and `resume` report the phases that will run again; `sdd-run start --from <feature dir>` passes `spec.md` and skips every phase in `.sdd/phases.json`, and is refused when no phase is finished; a run paused outside a gate resumes with no verdict and reruns the interrupted step; a lock whose process id was reused by another process is not taken for dead
+- [ ] T020 [P] [US1] Check `sdd-step route` (contracts/sdd-step.md, FR-010, US3 AS3): opted in writes `route.json` with `deepseek`; not opted in writes `sonnet` and prints the opt-in line naming DeepSeek's terms of service and privacy policy; `route.json` validates
+- [ ] T021 [P] [US1] Check `sdd-run usage` (contracts/sdd-run.md, SC-001's counting): from a canned `state.json` it sums every attempt per Claude model at list price, failed and resumed ones included, lists attempts with no usage as unreported, prices pi's tokens from `models.json`, and prints the totals
+- [ ] T022 [US1] Run every check of this story once against stubs of `bin/sdd-run.sh`, `bin/sdd-step.sh` and `claude/speckit/sdd-routed.yml`; confirm each fails for the reason its case predicts; commit the red run's output summary in the commit message
 
 ### Implementation for User Story 1
 
-- [ ] T020 [P] [US1] Write `claude/speckit/routing-settings.json`: the `allow` list of research R4 and `modelSettings` `{"claude-opus-5-5": {"effortLevel": "medium"}, "claude-sonnet-5-5": {"effortLevel": "medium"}}` (research R14)
-- [ ] T021 [P] [US1] Write `containers/pi-worker/brief.md`, the brief both implementing agents get (FR-017): the tasks not marked done, spec, plan and every other file `/speckit-plan` wrote, the constitution, the test-first rules, no change to a check's configuration, nothing outside the tasks, write `implement.json`
-- [ ] T022 [US1] Write `claude/speckit/sdd-routed.yml` per contracts/workflow.md: inputs with `enum` verdicts and `resume_from`, every step, `capture: true` and the timeouts of research R11 (3600 judgment, 1800 tasks, 2100 implement, 3600 verify), `version` field
-- [ ] T023 [US1] Implement the rest of `bin/sdd-step.sh` for this story: `route`, `verify`, `mark`, `phase-done`, `cleanup`, and `implement` for the Sonnet path (contracts/sdd-step.md steps 2, 4–8)
-- [ ] T024 [US1] Implement `bin/sdd-run.sh`: `start`, `start --from`, `resume`, `usage` and the prerequisites of contracts/sdd-run.md; run id through `SPECKIT_WORKFLOW_RUN_ID`; run lock in `$(git rev-parse --git-dir)/sdd/`; the extra arguments of research R4 and R11
-- [ ] T025 [US1] Link `sdd-run` and `sdd-step` into `~/.local/bin` from `install.sh`, extending `checks/50-install.sh`'s link expectations; keep "install.sh is idempotent" green
-- [ ] T026 [US1] Write `docs/sdd-routing.md`: how to opt a repository in, declare `sdd.check`, start, answer a checkpoint, resume, read usage, widen the allow list; each claim with the date it was observed
+- [ ] T023 [P] [US1] Write `claude/speckit/routing-settings.json`: the `allow` list of research R4 and `modelSettings` `{"claude-opus-5-5": {"effortLevel": "medium"}, "claude-sonnet-5-5": {"effortLevel": "medium"}}` (research R14)
+- [ ] T024 [P] [US1] Write `containers/pi-worker/brief.md`, the brief both implementing agents get (FR-017): the tasks not marked done, spec, plan and every other file `/speckit-plan` wrote, the constitution, the test-first rules, no change to a check's configuration, nothing outside the tasks, write `implement.json`
+- [ ] T025 [US1] Write `claude/speckit/sdd-routed.yml` per contracts/workflow.md: inputs with `enum` verdicts and `resume_from`, every step, `capture: true` and the timeouts of research R11 (3600 judgment, 1800 tasks, 2100 implement, 3600 verify), `version` field
+- [ ] T026 [US1] Implement the rest of `bin/sdd-step.sh` for this story: `route`, `verify`, `mark`, `phase-done`, `cleanup`, and `implement` for the Sonnet path (contracts/sdd-step.md steps 2, 4–8)
+- [ ] T027 [US1] Implement `bin/sdd-run.sh`: `start`, `start --from`, `resume`, `usage` and the prerequisites of contracts/sdd-run.md; run id through `SPECKIT_WORKFLOW_RUN_ID`; run lock in `$(git rev-parse --git-dir)/sdd/`; the extra arguments of research R4 and R11
+- [ ] T028 [US1] Link `sdd-run` and `sdd-step` into `~/.local/bin` from `install.sh`, extending `checks/50-install.sh`'s link expectations; keep "install.sh is idempotent" green
+- [ ] T029 [US1] Write `docs/sdd-routing.md`: how to opt a repository in, declare `sdd.check`, start, answer a checkpoint, resume, read usage, widen the allow list; each claim with the date it was observed
 
 ### Close User Story 1
 
-- [ ] T027 [US1] `./check.sh` green; break each new check's behaviour by hand once and see it red (SC-006); a fresh-context review of the story's diff, its findings fixed or recorded with the reason
+- [ ] T030 [US1] `./check.sh` green; break each new check's behaviour by hand once and see it red (SC-006); a fresh-context review of the story's diff, its findings fixed or recorded with the reason
 
 **Checkpoint**: a routed run works end to end without DeepSeek.
 
@@ -93,20 +96,21 @@ work and goes to the owner (plan.md, "Phase order").
 
 ### Tests for User Story 2 (first)
 
-- [ ] T028 [P] [US2] Check the DeepSeek prerequisites (quickstart 9, SC-004): not opted in, no `container`, its service down, no Keychain item, a blank item — each stops `implement` with exit 1 naming it, and the stand-in `container` records no call
-- [ ] T029 [P] [US2] Check the container invocation (contracts/sdd-step.md step 4, FR-007): the stand-in `container` sees exactly one bind mount, the checkout at `/work`, plus the volume `sdd-cache-<run_id>`; the run-id label; the image tag from the hash of `containers/pi-worker/`; the egress list from `egress.txt`; the time limit enforced before the step's `timeout`; a canned response naming another model, or lacking usage, fails the pass
-- [ ] T030 [P] [US2] Check the credential never leaks (FR-009): with a sentinel key in the stand-in `security`, after a full pass the sentinel appears in no argument the stand-ins recorded, no environment of a host process they saw, no file under the scratch repository, `$TMPDIR`, the run state or logs — only on the stand-in container's stdin
-- [ ] T031 [US2] Run T028–T030 red against the Sonnet-only `sdd-step implement`; confirm each fails for its case's reason
+- [ ] T031 [P] [US2] Check the DeepSeek prerequisites (quickstart 9, SC-004): not opted in, no `container`, its service down, no Keychain item, a blank item — each stops `implement` with exit 1 naming it, and the stand-in `container` records no call
+- [ ] T032 [P] [US2] Check the container invocation (contracts/sdd-step.md step 4, FR-007): the stand-in `container` sees exactly one bind mount, the checkout at `/work`, plus the volume `sdd-cache-<run_id>`; the run-id label; the image tag from the hash of `containers/pi-worker/`; the egress list from `egress.txt`; the time limit enforced before the step's `timeout`; a canned response naming another model, or lacking usage, fails the pass
+- [ ] T033 [P] [US2] Check the credential never leaks (FR-009): with a sentinel key in the stand-in `security`, after a full pass the sentinel appears in no argument the stand-ins recorded, no environment of a host process they saw, no file under the scratch repository, `$TMPDIR`, the run state or logs — only on the stand-in container's stdin
+- [ ] T034 [US2] Run T031–T033 red against the Sonnet-only `sdd-step implement`; confirm each fails for its case's reason
 
 ### Implementation for User Story 2
 
-- [ ] T032 [P] [US2] Write `containers/pi-worker/Containerfile` (Node 26 base pinned by digest, `@earendil-works/pi-coding-agent@1.3.0`, mise, uv), `entrypoint.sh` (reads the key from stdin once, starts pi with the brief), `models.json` (the ids `/models` returned in T006) and `egress.txt` (DeepSeek's API host and the registries research R5 names)
-- [ ] T033 [US2] Implement the DeepSeek path of `sdd-step implement` (contracts/sdd-step.md steps 1, 3, 4) and its record in `implement.json` (`model`, `pi_version`, tokens); a served model other than `models.json`'s, or a missing usage field, fails the pass naming it (checked in T029)
-- [ ] T034 [US2] On this machine, with the real `container`: the containment probe of quickstart.md 11 (SC-003), each attempt recorded with its result in `docs/sdd-routing.md`
+- [ ] T035 [P] [US2] Write `containers/pi-worker/Containerfile` (Node 26 base pinned by digest, `@earendil-works/pi-coding-agent@1.3.0`, mise, uv), `entrypoint.sh` (reads the key from stdin once, starts pi with the brief), `models.json` (the ids `/models` returned in T006) and `egress.txt` (DeepSeek's API host and the registries research R5 names)
+- [ ] T036 [US2] Implement the DeepSeek path of `sdd-step implement` (contracts/sdd-step.md steps 1, 3, 4) and its record in `implement.json` (`model`, `pi_version`, tokens); a served model other than `models.json`'s, or a missing usage field, fails the pass naming it (checked in T032)
+- [ ] T037 [US2] Add to `drift.sh` a report of the worker image's pins against upstream — `@earendil-works/pi-coding-agent`'s latest version and the Node 26 base's current digest — as it reports `uv-tools.txt` pins behind upstream (constitution V); with its check in `checks/` seen red
+- [ ] T038 [US2] On this machine, with the real `container`: the containment probe of quickstart.md 11 (SC-003), each attempt recorded with its result in `docs/sdd-routing.md`; then a leak probe with a sentinel key: the image's layers, the container's stored configuration and the runtime's logs searched for it, none holding it (FR-009)
 
 ### Close User Story 2
 
-- [ ] T035 [US2] `./check.sh` green; each new check seen red; a fresh-context review of the story's diff
+- [ ] T039 [US2] `./check.sh` green; each new check seen red; a fresh-context review of the story's diff
 
 ---
 
@@ -116,32 +120,32 @@ work and goes to the owner (plan.md, "Phase order").
 
 **Independent test**: quickstart.md 10.
 
-- [ ] T036 [US3] Test first: extend `checks/90-spec-kit.sh`'s `sdd_init` check — a fresh repository gets `specify workflow add <dotfiles>/claude/speckit/sdd-routed.yml` in the same commit; one with `.specify/` gets the add or update command printed and nothing changed; the printed opt-in line names DeepSeek's terms; run it red against today's `bin/sdd-init.sh`
-- [ ] T037 [US3] Change `bin/sdd-init.sh` to install the workflow and print the commands for an existing repository; T036 green
-- [ ] T038 [US3] `./check.sh` green; T036 seen red with the change reverted by hand; a fresh-context review
+- [ ] T040 [US3] Test first: extend `checks/90-spec-kit.sh`'s `sdd_init` check — a fresh repository gets `specify workflow add <dotfiles>/claude/speckit/sdd-routed.yml` in the same commit; one with `.specify/` gets the add or update command printed and nothing changed; the printed opt-in line names DeepSeek's terms; run it red against today's `bin/sdd-init.sh`
+- [ ] T041 [US3] Change `bin/sdd-init.sh` to install the workflow and print the commands for an existing repository; T040 green
+- [ ] T042 [US3] `./check.sh` green; T040 seen red with the change reverted by hand; a fresh-context review
 
 ---
 
 ## Phase 6: Measurement and polish
 
-- [ ] T039 In `~/Development/spec-kit-preset-story-workers`, a feature of its own (short path, its constitution): extend `tests/eval/run.sh` from single-step arms to the two multi-step arms spec SC-001 defines — steps 11–16, the baseline's implement replacement, checkpoint answers, not-counted rules — on `checkout` and `wordstats`, each with a state that removes `tasks.md` and carries `.sdd/phases.json` (specify and plan done); one usage tool for both arms; `versions.txt` gains `container`, pi and the dotfiles commit
-- [ ] T040 Run three counted runs per arm per fixture with that harness; link its recorded result — median and range of usage per arm; per fixture, the routed arm's lowest held-out pass count against the baseline's median, the routed check command's result in each counted run, and each arm's counted and not-counted runs — from `docs/sdd-routing.md`, stating SC-001 and SC-002 met or not as it came out
-- [ ] T041 Move the decisions later work builds on out of research.md before the PR opens: `docs/decisions/0001-sdd-routing-workflow.md` (a workflow of our own on Spec Kit's engine; outcome files in JSON validated against schemas; verify without a model) in MADR's shape, linking research.md R1, R10; point `CLAUDE.md` at `docs/decisions/`
-- [ ] T042 `/speckit-converge` until a pass finds nothing above LOW; its tasks implemented last
+- [ ] T043 In `~/Development/spec-kit-preset-story-workers`, a feature of its own (short path, its constitution): extend `tests/eval/run.sh` from single-step arms to the two multi-step arms spec SC-001 defines — steps 11–16, the baseline's implement replacement, checkpoint answers, not-counted rules — on `checkout` and `wordstats`, each with a state that removes `tasks.md` and carries `.sdd/phases.json` (specify and plan done); one usage tool for both arms; `versions.txt` gains `container`, pi and the dotfiles commit
+- [ ] T044 Run three counted runs per arm per fixture with that harness; link its recorded result — median and range of usage per arm; per fixture, the routed arm's lowest held-out pass count against the baseline's median, the routed check command's result in each counted run, and each arm's counted and not-counted runs — from `docs/sdd-routing.md`, stating SC-001 and SC-002 met or not as it came out
+- [ ] T045 Move the decisions later work builds on out of research.md before the PR opens: `docs/decisions/0001-sdd-routing-workflow.md` (a workflow of our own on Spec Kit's engine; outcome files in JSON validated against schemas; verify without a model) in MADR's shape, linking research.md R1, R10; point `CLAUDE.md` at `docs/decisions/`
+- [ ] T046 `/speckit-converge` until a pass finds nothing above LOW; its tasks implemented last
 
 ---
 
 ## Dependencies & Execution Order
 
-- Phase 1 → Phase 2 → US1 → US2 → US3 → Phase 6. US2 builds on US1's `sdd-step implement` (checkout, judgment, time limit); US3 needs the workflow file from US1.
-- T001 before T002; T003–T005 in parallel after T001; T006 after T002.
+- Phase 1 → Phase 2 → US1 → US2 → US3 → Phase 6. T044 is blocked on T043, a feature of its own in the story-workers repository, with its own spec and review. US2 builds on US1's `sdd-step implement` (checkout, judgment, time limit); US3 needs the workflow file from US1.
+- T001 before T002; T003–T005 in parallel after T001; T006 after T002; T007 (CI) before any check in `checks/91-sdd-routing.sh` is relied on.
 - Within each story: its test tasks, then the red run, then implementation, then the close.
 
 ## Parallel Example: User Story 1
 
 ```text
-T011 T012 T013 T014 T015 T016 T017 T018   # independent checks, one file section each
-T020 T021                                 # settings and brief, independent files
+T012 T013 T014 T015 T016 T017 T018 T019 T020 T021   # independent checks, one file section each
+T023 T024                                           # settings and brief, independent files
 ```
 
 ## Implementation Strategy

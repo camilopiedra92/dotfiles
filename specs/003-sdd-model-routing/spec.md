@@ -131,8 +131,8 @@ committed.
    **Then** the failures go back to the agent; **Given** two such fix rounds
    have failed in one convergence pass, **Then** the run pauses for the owner,
    who may allow one more round or stop the run.
-5. **Given** the credential is missing, the contained runtime is not available
-   or the repository has not opted in, **Then** no code is sent and the step
+5. **Given** an opted-in repository whose credential is missing or whose
+   contained runtime is not available, **Then** no code is sent and the step
    says what is missing and how to provide it.
 6. **Given** a repository that has not opted in, **Then** implementation runs
    on the lighter Claude model, on this machine rather than in the contained
@@ -273,9 +273,11 @@ what landed in the commit, and what was printed.
   round or stopping; the work MUST NOT move to another agent unasked. Without
   the owner's retries a run makes at most nine implementation passes; each
   retry adds exactly one.
-- **FR-016**: Every step MUST leave its outcome in an outcome file, and the
-  run's branches MUST be decided by a deterministic reader that validates each
-  file against its schema; a missing or invalid outcome file MUST fail the
+- **FR-016**: Every step whose result a branch or a later step reads MUST
+  leave it in an outcome file; a step whose output is a Spec Kit artifact
+  (spec, plan, checklists, tasks, the analysis) hands over through that
+  artifact. The run's branches MUST be decided by a deterministic reader that
+  validates each outcome file against its schema; a missing or invalid outcome file MUST fail the
   step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.
 - **FR-021**: Each model's effort MUST be set by the routing, per model, and
@@ -396,9 +398,10 @@ fixed above 30 minutes),
   to the feature's worktree outside the patch, to the home directory and to
   another repository; and reaching a network address outside the egress
   allow list. All of them fail, and nothing on the host changes.
-- **SC-004**: With the credential missing, the runtime unavailable or the
-  repository not opted in, nothing is sent to the external provider, and the
-  owner is told what is missing in the step's output.
+- **SC-004**: With the repository not opted in, nothing is sent to the
+  external provider and implementation runs on the lighter model; with it
+  opted in but the credential missing or the runtime unavailable, nothing is
+  sent and the step's output names what is missing.
 - **SC-005**: Starting a feature takes the owner one command; each checkpoint
   takes one approval, plus writing the answers in the clarify file at that
   checkpoint; the owner never types a model name.

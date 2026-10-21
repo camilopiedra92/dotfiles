@@ -10,6 +10,7 @@ No database: each entity is a file or a setting that already has an owner.
 | Clarify questions | `<feature>/clarify-questions.md` (Markdown, for the owner) | up to five questions, options, recommendation, the owner's answer | `clarify-ask`, then the owner |
 | Opt-in | `git config --local sdd.implement` | `deepseek`, or absent | the owner |
 | Run lock | `$(git rev-parse --git-dir)/sdd/<run_id>.json` | run id, `sdd-run`'s process id and its start time | `sdd-run` |
+| Implementation time limit | `git config --local sdd.implementTimeout` | seconds, 1–1800; absent means 1800; a larger value is refused (FR-018) | the owner |
 | Check command | `git config --local sdd.check` | the command verify runs | the owner |
 | Credential | Keychain, generic password, service `deepseek-api` | the API key | the owner |
 | Worker image | local `container` image store | tag `sdd-pi-worker:<hash>` | `sdd-step implement` |

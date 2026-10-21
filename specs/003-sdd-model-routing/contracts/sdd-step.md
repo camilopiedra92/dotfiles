@@ -20,7 +20,9 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 ## `implement`, step by step
 
 1. **Prerequisites**, each stopping with exit 1 before any code leaves the
-   machine (SC-004). For deepseek: opted in; `container` on `PATH` and its
+   machine (SC-004); `sdd.implementTimeout`, when set, is 1–1800 seconds.
+   For deepseek (as `route.json` says): still opted in, so a repository
+   opted out since `route` ran sends nothing; `container` on `PATH` and its
    service answering; the Keychain item `deepseek-api` present and not blank.
    For sonnet: `claude` on `PATH`.
 2. **Checkout**: the feature directory (`.sdd/` included) committed first,

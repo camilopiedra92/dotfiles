@@ -276,7 +276,7 @@ refused exits, version matching, held-out tests). Measuring from tasks onward
 is exact rather than a shortcut: every earlier phase runs on Opus in both
 arms. Correction, the same day: the harness runs single-step arms only (one
 `claude -p /speckit-implement` per run), so it does not "already settle" a
-multi-step arm's gates and counting; SC-001 now fixes those, and T039
+multi-step arm's gates and counting; SC-001 now fixes those, and T043
 extends the harness to them. Three counted runs per arm on both fixtures,
 from Anthropic's "Demystifying evals for AI agents". The routed arm starts with `sdd-run start --from`, the fixture's state
 carrying `.sdd/phases.json` with specify and plan done.
