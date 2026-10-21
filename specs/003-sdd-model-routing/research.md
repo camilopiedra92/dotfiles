@@ -140,8 +140,13 @@ read-only shared cache populated on the host is the next step.
 `@earendil-works/pi-coding-agent@1.3.0` (`npm view` 2026-10-21; the
 `@mariozechner` package is deprecated in its favour), mise and uv, and
 DeepSeek's provider entry for pi's `models.json` (DeepSeek's "pi mono" page:
-`openai-completions` at `https://api.deepseek.com`, `deepseek-v4-flash`,
-`deepseek-v4-pro`). Tagged with the Containerfile directory's hash and built
+`openai-completions` at `https://api.deepseek.com`, models
+`deepseek-v4-flash` and `deepseek-v4-pro`). **Corrected 2026-10-21**: the API
+itself lists `deepseek-flash` and `deepseek-v4-pro` (`GET /models` with the
+owner's key, HTTP 200), so the page's `deepseek-v4-flash` is not an id it
+serves; `models.json` uses the ids `/models` returns, and the first
+implementation task checks them against `/models` again before a run relies on
+them. Tagged with the Containerfile directory's hash and built
 when the tag is missing: a cache of a declared file (constitution IV).
 
 **Credential**: written to the container's stdin, read once by the entrypoint
