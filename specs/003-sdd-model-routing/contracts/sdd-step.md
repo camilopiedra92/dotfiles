@@ -36,7 +36,7 @@ existing directory.
    (FR-010) — and the Keychain item `deepseek-api` present and not blank; for
    sonnet, the Keychain item `claude-oauth` present and not blank.
 2. **The pass** (contracts/pass.md) with the `implement-deepseek` or
-   `implement-sonnet` row, the brief of FR-017 (`containers/worker/brief.md`
+   `implement-sonnet` row, the brief of FR-017 (`claude/speckit/brief.md`, frozen in the bundle at start,
    plus the feature's paths and, on a fix round, `.sdd/verify.json`), and the
    protected set and config-guard as the judge.
 3. **Check the response** before applying: a response reporting a model other

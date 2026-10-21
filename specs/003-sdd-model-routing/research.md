@@ -768,6 +768,37 @@ standard library suffices for a plain-HTTP gateway and a `CONNECT` tunnel;
 blocking every automation path in the patch — legitimate features add hooks
 and CI, as this one adds checks.
 
+## R27 — What runs in the worker, and what belongs outside it
+
+**Decision** (2026-10-21, the owner's review of the image): the image holds the
+runtime only — the agents, the firewall and entrypoint, the inventory script,
+and the tools the agents and Spec Kit call there: `rg` and `fd` (pi's grep
+and find tools need them and otherwise download them at run time), `jq` and
+PyYAML (Spec Kit's scripts parse JSON with jq, falling back to fragile
+grep/sed, and resolve preset templates with PyYAML), `xz` and `unzip` (mise's
+downloads), `make` and `ps` (check commands). No git: the export has no
+history, and without it no pass holds a push client. What governs a run —
+the implementing agent's brief, pi's models and their prices, the registries
+the proxy lets passes read — lives in `claude/speckit/` and is frozen in each
+run's bundle at start, like the routing table: changing it rebuilds no image
+and changes no run in progress.
+
+**Observed** (the first real run, 2026-10-21): Spec Kit 1.2.2's specify skill
+creates the feature directory with `mkdir`, `cp` and a `printf` redirected
+into `.specify/feature.json`, not with `create-new-feature.sh`. Claude Code's
+permission rules match a `Bash(<prefix>:*)` prefix only up to a word boundary
+(`mkdir -p specs/:*` does not match `mkdir -p specs/001-x`), and a shell
+redirect into a file is a file write matched by path (`Edit(<path>)`), not by
+the bare `Edit` rule; probed with `claude -p --permission-mode dontAsk`. The
+author profile allows `mkdir -p`, `cp`, `printf`, `ls`, `cd /work` and
+writes under `specs/` and `.specify/`; the container and the judge's writes
+list remain the boundary.
+
+**Alternatives**: the brief and pi's models inside the image — every edit
+would rebuild it and they would not be frozen per run; git in the image — a
+push client with no use; build-essential — only projects with native
+extensions lacking wheels need it; a trigger to revisit.
+
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 
 **Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the
@@ -855,6 +886,11 @@ versions. `prepare-worker` built the recipe, accepted it, and refused a
 planted difference naming the package. A check compares the lockfile with
 the inventory, so a Dependabot PR that moves only the lockfile fails in CI
 until the inventory is regenerated.
+
+**Observed** (2026-10-21): `container build -q` hung with no output for
+half an hour (twice: here and in the reproducibility spike), while the same
+build without `-q` finished in under ninety seconds with no cache;
+`prepare-worker` never passes `-q`.
 
 **Alternatives**: Nix or apko/melange — reproducible bits, at the price of a
 second build toolchain beside the one the machine already runs; Docker with

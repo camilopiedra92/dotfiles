@@ -205,7 +205,7 @@ def prerequisites(tools, repo):
     if r.returncode != 0 or not r.stdout.strip():
         raise Stop("the Keychain item claude-oauth is missing or blank: claude setup-token, then "
                    "security add-generic-password -U -a \"$USER\" -s claude-oauth -w")
-    for need in ("routing.yml", "profiles/author.json", "profiles/reader.json", "profiles/implementer.json"):
+    for need in ("routing.yml", "brief.md", "pi-models.json", "egress-registries.txt", "profiles/author.json", "profiles/reader.json", "profiles/implementer.json"):
         if not os.path.isfile(os.path.join(SPECKIT, need)):
             raise Stop(f"dotfiles lacks claude/speckit/{need}: update ~/dotfiles")
     if not local_config(repo, "sdd.check"):
@@ -335,6 +335,10 @@ def write_bundle(tools, repo, table):
     write_json(os.path.join(bundle, "routing.json"), routing_doc(tools, table))
     validate(tools, "routing.schema.json", load(os.path.join(bundle, "routing.json")), "the run's routing.json")
     shutil.copytree(os.path.join(SPECKIT, "profiles"), os.path.join(bundle, "profiles"))
+    # Run governance, frozen at start like the routing table: the brief, pi's
+    # models and their prices, and the registries the proxy lets passes read.
+    for name in ("brief.md", "pi-models.json", "egress-registries.txt"):
+        shutil.copy2(os.path.join(SPECKIT, name), os.path.join(bundle, name))
     os.makedirs(os.path.join(bundle, "hooks"))
     shutil.copy2(os.path.join(DOTFILES, "claude", "config-guard.sh"), os.path.join(bundle, "hooks", "config-guard.sh"))
     os.makedirs(registry(), exist_ok=True)
@@ -695,7 +699,8 @@ def usage(args):
         raise Stop("usage: sdd-run usage <run_id>")
     rid = args[0]
     repo = repo_root()
-    path = os.path.join(common_dir(repo), "sdd", rid, "usage.jsonl")
+    bundle = os.path.join(common_dir(repo), "sdd", rid)
+    path = os.path.join(bundle, "usage.jsonl")
     if not os.path.isfile(path):
         raise Stop(f"run {rid} has no usage.jsonl in this repository")
     lines = []
@@ -708,7 +713,9 @@ def usage(args):
             if d.get("run") == rid:
                 lines.append(d)
     prices = {}
-    for p in load(os.path.join(DOTFILES, "containers", "worker", "models.json"))["providers"].values():
+    # The run's own prices, frozen with it: a later change of the table
+    # does not reprice a past run.
+    for p in load(os.path.join(bundle, "pi-models.json"))["providers"].values():
         for m in p.get("models", []):
             prices[m["id"]] = m.get("cost", {})
     models, unreported = {}, []

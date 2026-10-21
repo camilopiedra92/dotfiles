@@ -77,6 +77,8 @@ for profile in ("author", "reader", "implementer"):
     with open(os.path.join(run, "profiles", profile + ".json"), "w") as f:
         json.dump({"permissions": {"allow": ["Read"]}, "_profile": profile}, f)
 shutil.copy(os.path.join(dotfiles, "claude", "config-guard.sh"), os.path.join(run, "hooks", "config-guard.sh"))
+for name in ("brief.md", "pi-models.json", "egress-registries.txt"):
+    shutil.copy(os.path.join(dotfiles, "claude", "speckit", name), os.path.join(run, name))
 # The authority the egress proxy printed, as egress-proxy writes it.
 with open(os.path.join(run, "proxy-ca.pem"), "w") as f:
     f.write("-----BEGIN CERTIFICATE-----\nfixture run authority\n-----END CERTIFICATE-----\n")

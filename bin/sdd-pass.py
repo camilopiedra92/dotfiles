@@ -448,8 +448,14 @@ def parse_result(agent, stdout):
         if result.get("is_error"):
             raise PassFailed("the agent reported an error: " + str(result.get("result", ""))[:300])
         if result.get("permission_denials"):
-            tools = ", ".join(sorted({d.get("tool_name", "?") for d in result["permission_denials"]}))
-            raise PassFailed(f"the agent was denied a tool it tried ({tools}); its profile did not allow it")
+            # Each denial with what it asked for — a command, a path — so the
+            # owner can tell a gap in the profile from an agent overreaching.
+            denied = []
+            for d in result["permission_denials"][:5]:
+                ask = d.get("tool_input") or {}
+                what = ask.get("command") or ask.get("file_path") or ask.get("pattern") or ""
+                denied.append(d.get("tool_name", "?") + (f": {str(what)[:200]}" if what else ""))
+            raise PassFailed("the agent was denied what its profile does not allow:\n  " + "\n  ".join(denied))
         return result.get("result", ""), result.get("structured_output"), {
             "total_cost_usd": result.get("total_cost_usd", 0), "modelUsage": result.get("modelUsage", {})}
     last = None
@@ -515,7 +521,9 @@ def run_agent(run, phase, implement=None):
         p.prepare(feature)
         prompt = f"{row['prompt']} {spec_input(run) if specify else feature}"
         if implement:
-            prompt += "\n\n" + open(os.path.join(DOTFILES, "containers", "worker", "brief.md")).read()
+            # The brief frozen in the bundle at start, as everything else
+            # that governs the run (contracts/routing.md).
+            prompt += "\n\n" + open(os.path.join(run.dir, "brief.md")).read()
             if fix_round(run, feature):
                 prompt += f"\nFix round: the latest verify outcome is {feature}/.sdd/verify.json.\n"
         schema = agent_schema(row["schema"]) if row.get("schema") in SCHEMA_STEPS else None
@@ -531,7 +539,7 @@ def run_agent(run, phase, implement=None):
         else:
             # pi's provider, from the worker's template, pointed at the proxy
             # with the placeholder as its key; the entrypoint refuses any other.
-            models = load(os.path.join(DOTFILES, "containers", "worker", "models.json"))
+            models = load(os.path.join(run.dir, "pi-models.json"))
             for provider in models["providers"].values():
                 provider["baseUrl"] = p.proxy_url()
                 provider["apiKey"] = p.token
@@ -934,7 +942,7 @@ def egress_proxy(run):
     if deepseek:
         providers["deepseek"] = {"upstream": "https://api.deepseek.com", "credential": run.secret("deepseek-api"),
                                  "models": "/models"}
-    with open(os.path.join(DOTFILES, "containers", "worker", "egress-registries.txt")) as f:
+    with open(os.path.join(run.dir, "egress-registries.txt")) as f:
         registries = [l.split("#")[0].strip() for l in f if l.split("#")[0].strip()]
     start = json.dumps({"listen": "0.0.0.0:8080", "admissions": "/admissions", "heartbeat_seconds": 60,
                         "providers": providers, "registries": registries, "paths": REGISTRY_PATHS})

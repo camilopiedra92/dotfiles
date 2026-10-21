@@ -403,9 +403,12 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
 
   # 10. An agent error, or a denied tool, fails the step naming the cause.
   fresh || return 1
-  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash"}]}\n' > "$sa/fixture/result.json"
+  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash","tool_input":{"command":"mkdir -p specs/002-x"}}]}\n' > "$sa/fixture/result.json"
   if out=$(pass agent plan); then fail "denial: succeeded"; fi
   printf '%s' "$out" | grep -qi "denied\|denial" || fail "denial: cause not named: $out"
+  # The command itself, so the owner can tell a profile gap from an agent
+  # overreaching (seen in the first real run, 2026-10-21).
+  printf '%s' "$out" | grep -qF "mkdir -p specs/002-x" || fail "denial: the denied command is not named: $out"
   clean_after "denial"
 
   # 11. Verify: the frozen check command in the container with the verify
@@ -440,11 +443,15 @@ SH
   result "implemented"
   edit src/app.py "print(2)"
   watch_admissions
+  printf 'BRIEF FROZEN IN THE BUNDLE\n' > "$run/brief.md"
   out=$(pass implement) || fail "implement: failed: $out"
   out=$(admitted anthropic registries 2>&1) || fail "implement: $out"
   [ "$(cat "$repo/src/app.py")" = "print(2)" ] || fail "implement: not applied"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-implement-run1" || fail "implement: not on the implement cache volume"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" && fail "implement: mounted the verify cache"
+  # The brief comes from the bundle, frozen at start like everything else
+  # that governs the run — never read live from dotfiles.
+  grep -qF "BRIEF FROZEN IN THE BUNDLE" "$sa/agents.jsonl" || fail "implement: the brief is not the bundle's"
   clean_after implement
 
   # 13. Implement on DeepSeek, opted in at start and now: pi gets the worker's
@@ -454,6 +461,8 @@ SH
   mkdir -p "$repo/$f/.sdd"
   printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"deepseek"}\n' > "$repo/$f/.sdd/route.json"
   tgit config sdd.implement deepseek
+  # pi's models come from the bundle, frozen at start (its prices too).
+  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["providers"]["deepseek"]["models"][0]["name"]="FROZEN-IN-BUNDLE"; json.dump(d,open(p,"w"))' "$run/pi-models.json"
   printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' > "$sa/fixture/result.json"
   edit src/app.py "print(3)"
   watch_admissions
@@ -478,6 +487,8 @@ name, argv, base, key = agent["agent"], agent["argv"], m["baseUrl"], m["apiKey"]
 bad = []
 if name != "pi" or "deepseek/deepseek-flash" not in argv:
     bad.append(f"deepseek: pi not run on deepseek/deepseek-flash: {name} {argv}")
+if m["models"][0]["name"] != "FROZEN-IN-BUNDLE":
+    bad.append("deepseek: the models.json pi got is not the bundle copy")
 if base != "http://192.0.2.10:8080" or key != tok:
     bad.append(f"deepseek: models.json not pointed at the proxy with the placeholder: {base}")
 if "CLAUDE_CODE_OAUTH_TOKEN" in agent["env"]:
@@ -787,6 +798,8 @@ sdd_lifecycle() {
 
   # egress-proxy, opted out: Claude's credential only.
   local opt pid
+  # The network policy comes from the bundle, frozen at start.
+  printf 'registry.frozen.example\n' > "$run/egress-registries.txt"
   for opt in sonnet deepseek; do
     printf '{"implement":"%s"}\n' "$opt" > "$run/optin.json"
     rm -f "$run/proxy.json" "$sa/proxy-start.json"
@@ -836,6 +849,7 @@ PY
     proxy_run=$(calls run | grep -F sdd-egress-proxy.py | tail -1)
     printf '%s' "$proxy_run" | grep -qF '"--network", "sdd-run1"' || fail "egress-proxy $opt: not on the run's network: $proxy_run"
     printf '%s' "$proxy_run" | grep -qF "$run/admissions:/admissions:ro" || fail "egress-proxy $opt: admissions not mounted read-only: $proxy_run"
+    /usr/bin/python3 -I -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["registries"] == ["registry.frozen.example"] else "egress-proxy: the registries are not the bundle'"'"'s")' "$sa/proxy-start.json" || status=1
     calls network | grep -qF '"create", "sdd-run1"' || fail "egress-proxy $opt: the run's network was not created"
     grep -qF -e "$claude_secret" -e "$deepseek_secret" "$sa/calls.jsonl" "$tmp/proxy.out" "$run"/*.json &&
       fail "egress-proxy $opt: a credential reached an argument, the bundle or the output"

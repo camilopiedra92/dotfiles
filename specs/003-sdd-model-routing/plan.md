@@ -112,6 +112,7 @@ bin/
 claude/speckit/
 ├── sdd-routed.yml               # new: the workflow
 ├── routing.yml                  # new: the routing table, one row per phase
+├── brief.md                     # new: the implementing agent's rules (FR-017), frozen in each run's bundle
 ├── profiles/                    # new: author, reader, implementer (inside the container)
 └── schemas/                     # new: the routing table's and each outcome file's
     ├── routing-table.schema.json
@@ -133,8 +134,7 @@ containers/worker/
 ├── package.json                 # new: the Claude Code CLI and pi, for npm ci (FR-032, R26)
 ├── package-lock.json            # new: their whole tree with integrity hashes
 ├── inventory.sh                 # new: lists every Debian and npm package the image installs, with its version
-├── inventory.txt                # new: that list for the committed recipe; prepare-worker refuses a build that differs
-└── brief.md                     # new: the implementing agent's rules (FR-017)
+└── inventory.txt                # new: that list for the committed recipe; prepare-worker refuses a build that differs
 checks/91-sdd-routing.sh         # new
 docs/sdd-routing.md              # new: how to run it, and the eval's result
 install.sh                       # + links sdd-run and sdd-step into ~/.local/bin

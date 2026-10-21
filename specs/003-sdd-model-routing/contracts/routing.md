@@ -14,6 +14,7 @@ exports it to every step, and writes into it before any step runs:
 | `check.json` | the repository's check command as read at start (`sdd.check`) |
 | `routing.json` | the merged effective table, each value with its layer |
 | `profiles/*.json` | copies of the profiles |
+| `brief.md` | a copy of the implementing agent's brief (FR-017), `claude/speckit/brief.md`: run governance, not part of the worker image |
 | `hooks/` | a copy of `config-guard.sh`, run by the judge (contracts/pass.md) |
 | `tools.json` | the absolute paths of `container`, `check-jsonschema` and `security`, resolved once at start |
 | `worker.json` | the worker image's tag, written by `prepare-worker` |
@@ -74,7 +75,7 @@ research R2). A row's fields:
 | `model` | a full model id (`claude-opus-5-5`, `claude-sonnet-5-5`, `deepseek-flash`) | never an alias (spec, Assumptions) |
 | `effort` | `low`, `medium`, `high`, `xhigh`, `max` | `--effort` for Claude, `--thinking` for pi (FR-021) |
 | `profile` | a file name in `claude/speckit/profiles/` | the permissions the agent runs with inside the container (defence in depth) |
-| `prompt` | `/speckit-<command>` plus fixed arguments, or, where Spec Kit has no command (review), the whole instruction | what the agent is asked; the feature's paths and, for `specify`, the run's `spec` input are appended by the dispatcher, and for the implement rows the brief (`containers/worker/brief.md`) |
+| `prompt` | `/speckit-<command>` plus fixed arguments, or, where Spec Kit has no command (review), the whole instruction | what the agent is asked; the feature's paths and, for `specify`, the run's `spec` input are appended by the dispatcher, and for the implement rows the brief (`claude/speckit/brief.md`) |
 | `writes` | path patterns relative to the repository root; defaults only | the only paths the step's patch may create, change or delete (contracts/pass.md); empty for a step that writes nothing |
 | `schema` | a file name in `claude/speckit/schemas/`, or absent | passed as `--json-schema`; the result's `structured_output` is written to the step's outcome file (research R10) |
 | `result_to` | a path relative to the feature directory, or absent | where the result's text is written (`analyze` → `analysis.md`) |

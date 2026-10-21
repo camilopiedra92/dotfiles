@@ -29,6 +29,7 @@ sr_fresh() { # sets SR (scratch), SR_REPO, SR_SA (stand-ins)
   cp -R "$SR_ROOT/claude/speckit/schemas" "$d/claude/speckit/"
   cp -R "$SR_ROOT/checks/sdd/run-fixture/profiles" "$d/claude/speckit/"
   cp "$SR_ROOT/checks/sdd/run-fixture/routing.yml" "$SR_ROOT/checks/sdd/run-fixture/sdd-routed.yml" "$d/claude/speckit/"
+  cp "$SR_ROOT/claude/speckit/brief.md" "$SR_ROOT/claude/speckit/pi-models.json" "$SR_ROOT/claude/speckit/egress-registries.txt" "$d/claude/speckit/"
   cp -R "$SR_ROOT/containers/worker" "$d/containers/"
   SR_SA=$SR/standins
   cp -R "$SR_ROOT/checks/sdd/standins" "$SR_SA"
@@ -380,6 +381,10 @@ sdd_run_usage() {
   sr_fresh || return 1
   common=$(sr_common)
   mkdir -p "$common/sdd/aaa111" "$common/sdd/bbb222"
+  # The run's own prices, frozen in its bundle: one unlike dotfiles', so a
+  # report priced from dotfiles shows.
+  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); c=d["providers"]["deepseek"]["models"][0]["cost"]; c.update(input=7.0, cacheRead=0.5, output=9.0); json.dump(d, open(sys.argv[2], "w"))' \
+    "$SR/dotfiles/claude/speckit/pi-models.json" "$common/sdd/aaa111/pi-models.json"
   cat > "$common/sdd/aaa111/usage.jsonl" << 'JSONL'
 {"run":"aaa111","event":"start","phase":"plan","model":"claude-opus-5-5","effort":"medium"}
 {"run":"aaa111","event":"end","phase":"plan","model":"claude-opus-5-5","effort":"medium","usage":{"total_cost_usd":0.25,"modelUsage":{}},"exit":0}
@@ -393,10 +398,10 @@ sdd_run_usage() {
 JSONL
   printf '{"run":"bbb222","event":"start","phase":"plan","model":"claude-opus-5-5","effort":"medium"}\n{"run":"bbb222","event":"end","phase":"plan","model":"claude-opus-5-5","effort":"medium","usage":{"total_cost_usd":9,"modelUsage":{}},"exit":0}\n' > "$common/sdd/bbb222/usage.jsonl"
   out=$(sr usage aaa111) || fail "usage: failed: $out"
-  # DeepSeek's price from models.json: input, cache read and output per
+  # DeepSeek's price from the run's pi-models.json: input, cache read and output per
   # million tokens.
   local want_ds
-  want_ds=$(/usr/bin/python3 -I -c 'import json,sys; c=json.load(open(sys.argv[1]))["providers"]["deepseek"]["models"][0]["cost"]; print("%.4f" % (c["input"] + 2*c["cacheRead"] + 0.5*c["output"]))' "$SR/dotfiles/containers/worker/models.json")
+  want_ds=$(/usr/bin/python3 -I -c 'import json,sys; c=json.load(open(sys.argv[1]))["providers"]["deepseek"]["models"][0]["cost"]; print("%.4f" % (c["input"] + 2*c["cacheRead"] + 0.5*c["output"]))' "$common/sdd/aaa111/pi-models.json")
   printf '%s\n' "$out" | grep -qE "^claude-opus-5-5 +2 attempts +[\$]0\.7500\$" || fail "usage: opus is not 2 attempts at \$0.7500: $out"
   printf '%s\n' "$out" | grep -qE "^deepseek-flash +1 attempt +\\\$$want_ds" || fail "usage: deepseek is not priced \$$want_ds from models.json: $out"
   printf '%s\n' "$out" | grep -qE '^unreported +2 attempts' || fail "usage: the two attempts that reported nothing are not listed: $out"

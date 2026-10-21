@@ -32,8 +32,12 @@ ARG UV_SHA256=1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab
 # runs on this image and makes the run's certificate authority with openssl
 # (research R23, R25); ca-certificates for the system store the entrypoint
 # adds that authority to, and curl for the downloads below. setpriv, which
-# drops to node, is in util-linux, already in the base. No ipset or resolver:
-# the firewall allows one address. No git: nothing a pass does needs it.
+# drops to node, is in util-linux, already in the base. The rest is what the
+# agents and Spec Kit call (checks/92: rg and fd for pi's grep and find, which
+# otherwise download them at run time; jq and PyYAML for Spec Kit's scripts;
+# xz and unzip for mise; make and ps for check commands). No git: the export
+# has no history, and without it no pass has a push client. No ipset or resolver:
+# the firewall allows one address.
 #
 # Plain HTTP, as Debian's own sources: apt verifies every Release file's
 # signature with the base's debian-archive-keyring. check-valid-until=no,
@@ -49,6 +53,8 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
   && apt-get install -y --no-install-recommends \
     iptables=1.8.9-2 python3=3.11.2-1+b1 openssl=3.0.22-1~deb12u1 \
     ca-certificates=20250419~deb12u2 curl=7.88.1-10+deb12u15 \
+    ripgrep=13.0.0-4+b2 fd-find=8.6.0-3 jq=1.6-2.1+deb12u3 python3-yaml=6.0-3+b2 \
+    xz-utils=5.4.1-1+deb12u2 unzip=6.0-28+deb12u1 make=4.3-4.1 procps=2:4.0.2-3 \
   && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; cd /tmp \
@@ -74,13 +80,15 @@ RUN cd /opt/sdd \
   && ln -s /opt/sdd/node_modules/.bin/claude /opt/sdd/node_modules/.bin/pi /usr/local/bin/ \
   && npm cache clean --force
 
-COPY init-firewall.sh entrypoint.sh inventory.sh models.json egress-registries.txt /usr/local/lib/sdd/
+COPY init-firewall.sh entrypoint.sh inventory.sh /usr/local/lib/sdd/
 
-# pi's models.json exists owned by node, so the entrypoint (root) can write
-# the proxy's URL into it without changing its owner.
+# pi's models.json exists, empty and owned by node, so the entrypoint (root)
+# can write the pass's copy into it without changing its owner. Its content —
+# the models, their prices, the proxy — is run governance, frozen in each
+# run's bundle (claude/speckit/pi-models.json), not part of the image.
 RUN chmod 755 /usr/local/lib/sdd/init-firewall.sh /usr/local/lib/sdd/entrypoint.sh /usr/local/lib/sdd/inventory.sh \
   && install -d -o node -g node /home/node/.pi /home/node/.pi/agent /work \
-  && install -m 644 -o node -g node /usr/local/lib/sdd/models.json /home/node/.pi/agent/models.json
+  && install -m 644 -o node -g node /dev/null /home/node/.pi/agent/models.json
 
 WORKDIR /work
 # Root, for the firewall; the entrypoint drops to node before the command.

@@ -91,7 +91,7 @@ phases:
     agent: pi
     model: deepseek-flash
     effort: high
-    # The brief (containers/worker/brief.md) follows the prompt for both
+    # The brief (claude/speckit/brief.md, frozen in the bundle) follows the prompt for both
     # implementers, so both get the same instructions (US2 AS6).
     prompt: /speckit-implement
     writes: ["**"]

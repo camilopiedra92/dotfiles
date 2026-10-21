@@ -27,6 +27,7 @@ e2e() {
   cp "$dot/claude/config-guard.sh" "$d/claude/"
   cp -R "$dot/claude/speckit/schemas" "$dot/claude/speckit/profiles" "$d/claude/speckit/"
   cp "$dot/claude/speckit/routing.yml" "$dot/claude/speckit/sdd-routed.yml" "$d/claude/speckit/"
+  cp "$dot/claude/speckit/brief.md" "$dot/claude/speckit/pi-models.json" "$dot/claude/speckit/egress-registries.txt" "$d/claude/speckit/"
   cp -R "$dot/containers/worker" "$d/containers/"
   cp -R "$dot/checks/sdd/standins" "$sa"
   # The real engine, not check 95's stand-in for it.

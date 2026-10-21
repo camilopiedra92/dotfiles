@@ -171,7 +171,6 @@ pwd -P > "$(dirname "$ARGS")/cwd"
 STUB
   mkdir -p "$tmp/lib" "$tmp/home/.pi/agent" "$tmp/root/work" "$tmp/root/bundle"
   cp containers/worker/entrypoint.sh "$tmp/lib/"
-  cp containers/worker/models.json "$tmp/lib/" 2> /dev/null
   cat > "$tmp/lib/init-firewall.sh" << 'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "firewall $*" >> "$LOG"
@@ -587,3 +586,27 @@ sys.exit(1 if locked != inventory else 0)
 PY
 }
 check "the worker's inventory lists exactly the npm packages its lockfile installs" sdd_worker_inventory_matches_lock
+
+# What the agents and Spec Kit call inside the worker, each for its reason
+# (reviewed 2026-10-21): pi's grep and find tools need rg and fd, and
+# otherwise try to download them at run time; Spec Kit's scripts parse JSON
+# with jq (their grep/sed fallback is fragile) and resolve preset templates
+# with PyYAML; mise unpacks .tar.xz and .zip downloads; check commands are
+# often `make …`; ps is procps. No git: the export has no history to use, and
+# without it no pass has a push client. The inventory is what prepare-worker
+# enforces, so each is checked there.
+sdd_worker_tools() {
+  local pkg missing=''
+  for pkg in ripgrep fd-find jq xz-utils unzip make procps python3-yaml; do
+    grep -qE "^deb $pkg " containers/worker/inventory.txt || missing="$missing $pkg"
+  done
+  [ -z "$missing" ] || {
+    echo "the worker's inventory lacks:$missing"
+    return 1
+  }
+  ! grep -qE '^deb git ' containers/worker/inventory.txt || {
+    echo "the worker installs git, which gives a pass a push client"
+    return 1
+  }
+}
+check "the worker carries every tool its agents and Spec Kit call, and no git" sdd_worker_tools
