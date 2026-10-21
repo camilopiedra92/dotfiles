@@ -78,8 +78,9 @@ input pauses without a TTY, and a bound verdict input set on resume decides it
 `enum: ["", <its options>]`, default `""`, so `sdd-run resume <id> <verdict>`
 answers any of them (FR-004). Clarify's questions go to
 `<feature>/clarify-questions.md` (Markdown, for the owner); `clarify-ask` is
-told through its arguments to write them there with a recommendation each and
-to edit nothing else, and to write `clarify.json` saying how many it wrote;
+told through its prompt to write them there with a recommendation each and to
+edit nothing else, and returns the count as structured output (`--json-schema`)
+that the dispatcher writes to `clarify.json` (R2, R10);
 the gate `answer-clarify` shows the file (`show_file`); `clarify-apply` runs
 clarify again with "the answers are in clarify-questions.md; ask nothing".
 
