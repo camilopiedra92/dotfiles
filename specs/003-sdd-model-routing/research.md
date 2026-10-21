@@ -236,6 +236,12 @@ printing how to run its postinstall; the image runs that one script by name
 offline). Neither `ipset` nor a resolver is installed: with the proxy as the
 only destination (R23) the firewall allows one address and resolves nothing,
 so R5's "ipset of allowed domains" no longer applies.
+Run with the pass's mounts (`/work`, `/bundle` read-only holding a filled
+`models.json`, a cache volume at `/cache`): the command started in `/work` as
+`node` and wrote there; pi's `models.json` in node's home was the bundle's;
+`/cache` was node's and npm's and uv's caches pointed into it; a
+`models.json` whose `baseUrl` was `https://api.deepseek.com` stopped the
+container before its firewall, naming the file.
 
 ## R6 — A disposable checkout, mounted alone
 

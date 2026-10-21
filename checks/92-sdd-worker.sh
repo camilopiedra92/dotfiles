@@ -33,7 +33,7 @@ esac
 exit 0
 STUB
   chmod +x "$bin/rec"
-  for name in iptables ip6tables iptables-save ip6tables-save ipset dig getent host nslookup curl; do
+  for name in iptables ip6tables iptables-save ip6tables-save ipset dig getent host nslookup curl chown; do
     ln -s rec "$bin/$name"
   done
 }
@@ -167,8 +167,9 @@ STUB
 #!/usr/bin/env bash
 printf '%s\n' "setpriv" >> "$LOG"
 printf '%s\n' "$@" > "$ARGS"
+pwd -P > "$(dirname "$ARGS")/cwd"
 STUB
-  mkdir -p "$tmp/lib" "$tmp/home/.pi/agent"
+  mkdir -p "$tmp/lib" "$tmp/home/.pi/agent" "$tmp/root/work" "$tmp/root/bundle"
   cp containers/worker/entrypoint.sh "$tmp/lib/"
   cp containers/worker/models.json "$tmp/lib/" 2> /dev/null
   cat > "$tmp/lib/init-firewall.sh" << 'STUB'
@@ -193,7 +194,8 @@ sdd_ep_run() {
   shift
   : > "$tmp/log"
   : > "$tmp/args"
-  env -i PATH="$tmp/bin:/usr/bin:/bin" LOG="$tmp/log" ARGS="$tmp/args" FW_EXIT="${FW_EXIT:-0}" "${vars[@]}" \
+  env -i PATH="$tmp/bin:/usr/bin:/bin" LOG="$tmp/log" ARGS="$tmp/args" FW_EXIT="${FW_EXIT:-0}" \
+    SDD_MOUNT_ROOT="$tmp/root" "${vars[@]}" \
     bash "$tmp/lib/entrypoint.sh" "$@" > "$tmp/out" 2>&1
 }
 
@@ -284,7 +286,11 @@ sdd_ep_runs_as_node() {
       return 1
     }
   done
-  ! grep -qE '^(LOG|ARGS|FW_EXIT|SDD_PROXY)=' <<< "$args" || {
+  ! grep -qE '^(NPM_CONFIG_CACHE|UV_CACHE_DIR)=' <<< "$args" || {
+    echo "cache variables were set with no cache mounted"
+    return 1
+  }
+  ! grep -qE '^(LOG|ARGS|FW_EXIT|SDD_PROXY|SDD_MOUNT_ROOT)=' <<< "$args" || {
     echo "a variable outside the allow list reached the command"
     return 1
   }
@@ -297,8 +303,7 @@ sdd_ep_refuses() {
   trap 'rm -rf "$tmp"' RETURN
   sdd_ep_setup "$tmp"
   for case in CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-planted ANTHROPIC_BASE_URL=https://api.anthropic.com \
-    ANTHROPIC_BASE_URL=http://192.168.70.3:8080 SDD_DEEPSEEK_BASE_URL=https://api.deepseek.com \
-    SDD_DEEPSEEK_BASE_URL=http://192.168.70.2:8081/deepseek; do
+    ANTHROPIC_BASE_URL=http://192.168.70.3:8080; do
     if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 "$case" -- true; then
       echo "accepted $case"
       return 1
@@ -315,33 +320,80 @@ sdd_ep_refuses() {
 }
 check "the worker entrypoint refuses a token other than the placeholder and a base URL other than the proxy" sdd_ep_refuses
 
+# pi's models.json arrives filled at /bundle/models.json (contracts/pass.md);
+# the entrypoint copies it to node's home only when every provider points at
+# the proxy with the placeholder key, and stops the pass otherwise.
 sdd_ep_pi_models() {
-  local tmp
+  local tmp models good bad
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   sdd_ep_setup "$tmp"
-  [ -f "$tmp/lib/models.json" ] || {
-    echo "containers/worker/models.json is missing"
+  models=$tmp/root/bundle/models.json
+  good='{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8080/deepseek","apiKey":"sdd-placeholder","models":[]}}}'
+  printf '%s\n' "$good" > "$models"
+  sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true || {
+    echo "failed with a models.json at the proxy: $(cat "$tmp/out")"
     return 1
   }
-  sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 SDD_DEEPSEEK_BASE_URL=http://192.168.70.2:8080/deepseek -- true || {
-    echo "failed with a DeepSeek base URL at the proxy: $(cat "$tmp/out")"
+  [ "$(cat "$tmp/home/.pi/agent/models.json")" = "$good" ] || {
+    echo "pi's models.json in node's home is not the bundle's"
     return 1
   }
-  python3 -I - "$tmp/home/.pi/agent/models.json" << 'PY' || return 1
-import json, sys
-try:
-    m = json.load(open(sys.argv[1]))
-except Exception as e:
-    sys.exit(f"pi's models.json is not JSON after rendering: {e}")
-p = m.get("providers", {}).get("deepseek", {})
-if p.get("baseUrl") != "http://192.168.70.2:8080/deepseek":
-    sys.exit(f"baseUrl is {p.get('baseUrl')!r}, not the proxy's")
-if p.get("apiKey") != "sdd-placeholder":
-    sys.exit(f"apiKey is not the placeholder")
-ids = sorted(x["id"] for x in p.get("models", []))
-if ids != ["deepseek-flash", "deepseek-v4-pro"]:
-    sys.exit(f"models are {ids}, not the ids /models served on 2026-10-21")
-PY
+  for bad in \
+    '{"providers":{"deepseek":{"baseUrl":"https://api.deepseek.com","apiKey":"sdd-placeholder"}}}' \
+    '{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8081","apiKey":"sdd-placeholder"}}}' \
+    '{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8080","apiKey":"sk-planted-key"}}}' \
+    '{"providers":{"a":{"baseUrl":"http://192.168.70.2:8080","apiKey":"sdd-placeholder"},"b":{"baseUrl":"http://10.0.0.1:80","apiKey":"sdd-placeholder"}}}' \
+    '{"providers":{}}' 'not json'; do
+    printf '%s\n' "$bad" > "$models"
+    echo template > "$tmp/home/.pi/agent/models.json"
+    if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true; then
+      echo "accepted the models.json $bad"
+      return 1
+    fi
+    ! grep -qE '^(firewall|setpriv)' "$tmp/log" || {
+      echo "ran the firewall or the command with the models.json $bad"
+      return 1
+    }
+    [ "$(cat "$tmp/home/.pi/agent/models.json")" = template ] || {
+      echo "copied the refused models.json $bad"
+      return 1
+    }
+    ! grep -qF sk-planted-key "$tmp/out" || {
+      echo "printed the key it refused"
+      return 1
+    }
+  done
 }
-check "the worker entrypoint writes pi's models.json pointing DeepSeek at the proxy, with a placeholder key" sdd_ep_pi_models
+check "the worker entrypoint gives pi the bundle's models.json only when every provider is the proxy with the placeholder key" sdd_ep_pi_models
+
+sdd_ep_cache_and_work() {
+  local tmp args
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sdd_ep_setup "$tmp"
+  mkdir -p "$tmp/root/cache"
+  sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- pwd || {
+    echo "failed with a cache mounted: $(cat "$tmp/out")"
+    return 1
+  }
+  args=$(cat "$tmp/args")
+  grep -qx "chown node:node $tmp/root/cache" "$tmp/log" || {
+    echo "the cache volume was not given to node"
+    return 1
+  }
+  for want in NPM_CONFIG_CACHE="$tmp/root/cache/npm" UV_CACHE_DIR="$tmp/root/cache/uv" \
+    PIP_CACHE_DIR="$tmp/root/cache/pip" MISE_CACHE_DIR="$tmp/root/cache/mise"; do
+    grep -qx -- "$want" <<< "$args" || {
+      echo "the command's environment lacks $want"
+      return 1
+    }
+  done
+  # setpriv is a stand-in that does not exec, so the working directory is
+  # the entrypoint's own when it calls it: the stub records it.
+  [ "$(cat "$tmp/cwd")" = "$(cd "$tmp/root/work" && pwd -P)" ] || {
+    echo "the command does not start in /work but in $(cat "$tmp/cwd")"
+    return 1
+  }
+}
+check "the worker entrypoint gives node the cache volume, points every package manager at it, and starts in /work" sdd_ep_cache_and_work

@@ -8,7 +8,10 @@
 #   SDD_PROXY                ip:port of the run's egress proxy (required)
 #   ANTHROPIC_BASE_URL       for a Claude pass; must be the proxy
 #   CLAUDE_CODE_OAUTH_TOKEN  for a Claude pass; must be the placeholder
-#   SDD_DEEPSEEK_BASE_URL    for a pi pass; must be the proxy
+# and, from the pass's read-only mounts:
+#   /bundle/models.json      for a pi pass: pi's provider, every baseUrl the
+#                            proxy and every apiKey the placeholder
+#   /cache                   the pass kind's cache volume, when mounted
 # No credential ever enters this container: the proxy replaces the
 # placeholder (research R23). A real-looking token here means the host side
 # is wrong, so it stops the pass instead of passing it on.
@@ -40,8 +43,34 @@ fi
 if [ -n "${ANTHROPIC_BASE_URL:-}" ] && ! at_proxy "$ANTHROPIC_BASE_URL"; then
   fail "ANTHROPIC_BASE_URL must point at the egress proxy ($proxy_url)"
 fi
-if [ -n "${SDD_DEEPSEEK_BASE_URL:-}" ] && ! at_proxy "$SDD_DEEPSEEK_BASE_URL"; then
-  fail "SDD_DEEPSEEK_BASE_URL must point at the egress proxy ($proxy_url)"
+
+# The mount points of contracts/pass.md. SDD_MOUNT_ROOT is unset in the image;
+# checks/92-sdd-worker.sh sets it to a scratch directory, since a test on the
+# host cannot create /bundle, and nothing in a pass sets it.
+root=${SDD_MOUNT_ROOT:-}
+bundle=$root/bundle
+cache=$root/cache
+work=$root/work
+
+# pi's models.json comes from the host; it is checked before the firewall is
+# even up, so a file that would send pi anywhere but the proxy, or carry a
+# key, stops the pass.
+if [ -f "$bundle/models.json" ]; then
+  python3 -I - "$bundle/models.json" "$proxy_ip" "$proxy_port" "$placeholder" << 'PY' ||
+import json, re, sys
+path, ip, port, placeholder = sys.argv[1:]
+at_proxy = re.compile(r"http://%s:%s(/[A-Za-z0-9._/-]*)?" % (re.escape(ip), port))
+try:
+    providers = json.load(open(path))["providers"]
+    ok = bool(providers) and all(
+        at_proxy.fullmatch(p["baseUrl"]) and p["apiKey"] == placeholder
+        for p in providers.values()
+    )
+except Exception:
+    ok = False
+sys.exit(0 if ok else 1)
+PY
+    fail "/bundle/models.json must give every provider the proxy as baseUrl and the placeholder as apiKey"
 fi
 
 "$here/init-firewall.sh" "$proxy_ip" "$proxy_port"
@@ -51,8 +80,8 @@ home=$(getent passwd node | cut -d: -f6)
 
 # pi reads its provider from ~/.pi/agent/models.json; the image creates that
 # file owned by node, and writing into it keeps its owner.
-if [ -n "${SDD_DEEPSEEK_BASE_URL:-}" ]; then
-  sed "s#\"http://sdd-egress-proxy.invalid\"#\"$SDD_DEEPSEEK_BASE_URL\"#" "$here/models.json" > "$home/.pi/agent/models.json"
+if [ -f "$bundle/models.json" ]; then
+  cat "$bundle/models.json" > "$home/.pi/agent/models.json"
 fi
 
 env=(
@@ -73,7 +102,20 @@ env=(
 [ -z "${ANTHROPIC_BASE_URL:-}" ] || env+=(ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL")
 [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || env+=(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN")
 
-cd /work 2> /dev/null || cd "$home"
+# A cache volume is created by the runtime owned by root; node gets it, and
+# every package manager in the image keeps its cache there.
+if [ -d "$cache" ]; then
+  chown node:node "$cache"
+  env+=(
+    NPM_CONFIG_CACHE="$cache/npm"
+    UV_CACHE_DIR="$cache/uv"
+    PIP_CACHE_DIR="$cache/pip"
+    MISE_CACHE_DIR="$cache/mise"
+    MISE_DATA_DIR="$cache/mise-data"
+  )
+fi
+
+cd "$work"
 exec setpriv --reuid=node --regid=node --init-groups --no-new-privs \
   --inh-caps=-all --bounding-set=-all \
   env -i "${env[@]}" "$@"
