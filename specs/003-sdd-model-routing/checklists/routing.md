@@ -21,7 +21,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 - [x] CHK004 Is it specified who or what marks tasks `[X]` in a routed run, and on which evidence? [Completeness, Spec §FR-006]
 - [x] CHK005 Are the requirements for a routed run that is not opted in (implementation on Sonnet) as complete as those for the external path — verify, review and loop limits included? [Coverage, Spec §FR-010]
 - [x] CHK006 Is the content the external agent receives (tasks, constitution, test-first rules) defined precisely enough to tell a complete brief from a partial one? [Clarity, Spec §US2 AS1]
-- [ ] CHK007 Are the prerequisites FR-011 covers listed exhaustively, with the phase each one is checked at? [Completeness, Spec §FR-011, contracts/sdd-run.md]
+- [x] CHK007 Are the prerequisites FR-011 covers listed exhaustively, with the phase each one is checked at? [Completeness, Spec §FR-011, contracts/sdd-run.md]
 
 ## Requirement Clarity
 

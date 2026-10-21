@@ -273,9 +273,11 @@ what landed in the commit, and what was printed.
 - **FR-011**: Every program the routed run depends on MUST be declared in this
   repository's manifests (constitution I). Before the phase that needs it, a
   run MUST stop naming any missing prerequisite and how to provide it: the
-  routing's scripts, the repository's check command, the container runtime
-  and the owner's Claude token for every routed run, and, for the external
-  path, its credential.
+  routing's scripts, the repository's check command, the container runtime,
+  the owner's Claude token, a working `/usr/bin/python3` and the run's egress
+  proxy answering, for every routed run, and, for the external path, its
+  credential. `/usr/bin/python3` comes with the Command Line Tools, which
+  Homebrew's installer — a bootstrap the constitution allows — installs.
 - **FR-012**: `sdd-init` MUST install the routing in a fresh repository in the
   same commit as Spec Kit, and MUST print the commands that add or update it
   in a repository that already has Spec Kit.

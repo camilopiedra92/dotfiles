@@ -3,7 +3,7 @@
 File: `claude/speckit/sdd-routed.yml`, Spec Kit workflow schema 1.0, installed
 per repository with `specify workflow add`. The workflow owns order,
 checkpoints, loops and resume; it names no model, effort or permission. Every
-step that runs an agent is a `shell` step calling `sdd-step agent <phase>`,
+step that runs an agent is a `shell` step calling `"$SDD_STEP" agent <phase>`,
 which takes everything else from that phase's row of the routing table
 (contracts/routing.md, research R2). `<f>` is the feature directory; outcome
 files live in `<f>/.sdd/` and are read only through `sdd-step outcome`
