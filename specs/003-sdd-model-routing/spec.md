@@ -275,8 +275,9 @@ what landed in the commit, and what was printed.
   retry adds exactly one.
 - **FR-016**: Every step whose result a branch or a later step reads MUST
   leave it in an outcome file; a step whose output is a Spec Kit artifact
-  (spec, plan, checklists, tasks, the analysis) hands over through that
-  artifact. The run's branches MUST be decided by a deterministic reader that
+  (spec, plan, checklists, tasks) hands over through that artifact, and the
+  analysis, which Spec Kit's analyze only reports, is saved to a file by a
+  deterministic step for the plan checkpoint to show. The run's branches MUST be decided by a deterministic reader that
   validates each outcome file against its schema; a missing or invalid outcome file MUST fail the
   step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.

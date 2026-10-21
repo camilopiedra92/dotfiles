@@ -32,7 +32,7 @@ offline against stand-ins; the last two need the real services.
    worktree is unchanged and no commit is made.
 8. **Failure leaves nothing behind** (US2 AS7): a stand-in agent that crashes
    midway leaves the feature's worktree unchanged and no checkout behind.
-9. **Prerequisites** (US2 AS5–6, SC-004, FR-011): each missing one stops the
+9. **Prerequisites** (US2 AS5, SC-004, FR-011): each missing one stops the
    step naming it, and the stand-in `container` records no call.
 10. **sdd-init** (US3): against a stand-in `specify`, a fresh repository gets
     `specify workflow add` in the same commit; one with `.specify/` gets the

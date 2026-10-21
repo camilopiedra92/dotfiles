@@ -31,7 +31,8 @@ Every gate binds one of them with `verdict_input` (R3).
 | 6 | `review-spec` | gate | owner | — | `spec_verdict`, reject aborts; then `sdd-step phase-done specify` |
 | 7 | `plan` | command `speckit.plan` | opus | plan artifacts | |
 | 8 | `checklist` | command `speckit.checklist` | opus | `checklists/` | |
-| 9 | `analyze` | command `speckit.analyze` | opus | `analysis.md` | a Spec Kit artifact, not an outcome file (FR-016); `review-plan` shows it |
+| 9 | `analyze` | command `speckit.analyze` | opus | — | read-only upstream: its report is only its captured output in `state.json` |
+| 9.1 | `save-analysis` | shell `sdd-step save-analysis` | — | `analysis.md` | copies analyze's captured report from the run's `state.json` (read, never written) into the feature directory; `review-plan` shows it; no agent text passes through a `run` field (FR-016) |
 | 10 | `review-plan` | gate | owner | — | `plan_verdict`, reject aborts; then `sdd-step phase-done plan` |
 | 11 | `tasks` | command `speckit.tasks` | sonnet | `tasks.md` | then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |

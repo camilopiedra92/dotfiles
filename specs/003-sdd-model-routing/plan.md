@@ -35,8 +35,9 @@ the run state Spec Kit keeps under `.specify/workflows/runs/`, local git
 config (`sdd.implement`, `sdd.check`), the Keychain item `deepseek-api`.
 
 **Testing**: `./check.sh`; a new `checks/91-sdd-routing.sh` driving `sdd-run`,
-`sdd-step` and the workflow against stand-ins for `claude`, `container`,
-`security` and `specify` in scratch repositories, never the network. The
+`sdd-step` and the workflow on the real Spec Kit engine, against stand-ins
+for `claude`, `container` and `security` in scratch repositories, never the
+network; CI installs the engine and `check-jsonschema` at their pins. The
 schemas are checked against valid and invalid sample outcomes.
 
 **Target Platform**: this Mac, macOS on Apple Silicon (constitution preamble).
@@ -61,7 +62,7 @@ at once in separate worktrees.
 | I. Declared, never hand-installed | `container` in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/pi-worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
 | II. One owner per layer | `container` is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand. The workflow and the schemas are driven by the same checks. |
-| IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt` and two links in `install.sh`, which `./drift.sh` already reports on. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
+| IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds `container`'s first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
 | V. Upstream's files stay upstream's | No file Spec Kit installs is edited, and its run state is never written by our scripts; the workflow reaches a repository only through `specify workflow add`; `config-guard.sh` is reused unchanged. |
 | VI. The why beside the subject | Each non-obvious line carries its reason and date; the probes and sources behind the design are cited from research.md. |
 
