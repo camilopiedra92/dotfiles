@@ -1,10 +1,28 @@
 # Contract: the routing table and `sdd-step agent`
 
-## `claude/speckit/routing.yml`
+## Layers (FR-027)
 
-One row per phase, validated against `claude/speckit/schemas/routing-table.schema.json`
-by `sdd-run` before any step and by `./check.sh` (FR-001, research R2). A
-row's fields:
+| Precedence | File or source | Versioned | Holds |
+|---|---|---|---|
+| 1, lowest | `~/dotfiles/claude/speckit/routing.yml` | in dotfiles | every phase's full row: the defaults |
+| 2 | `<repo>/.claude/sdd-routing.yml` | in the routed repository | only the fields that repository changes |
+| 3 | `<repo>/.claude/sdd-routing.local.yml` | no — `sdd-run` adds it to the repository's `.git/info/exclude` when it creates it | only the owner's local changes |
+| 4, highest | `sdd-run start --set <phase>.<field>=<value>` (repeatable) | no | one run's changes |
+
+Merge: per phase, per field; a higher layer replaces a field, never a whole
+row, and adds no phase the defaults do not have. Validation: each layer
+against `claude/speckit/schemas/routing-layer.schema.json`, the merged table
+against `routing-table.schema.json`; any failure stops `sdd-run` naming the
+layer, phase and field. Record: `.sdd/routing.json` holds the effective table
+with each value's layer. `sdd-run routing [--set …]` prints that table from
+the repository root without starting a run. A row with `agent: pi` applies
+only when `sdd.implement` opts the repository in; otherwise the run uses
+`implement-sonnet` and says so, whatever the layers say.
+
+## The defaults, `claude/speckit/routing.yml`
+
+Validated by `./check.sh` against `routing-table.schema.json` (FR-001,
+research R2). A row's fields:
 
 | Field | Values | Meaning |
 |---|---|---|

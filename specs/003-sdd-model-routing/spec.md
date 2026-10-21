@@ -44,6 +44,7 @@ any of them. The last group came from the fresh-context review of
 - Q: What effort does each step run at? → A: Set per step by the routing, so neither the owner's interactive effort nor an environment variable leaks into a run: every Claude step at `medium`, the documented default for Opus 5.5 and Sonnet 5.5 today, and the DeepSeek step at `high`, the lowest reasoning level DeepSeek's own pi configuration maps to. A higher level for a judgment phase is a change to measure on one story first, then a one-line edit of the routing.
 - Q: Can a step's model, effort, permissions and context be chosen per step, given Spec Kit 1.2.2's Claude integration refuses per-step arguments? → A: Yes: the workflow engine keeps the order, checkpoints, loops and resume, and every agent step goes through one dispatcher reading a routing table with a row per phase (research R2). The owner asked for model and effort per step and for a design of the highest standard, not the smallest one, after an independent audit proposed a smaller design (2026-10-21).
 - Q: Must each change of model or effort reload all the context? → A: No: each step loads only what it needs — no MCP servers, only its profile's tools — measured at half the context, with the whole prefix read from the prompt cache on the next step of the same model (research R16); effort changes do not break the cache, model changes do, so same-model steps are kept together.
+- Q: Where is the routing configured? → A: In layers, lowest precedence first: defaults in this repository; a project file versioned in the repository it routes; a local file in that repository that git ignores; and one run's overrides on the command line. Layers merge per phase and per field, the merged table is validated before any step, and each run records every value with the layer it came from. No layer can send code to the external provider: that stays the repository's opt-in. Modelled on Claude Code's own settings precedence.
 - Q: Which harness runs DeepSeek? → A: pi, the path DeepSeek documents and supports, in a container whose firewall denies all egress but an allow list (Anthropic's reference devcontainer pattern); Claude Code on DeepSeek worked equally in a one-task spike but is unsupported by Anthropic (research R5, R17).
 
 ## User Scenarios & Testing *(mandatory)*
@@ -312,6 +313,15 @@ what landed in the commit, and what was printed.
   be asserted by a check, so a
   Spec Kit update that drops one fails the gate before it lands instead of
   silently routing without it.
+- **FR-027**: The routing MUST be configurable in four layers, lowest
+  precedence first — defaults kept in this repository, a project file
+  versioned in the routed repository, a local file there that git ignores,
+  and one run's overrides given when the run starts — merged per phase and per
+  field. The merged table MUST be validated before any step, an invalid value
+  stopping the run naming the layer and field; each run MUST record every
+  effective value and the layer it came from, and the owner MUST be able to
+  print that table. A routing layer MUST NOT enable the external provider for
+  a repository that has not opted in.
 - **FR-026**: Each step MUST load only the context its row names: no MCP
   server, and only the tools and permissions of its profile, so an unattended
   step can do nothing its phase does not need and same-model steps reuse the
@@ -351,8 +361,8 @@ fixed above 30 minutes),
 - **Workflow**: the order of phases, the checkpoints and the loop limits —
   one workflow file, copied into each repository by Spec Kit.
 - **Routing table**: one row per phase — agent, model, effort, permission
-  profile, output schema, time limit — on this machine, read by the
-  dispatcher at every step.
+  profile, output schema, time limit — merged from four layers (FR-027) and
+  read by the dispatcher at every step.
 - **Run**: one pass of a feature through the routed workflow, with its state,
   its pauses and the usage each step reported.
 - **Outcome file**: see Definitions.

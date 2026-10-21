@@ -6,7 +6,7 @@ No database: each entity is a file or a setting that already has an owner.
 |---|---|---|---|
 | Routing | `claude/speckit/sdd-routed.yml`, copied into each repository's `.specify/workflows/` by `specify workflow add` | `version`; per step: `model`, `integration`, gate `verdict_input`, loop `max_iterations` | this repository, through `sdd-init` |
 | Run | `.specify/workflows/runs/<run_id>/` (`state.json`, `inputs.json`, `log.jsonl`), Spec Kit's, read-only to our scripts | status (`running`, `paused`, `completed`, `failed`, `aborted`), current step, each step's `output` (a Claude step's JSON result with `total_cost_usd` and `modelUsage`) | Spec Kit's engine |
-| Routing table | `claude/speckit/routing.yml` on this machine | per phase: `agent`, `model`, `effort`, `profile`, `prompt`, `schema`, `result_to`, `timeout` (contracts/routing.md) | this repository |
+| Routing table | defaults `claude/speckit/routing.yml`; project `<repo>/.claude/sdd-routing.yml`; local `<repo>/.claude/sdd-routing.local.yml`; a run's `--set` — merged per FR-027 | per phase: `agent`, `model`, `effort`, `profile`, `prompt`, `schema`, `result_to`, `timeout` (contracts/routing.md) | this repository |
 | Usage log | `<feature>/.sdd/usage.jsonl` | one line per agent step attempt: phase, model, effort given, effort and usage reported | `sdd-step agent`, `sdd-step implement` |
 | Outcome files | `<feature>/.sdd/<step>.json`, one schema each in `claude/speckit/schemas/` | below | the step named |
 | Clarify questions | `<feature>/clarify-questions.md` (Markdown, for the owner) | up to five questions, options, recommendation, the owner's answer | `clarify-ask`, then the owner |
@@ -25,7 +25,7 @@ fields below; anything else is refused (`additionalProperties: false`).
 
 | File | Fields | Token `sdd-step outcome` prints |
 |---|---|---|
-| `routing.json` | per model: `id`, `effort` configured; `speckit`, `claude_code` and `container` versions | — (record, FR-021) |
+| `routing.json` | the effective table: per phase and field, the value and the layer it came from; `speckit`, `claude_code` and container runtime versions | — (record, FR-021, FR-027) |
 | `phases.json` | `done`: ordered list of `{phase: specify/plan/tasks/build, at}` | — (read by `sdd-run start --from`, FR-022) |
 | `route.json` | `agent`: `deepseek`/`sonnet` | — (read by `implement`) |
 | `clarify.json` | `questions`: integer 0–5 | `yes` when > 0, else `no` |

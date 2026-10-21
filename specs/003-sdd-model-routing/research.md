@@ -301,7 +301,7 @@ refused exits, version matching, held-out tests). Measuring from tasks onward
 is exact rather than a shortcut: every earlier phase runs on Opus in both
 arms. Correction, the same day: the harness runs single-step arms only (one
 `claude -p /speckit-implement` per run), so it does not "already settle" a
-multi-step arm's gates and counting; SC-001 now fixes those, and T043
+multi-step arm's gates and counting; SC-001 now fixes those, and T044
 extends the harness to them. Three counted runs per arm on both fixtures,
 from Anthropic's "Demystifying evals for AI agents". The routed arm starts with `sdd-run start --from`, the fixture's state
 carrying `.sdd/phases.json` with specify and plan done.
@@ -409,6 +409,27 @@ Both work at equal quality on this task; pi used about a fifth of the tokens.
 One task: directional. pi is kept (R5) because it is the path DeepSeek
 documents and supports and it runs inside a full container boundary; Claude
 Code on DeepSeek is unsupported by Anthropic.
+
+## R18 — Layered routing configuration
+
+**Decision**: the routing table merges four layers (contracts/routing.md):
+defaults in dotfiles, a versioned project file, a git-ignored local file, and
+a run's `--set` overrides; per phase and per field; validated layer by layer
+and merged; recorded with each value's source.
+
+**Source**: Claude Code's own settings model — "managed settings, command
+line, project local, shared project, user", where "a key set at a higher level
+overrides the same key set lower down" and the local file stays out of git
+(code.claude.com, settings, read 2026-10-21) — and `specify workflow resolve`,
+which prints each step's source layer.
+
+**Why the opt-in is not a layer**: a versioned routing file would otherwise
+opt in every clone of a public repository (research R9).
+
+**Alternatives**: one table in dotfiles — no per-repository or per-run change
+without editing a shared file; environment variables per field — no
+validation of the whole and no provenance; Spec Kit workflow overlays — they
+cannot hold values the workflow does not carry (research R2).
 
 ## R13 — Time and spend
 
