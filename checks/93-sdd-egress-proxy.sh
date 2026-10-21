@@ -81,7 +81,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if n:
             self.rfile.read(n)
         with open(record, "a") as f:
-            f.write(json.dumps({"method": self.command, "path": self.path, "host": self.headers.get("Host")}) + "\n")
+            f.write(json.dumps({"method": self.command, "path": self.path, "host": self.headers.get("Host"),
+                                "headers": dict(self.headers.items())}) + "\n")
         out = b"registry-ok"
         self.send_response(200)
         self.send_header("Content-Length", str(len(out)))
@@ -144,9 +145,18 @@ elif cmd == "connect":  # connect PORT TOKEN HOST:PORT CAFILE [METHOD PATH]
         sys.exit(0)
     c = http.client.HTTPConnection(host, timeout=10)
     c.sock = t
-    c.request(method, path, body=b"x" if method in ("POST", "PUT", "PATCH") else None)
+    # Headers a read could carry data out in; the proxy sends none of them on.
+    smuggle = {"User-Agent": "agent-SMUGGLE", "Cookie": "c=SMUGGLE", "X-HTTP-Method-Override": "PUT",
+               "Referer": "https://SMUGGLE.example/"}
+    c.request(method, path, body=b"x" if method in ("POST", "PUT", "PATCH") else None, headers=smuggle)
     r = c.getresponse()
     print(r.status, r.read().decode(errors="replace").strip())
+    if len(sys.argv) > 8:  # a retire file: delete it, then a second read in the same tunnel
+        import os
+        os.remove(sys.argv[8])
+        c.request(method, path)
+        r = c.getresponse()
+        print(r.status, r.read().decode(errors="replace").strip())
 elif cmd == "absolute":  # absolute PORT TOKEN URL
     token, url = sys.argv[3:5]
     http_call("GET", url, {"Proxy-Authorization": "Basic " + base64.b64encode((token + ":x").encode()).decode()})
@@ -170,8 +180,8 @@ ep_start_proxy() { # ep_start_proxy <label> <providers json> <heartbeat seconds>
   mkdir -p "$dir" "$EP_TMP/$label.admit"
   # The GitHub stand-in carries github.com's path rule (R25), configured as
   # sdd-step egress-proxy configures it for github.com.
-  printf '{"listen": "127.0.0.1:0", "admissions": "%s", "heartbeat_seconds": %s, "providers": %s, "registries": ["localhost:%s", "localhost:%s", "localhost:%s"], "paths": {"localhost:%s": "^/[^/]+/[^/]+/(releases/download|archive)/"}}\n' \
-    "$EP_TMP/$label.admit" "$3" "$2" "$EP_REGISTRY" "$EP_GITHUB" "$EP_ROGUE" "$EP_GITHUB" |
+  printf '{"listen": "127.0.0.1:0", "admissions": "%s", "heartbeat_seconds": %s, "providers": %s, "registries": ["localhost:%s", "localhost:%s", "localhost:%s"], "paths": {"localhost:%s": %s}}\n' \
+    "$EP_TMP/$label.admit" "$3" "$2" "$EP_REGISTRY" "$EP_GITHUB" "$EP_ROGUE" "$EP_GITHUB" "$(ep_rule github.com)" |
     (cd "$dir" && HOME="$EP_TMP/home" TMPDIR="$EP_TMP/tmp" SSL_CERT_FILE="$EP_TMP/cert.pem" \
       exec python3 -I "$EP_ROOT/bin/sdd-egress-proxy.py" > "$EP_TMP/$label.ready" 2> "$EP_TMP/$label.log") &
   EP_PID=$!
@@ -202,7 +212,16 @@ ep_client() {
 # A pass's request to a registry through the main proxy, trusting the
 # authority it printed: ep_connect <token> <port> [<method> <path>].
 ep_connect() {
-  ep_client connect "$EP_API" "$1" "localhost:$2" "$EP_TMP/main.ca" "${3:-GET}" "${4:-/}"
+  ep_client connect "$EP_API" "$1" "localhost:$2" "$EP_TMP/main.ca" "${3:-GET}" "${4:-/}" ${5:+"$5"}
+}
+
+# The path rules the run gives the proxy, read from sdd-pass.py, so the
+# checks below test the rules in use, not a copy.
+ep_rule() {
+  python3 -I -c 'import ast, json, sys
+tree = ast.parse(open(sys.argv[1]).read())
+rules = next(ast.literal_eval(n.value) for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "REGISTRY_PATHS")
+print(json.dumps(rules[sys.argv[2]]))' "$EP_ROOT/bin/sdd-pass.py" "$1"
 }
 
 # Admits a pass on the main proxy as the run does, and prints its token.
@@ -459,6 +478,16 @@ ep_registry_readonly() {
     echo "the ready line's certificate is not a certificate authority"
     return 1
   }
+  # Constrained to the registries' names: were its key to leak, the
+  # authority could vouch for no other host (review of Phase 2b).
+  openssl x509 -in "$EP_TMP/main.ca" -noout -text 2> /dev/null | grep -q "X509v3 Name Constraints: critical" || {
+    echo "the run's authority carries no critical name constraints"
+    return 1
+  }
+  openssl x509 -in "$EP_TMP/main.ca" -noout -text 2> /dev/null | grep -A3 "Permitted:" | grep -q "DNS:localhost" || {
+    echo "the run's authority does not permit its registries' names"
+    return 1
+  }
   impl=$(ep_admit '["deepseek", "registries"]')
   verify=$(ep_admit '["registries"]')
   for method in GET HEAD; do
@@ -533,6 +562,61 @@ ep_registry_readonly() {
   }
 }
 check "the registries are read-only: TLS inspected with the run's own authority, GET and HEAD only, GitHub downloads only" ep_registry_readonly
+
+# Review of Phase 2b: GitHub's rule holds on the path alone — a query, a dot
+# segment or an encoded dot or slash cannot carry a request past it; a read
+# carries none of the agent's headers but the ones a download needs; a token
+# retired while its tunnel is open reaches nothing more; and codeload, where
+# GitHub's archives redirect, allows archives only.
+ep_registry_hardened() {
+  local impl out path retire
+  impl=$(ep_admit '["deepseek", "registries"]')
+  for path in "/o/r?/archive/" "/settings?a/x/archive/" "/o/r/archive/%2e%2e/%2e%2e/o2/r2.git/info/refs" \
+    "/o/r/releases/download/../../../x" "/o/r/archive/%2F..%2Fx" "/o/r/archive/./x" "/o/r/releases/download/v1/%2E%2E/x"; do
+    out=$(ep_connect "$impl" "$EP_GITHUB" GET "$path")
+    case "$out" in "403 "*) ;; *)
+      echo "GET $path on GitHub was not refused: $out"
+      return 1
+      ;;
+    esac
+  done
+  out=$(ep_connect "$impl" "$EP_GITHUB" GET "/o/r/releases/download/v1/tool.tgz?x=1")
+  [ "$out" = "200 registry-ok" ] || {
+    echo "a GitHub download with a query was refused: $out"
+    return 1
+  }
+  grep -q SMUGGLE "$EP_TMP/registry.jsonl" && {
+    echo "an agent's header reached a registry: $(grep SMUGGLE "$EP_TMP/registry.jsonl" | head -1)"
+    return 1
+  }
+  python3 -I -c 'import json, sys
+last = [json.loads(l) for l in open(sys.argv[1])][-1]["headers"]
+ua = {k.lower(): v for k, v in last.items()}.get("user-agent")
+sys.exit(0 if ua == "sdd-egress-proxy" else "a read reached the registry with User-Agent %r, not the proxy'"'"'s" % ua)' "$EP_TMP/registry.jsonl" || return 1
+  retire=$(ep_admit '["registries"]')
+  out=$(ep_connect "$retire" "$EP_REGISTRY" GET /six "$EP_TMP/main.admit/$retire.json")
+  case "$out" in "200 registry-ok"*"407 "* | "200 registry-ok"*"403 "*) ;; *)
+    echo "a token retired inside its open tunnel still read: $out"
+    return 1
+    ;;
+  esac
+  python3 -I - "$EP_ROOT/bin/sdd-egress-proxy.py" "$(ep_rule codeload.github.com)" << 'PY' || return 1
+import importlib.util, json, re, sys
+spec = importlib.util.spec_from_file_location("proxy", sys.argv[1])
+proxy = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(proxy)
+rule = re.compile(json.loads(sys.argv[2]))
+bad = []
+for path in ("/o/r/tar.gz/refs/tags/v1", "/o/r/zip/refs/heads/main", "/o/r/legacy.tar.gz/refs/tags/v1"):
+    if not proxy.path_allowed(rule, path):
+        bad.append("codeload refused the archive %s" % path)
+for path in ("/o/r", "/o/r?/tar.gz/", "/o/r/tar.gz/../../x"):
+    if proxy.path_allowed(rule, path):
+        bad.append("codeload allowed %s" % path)
+sys.exit("\n".join(bad) or 0)
+PY
+}
+check "a registry's rule holds on the path alone, no agent header rides a read, a retired token's tunnel goes dark" ep_registry_hardened
 
 ep_retire() {
   local judge out

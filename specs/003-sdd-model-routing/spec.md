@@ -487,8 +487,10 @@ the workflow's own limit for the step sits just above the ceiling),
   owner's credentials and machine, the run's governance, and the checks
   against silent weakening. Accepted as residual, and not defended further: a
   deliberately malicious agent smuggling repository code out encoded in the
-  read requests it is allowed to make (FR-031 leaves it no way to publish,
-  push or upload, and no host whose logs an attacker reads); a planted
+  read requests it is allowed to make — FR-031 leaves it no way to publish,
+  push or upload, and the proxy sends none of its headers on, so what remains
+  is the choice and count of downloads, which registries publish (GitHub's
+  release download counts, npm's and PyPI's statistics); a planted
   automation file running after the owner merges it, which FR-030 lists at
   the last checkpoint so the owner's review can catch it.
 - **Reproducibility** (research R26): the worker image is reproducible in its

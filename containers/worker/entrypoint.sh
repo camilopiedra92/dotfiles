@@ -89,10 +89,19 @@ fi
 # only if it is an authority; anything else here is a host-side mistake.
 ca=$bundle/proxy-ca.pem
 [ -f "$ca" ] || fail "/bundle/proxy-ca.pem is missing; the pass did not pass the run's authority"
-openssl x509 -in "$ca" -noout -text 2> /dev/null | awk '/X509v3 Basic Constraints/ { getline; found = /CA:TRUE/ } END { exit !found }' ||
+# Exactly one PEM block, a certificate: openssl reads only the first block of
+# a file, so a second certificate or a key beside it would ride in unchecked
+# (review of Phase 2b).
+if [ "$(grep -c '^-----BEGIN ' "$ca")" != 1 ] || ! grep -qx -- '-----BEGIN CERTIFICATE-----' "$ca"; then
+  fail "/bundle/proxy-ca.pem must hold exactly one certificate and nothing else"
+fi
+openssl x509 -in "$ca" -noout -text 2> /dev/null |
+  awk '/X509v3 Basic Constraints/ { getline; found = /CA:TRUE/; exit } END { exit !found }' ||
   fail "/bundle/proxy-ca.pem is not a certificate authority"
 mkdir -p "$root/usr/local/share/ca-certificates"
-cp "$ca" "$root/usr/local/share/ca-certificates/sdd-run.crt"
+# What is trusted is the certificate checked, re-encoded, not the file as it came.
+openssl x509 -in "$ca" -out "$root/usr/local/share/ca-certificates/sdd-run.crt" 2> /dev/null ||
+  fail "could not install the run's authority"
 update-ca-certificates > /dev/null 2>&1 || fail "update-ca-certificates failed"
 
 "$here/init-firewall.sh" "$proxy_ip" "$proxy_port"

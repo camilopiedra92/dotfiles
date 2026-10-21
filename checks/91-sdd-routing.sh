@@ -760,8 +760,27 @@ sdd_lifecycle() {
     printf '%s' "$out" | grep -qF "$first" || fail "inventory: the missing package is not named: $out"
     [ ! -e "$run/worker.json" ] || fail "inventory: worker.json recorded a refused image"
     grep -qx "$tag" "$sa/images.txt" && fail "inventory: the refused image was kept"
+    # An image already present under its tag is checked again: a refused
+    # build that survived its deletion, or an interrupted check, is never
+    # used unchecked (review of Phase 2b).
     cp "$dotfiles/containers/worker/inventory.txt" "$sa/inventory.out"
     out=$(sub prepare-worker) || fail "inventory: the committed inventory was refused: $out"
+    printf 'deb planted-package 9.9\n' >> "$sa/inventory.out"
+    if out=$(sub prepare-worker); then fail "inventory: a present image that differs was used unchecked"; fi
+    grep -qx "$tag" "$sa/images.txt" && fail "inventory: the present image that differs was kept"
+    cp "$dotfiles/containers/worker/inventory.txt" "$sa/inventory.out"
+    out=$(sub prepare-worker) || fail "inventory: rebuilding after a refusal failed: $out"
+    : > "$sa/inventory.fail"
+    if out=$(sub prepare-worker); then fail "inventory: a failed inventory run was accepted"; fi
+    rm "$sa/inventory.fail"
+    out=$(sub prepare-worker) || fail "inventory: rebuilding after a failed inventory run failed: $out"
+    printf 'deb planted-package 9.9\n' >> "$sa/inventory.out"
+    : > "$sa/delete.fail"
+    if out=$(sub prepare-worker); then fail "inventory: succeeded although the refused image could not be deleted"; fi
+    printf "%s" "$out" | grep -qF "could not be deleted" || fail "inventory: a failed deletion was not named: $out"
+    rm "$sa/delete.fail"
+    cp "$dotfiles/containers/worker/inventory.txt" "$sa/inventory.out"
+    out=$(sub prepare-worker) || fail "inventory: the committed inventory was refused at the end: $out"
   else
     fail "inventory: containers/worker/inventory.txt is missing or empty"
   fi
@@ -797,8 +816,9 @@ if s["providers"] != want:
     bad.append(f"the proxy got credentials {s['providers']}, wanted {want} (True: the Keychain's value)")
 if s["admissions"] != "/admissions":
     bad.append(f"admissions read from {s['admissions']}")
-if s.get("paths") != {"github.com": "^/[^/]+/[^/]+/(releases/download|archive)/"}:
-    bad.append(f"the proxy was not given github.com's download-only path rule: {s.get('paths')}")
+# Each GitHub host gets its download-only rule; check 93 tests what they allow.
+if sorted(s.get("paths") or {}) != ["codeload.github.com", "github.com"]:
+    bad.append(f"the proxy was not given GitHub's download-only path rules: {s.get('paths')}")
 ca = open(os.path.join(os.path.dirname(proxy), "proxy-ca.pem")).read() if os.path.exists(os.path.join(os.path.dirname(proxy), "proxy-ca.pem")) else None
 if ca != "-----BEGIN CERTIFICATE-----\nstand-in run authority\n-----END CERTIFICATE-----\n":
     bad.append(f"proxy-ca.pem is not the authority the proxy printed: {ca!r}")

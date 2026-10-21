@@ -111,6 +111,16 @@ def hostport(entry):
 DAYS = "2"
 
 
+def alt_name(host, constraint=False):
+    """A host as a certificate names it; a name constraint on an address
+    takes its mask too."""
+    if not re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", host):
+        return "DNS:" + host
+    if not constraint:
+        return "IP:" + host
+    return "IP:%s/%s" % (host, "255.255.255.255" if "." in host else "ffff:" * 7 + "ffff")
+
+
 def authority(hosts):
     """A certificate authority and one server context per host it signs for.
     The flags are those LibreSSL 3.3 (macOS), OpenSSL 3.0 (the worker image)
@@ -130,15 +140,19 @@ def authority(hosts):
             with open(os.path.join(work, name), "w") as f:
                 f.write(text)
 
+        # Name-constrained to the registries: were its key to leak, the
+        # authority could vouch for no other host (review of Phase 2b).
+        permitted = ", ".join("permitted;" + alt_name(h, constraint=True) for h in sorted(hosts))
         write("ca.cnf", "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = sdd run authority\n"
               "[ca]\nbasicConstraints = critical, CA:TRUE, pathlen:0\n"
-              "keyUsage = critical, keyCertSign, cRLSign\nsubjectKeyIdentifier = hash\n")
+              "keyUsage = critical, keyCertSign, cRLSign\nsubjectKeyIdentifier = hash\n"
+              "nameConstraints = critical, %s\n" % permitted)
         run("ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", "ca.key")
         run("req", "-new", "-x509", "-key", "ca.key", "-out", "ca.pem", "-days", DAYS, "-sha256",
             "-config", "ca.cnf", "-extensions", "ca")
         leaves = {}
         for i, host in enumerate(sorted(hosts)):
-            alt = ("IP:" if re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", host) else "DNS:") + host
+            alt = alt_name(host)
             write("%d.cnf" % i, "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = %s\n"
                   "[leaf]\nbasicConstraints = critical, CA:FALSE\nkeyUsage = critical, digitalSignature\n"
                   "extendedKeyUsage = serverAuth\nsubjectAltName = %s\nsubjectKeyIdentifier = hash\n"
@@ -342,6 +356,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         inner(tls, self.client_address, self.server)
 
 
+# The only request headers a read passes on: what a download needs. The
+# agent's own — User-Agent above all, which PyPI publishes per download in a
+# public dataset — would let it write into a log an attacker reads (review of
+# Phase 2b); the proxy names itself instead.
+READ_HEADERS = {"accept", "accept-encoding", "range", "if-range", "if-none-match", "if-modified-since",
+                "cache-control"}
+USER_AGENT = "sdd-egress-proxy"
+# A dot segment, or an encoded dot, slash or backslash, in a path: what could
+# make the registry read a path other than the one the rule saw.
+UNSAFE_PATH = re.compile(r"(^|/)\.{1,2}(/|$)|%2e|%2f|%5c|\\", re.I)
+
+
+def path_allowed(rule, target):
+    """A registry's path rule, held on the path alone: the query and fragment
+    cannot satisfy it, and a path that a server could normalize into another
+    is refused (review of Phase 2b)."""
+    path = urllib.parse.urlsplit(target).path
+    return not UNSAFE_PATH.search(path) and rule.match(path) is not None
+
+
 class RegistryHandler(http.server.BaseHTTPRequestHandler):
     """The requests a pass sends inside its CONNECT to a registry, after the
     proxy terminated its TLS: only reads go on."""
@@ -377,14 +411,20 @@ class RegistryHandler(http.server.BaseHTTPRequestHandler):
     def read(self):
         if not self.path.startswith("/"):
             return self.refuse(403, "not a path on this registry")
+        # The admission is read on every request, as on the API: a pass
+        # retired while its tunnel is open reaches nothing more.
+        admit = self.state.admitted(self.token)
+        if admit is None or "registries" not in admit:
+            return self.refuse(407, "no pass with this token admits the registries")
         rule = self.state.paths.get(self.target)
-        if rule and not rule.match(self.path):
+        if rule and not path_allowed(rule, self.path):
             return self.refuse(403, "not a download this registry allows")
         if self.headers.get("Content-Length", "0") != "0" or self.headers.get("Transfer-Encoding"):
             return self.refuse(403, "a read carries no body")
         host, port = self.target
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in DROPPED}
+        headers = {k: v for k, v in self.headers.items() if k.lower() in READ_HEADERS}
         headers["Host"] = host if port == 443 else "%s:%d" % (host, port)
+        headers["User-Agent"] = USER_AGENT
         c = upstream(host, port)
         try:
             try:

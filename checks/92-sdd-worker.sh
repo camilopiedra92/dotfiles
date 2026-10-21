@@ -429,8 +429,11 @@ sdd_ep_ca() {
     echo "failed with the run's authority in place: $(cat "$tmp/out")"
     return 1
   }
-  cmp -s "$tmp/root/bundle/proxy-ca.pem" "$tmp/root/usr/local/share/ca-certificates/sdd-run.crt" || {
-    echo "the authority was not copied to /usr/local/share/ca-certificates/sdd-run.crt"
+  # What is installed is the one certificate checked, re-encoded, never the
+  # file as it came (review of Phase 2b).
+  openssl x509 -in "$tmp/root/bundle/proxy-ca.pem" > "$tmp/want.crt" 2> /dev/null
+  cmp -s "$tmp/want.crt" "$tmp/root/usr/local/share/ca-certificates/sdd-run.crt" || {
+    echo "/usr/local/share/ca-certificates/sdd-run.crt is not the checked certificate alone"
     return 1
   }
   local ca fw
@@ -450,12 +453,16 @@ sdd_ep_ca() {
     }
   done
   local case
-  for case in missing leaf garbage; do
+  for case in missing leaf garbage ca+leaf ca+key; do
     rm -rf "${tmp:?}"/* && sdd_ep_setup "$tmp"
     case $case in
       missing) rm "$tmp/root/bundle/proxy-ca.pem" ;;
       leaf) cp "$tmp/leaf.pem" "$tmp/root/bundle/proxy-ca.pem" ;;
       garbage) echo "not a certificate" > "$tmp/root/bundle/proxy-ca.pem" ;;
+      # Only the first certificate of a file is what openssl checks; a second
+      # one, or a key, beside it must not ride in (review of Phase 2b).
+      ca+leaf) cat "$tmp/leaf.pem" >> "$tmp/root/bundle/proxy-ca.pem" ;;
+      ca+key) cat "$tmp/ca.key" >> "$tmp/root/bundle/proxy-ca.pem" ;;
     esac
     if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true; then
       echo "accepted a $case authority"

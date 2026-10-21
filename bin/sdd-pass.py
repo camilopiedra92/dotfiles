@@ -645,7 +645,10 @@ def prepare_worker(run):
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=run.dir)
         if r.returncode != 0:
             raise PassFailed("building the worker image failed:\n" + r.stdout.decode(errors="replace")[-1500:])
-        verify_inventory(run, rt, tag, ctx)
+    # Every time, a present image too: one a refused build left behind (its
+    # deletion failed, or the check was interrupted) is never used unchecked
+    # (review of Phase 2b). It takes seconds.
+    verify_inventory(run, rt, tag, ctx)
     with open(os.path.join(run.dir, "worker.json"), "w") as f:
         json.dump({"image": tag}, f)
     prune_workers(run, rt, tag)
@@ -653,7 +656,7 @@ def prepare_worker(run):
 
 
 def verify_inventory(run, rt, tag, ctx):
-    """Refuses a fresh build whose installed packages differ from the
+    """Refuses an image whose installed packages differ from the
     inventory committed beside its recipe (FR-032, research R26): every
     input is pinned, so a difference means an input moved. The refused image
     is deleted, because an image present under its tag is one this check
@@ -665,8 +668,11 @@ def verify_inventory(run, rt, tag, ctx):
         committed = f.read().splitlines()
     if built == committed:
         return
-    subprocess.run([rt, "image", "delete", tag], env=HOST_ENV, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, cwd=run.dir)
+    deleted = subprocess.run([rt, "image", "delete", tag], env=HOST_ENV, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.PIPE, cwd=run.dir)
+    if deleted.returncode != 0:
+        raise PassFailed(f"the worker image {tag} failed its inventory check and could not be deleted: "
+                         + deleted.stderr.decode(errors="replace").strip()[-300:] + f"; delete it by hand")
     if built is None:
         raise PassFailed("reading the built image's inventory failed: " + r.stderr.decode(errors="replace").strip()[-500:])
     added = sorted(set(built) - set(committed))
@@ -713,7 +719,11 @@ def prune_workers(run, rt, current):
 # Registries a pass may read only part of (FR-031, research R25): on
 # github.com, release assets and source archives -- what mise and pinned
 # downloads fetch -- and nothing else, no repository page, API or push.
-REGISTRY_PATHS = {"github.com": r"^/[^/]+/[^/]+/(releases/download|archive)/"}
+REGISTRY_PATHS = {
+    "github.com": r"^/[^/]+/[^/]+/(releases/download|archive)/",
+    # github.com/<o>/<r>/archive/... redirects here (review of Phase 2b).
+    "codeload.github.com": r"^/[^/]+/[^/]+/(tar\.gz|zip|legacy\.tar\.gz|legacy\.zip)/",
+}
 
 
 def egress_proxy(run):

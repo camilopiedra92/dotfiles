@@ -9,6 +9,11 @@
 # Regenerate inventory.txt on purpose after moving a pin:
 #   container run --rm --entrypoint /usr/local/lib/sdd/inventory.sh <tag> > containers/worker/inventory.txt
 set -eu
+# Collected into a file first: sh has no pipefail, so a command failing inside
+# a group piped to sort would still leave sort's status and a partial list,
+# read as "an input moved" (review of Phase 2b).
+list=$(mktemp)
+trap 'rm -f "$list"' EXIT
 {
   dpkg-query -W -f='deb ${Package} ${Version}\n'
   # The tools neither dpkg nor npm installed: node from the base, mise and uv
@@ -34,4 +39,5 @@ function walk(dir) {
   }
 }
 walk("/opt/sdd");'
-} | LC_ALL=C sort -u
+} > "$list"
+LC_ALL=C sort -u "$list"

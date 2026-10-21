@@ -803,6 +803,21 @@ release download were refused with 403 and logged; `npm publish` of a name
 nobody owns reached its `PUT` and failed `E403`, refused by the proxy. A client
 closing TLS without its close-notify left one log line (`SSLEOFError`).
 
+**Review of Phase 2b** (2026-10-21), each finding now a check seen red: the
+path rule held on the raw target, so a query (`/o/r?/archive/`) passed it —
+it now holds on the path alone, refusing dot segments and encoded dots or
+slashes; the agent's headers rode its reads, User-Agent among them, which
+PyPI publishes per download — only the headers a download needs go on, with
+the proxy's own User-Agent; a token retired while its tunnel was open still
+read — the admission is read on every request; archive downloads redirect
+to `codeload.github.com`, which was not listed — it is, archives only; the
+authority now carries critical name constraints to the registries' names.
+Run again for real after those fixes: the name-constrained authority was
+accepted by npm, uv, mise and curl in the worker, an archive came through
+codeload, and the query bypass was refused. The leaves' validity starts at
+the proxy's clock; each run's proxy is new, and Apple's VMs take the host's
+clock, so no skew was seen.
+
 **Alternatives**: mitmproxy or Squid's ssl-bump — a new dependency where the
 standard library and the image's `openssl` suffice; an allowlist by SNI alone
 — it cannot see the method, so publishing stays open; installing dependencies

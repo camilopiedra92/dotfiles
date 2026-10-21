@@ -11,6 +11,8 @@ files.pythonhosted.org
 # mise and uv download runtimes (node, python-build-standalone) from GitHub
 # releases, which redirect to its object store.
 github.com
+# github.com's archive downloads redirect here.
+codeload.github.com
 objects.githubusercontent.com
 release-assets.githubusercontent.com
 # mise downloads node from nodejs.org's own distribution.

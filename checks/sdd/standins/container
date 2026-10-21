@@ -57,6 +57,8 @@ run)
   # prepare-worker's inventory run: the image's packages, as the check
   # staged them in inventory.out.
   case "${entrypoint:-}" in */inventory.sh)
+    # inventory.fail: the inventory run itself fails.
+    [ -e "$here/inventory.fail" ] && exit 1
     cat "$here/inventory.out"
     exit 0
     ;;
@@ -134,6 +136,8 @@ image)
   list | ls) /usr/bin/python3 -I -c 'import json,sys; print(json.dumps([{"configuration": {"name": "docker.io/library/" + l.strip()}} for l in open(sys.argv[1]) if l.strip()]))' "$here/images.txt" 2>/dev/null || echo '[]' ;;
   delete | rm)
     shift 2
+    # delete.fail: the runtime cannot delete the image.
+    [ -e "$here/delete.fail" ] && exit 1
     for name in "$@"; do
       grep -vxF "${name#docker.io/library/}" "$here/images.txt" >"$here/images.new"
       mv -f "$here/images.new" "$here/images.txt"
