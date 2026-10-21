@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:routing-table:1",
+  "title": "The routing defaults, claude/speckit/routing.yml: every phase's full row",
+  "$comment": "timeout <= max_timeout is not expressible here; sdd-run refuses it naming the ceiling (contracts/routing.md).",
+  "type": "object",
+  "properties": {
+    "phases": {
+      "type": "object",
+      "properties": {
+        "specify": {
+          "$ref": "#/$defs/row"
+        },
+        "clarify-ask": {
+          "$ref": "#/$defs/row"
+        },
+        "clarify-apply": {
+          "$ref": "#/$defs/row"
+        },
+        "plan": {
+          "$ref": "#/$defs/row"
+        },
+        "checklist": {
+          "$ref": "#/$defs/row"
+        },
+        "analyze": {
+          "$ref": "#/$defs/row"
+        },
+        "tasks": {
+          "$ref": "#/$defs/row"
+        },
+        "implement-deepseek": {
+          "$ref": "#/$defs/row"
+        },
+        "implement-sonnet": {
+          "$ref": "#/$defs/row"
+        },
+        "review": {
+          "$ref": "#/$defs/row"
+        },
+        "converge": {
+          "$ref": "#/$defs/row"
+        }
+      },
+      "required": [
+        "specify",
+        "clarify-ask",
+        "clarify-apply",
+        "plan",
+        "checklist",
+        "analyze",
+        "tasks",
+        "implement-deepseek",
+        "implement-sonnet",
+        "review",
+        "converge"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "phases"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "row": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "enum": [
+            "claude",
+            "pi"
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^claude-[a-z0-9-]+$"
+            },
+            {
+              "type": "string",
+              "pattern": "^deepseek-[a-z0-9.-]+$"
+            }
+          ]
+        },
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "profile": {
+          "enum": [
+            "author",
+            "reader",
+            "implementer"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "pattern": "^/speckit-[a-z]+( |$)"
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "schema": {
+          "enum": [
+            "clarify",
+            "review",
+            "converge"
+          ]
+        },
+        "result_to": {
+          "type": "string",
+          "pattern": "^[^/]",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_timeout": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "agent",
+        "model",
+        "effort",
+        "prompt",
+        "writes",
+        "timeout",
+        "max_timeout"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "agent": {
+                "const": "claude"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "string",
+                "pattern": "^claude-[a-z0-9-]+$"
+              }
+            },
+            "required": [
+              "profile"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "agent": {
+                "const": "pi"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "model": {
+                "type": "string",
+                "pattern": "^deepseek-[a-z0-9.-]+$"
+              }
+            },
+            "not": {
+              "required": [
+                "profile"
+              ]
+            }
+          }
+        }
+      ],
+      "$comment": "A claude row runs a Claude model under a profile; a pi row runs a DeepSeek model and has none, since pi has no permission rules (contracts/routing.md)."
+    }
+  }
+}

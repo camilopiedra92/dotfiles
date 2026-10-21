@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:clarify:1",
+  "title": "How many clarification questions clarify-ask wrote",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:clarify:1"
+    },
+    "step": {
+      "const": "clarify"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "questions": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "questions"
+  ],
+  "additionalProperties": false
+}

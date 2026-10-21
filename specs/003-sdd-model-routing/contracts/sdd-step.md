@@ -4,6 +4,9 @@
 `shell` steps from the repository root. Every subcommand that decides
 something writes or reads an outcome file in `<feature>/.sdd/`, validated
 against `claude/speckit/schemas/<step>.schema.json` (research R10).
+The feature directory is the one `.specify/feature.json` names — the file
+Spec Kit's own scripts read — accepted only as `specs/<nnn>-<slug>`, an
+existing directory.
 
 ## Subcommands
 

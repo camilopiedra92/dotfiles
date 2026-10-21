@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:verify:1",
+  "title": "The check command's result on HEAD",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:verify:1"
+    },
+    "step": {
+      "const": "verify"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exit": {
+      "type": "integer"
+    },
+    "tail": {
+      "type": "string"
+    },
+    "check_changes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "automation_changes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "command",
+    "exit",
+    "tail",
+    "check_changes",
+    "automation_changes"
+  ],
+  "additionalProperties": false
+}

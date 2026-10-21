@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:review:1",
+  "title": "The fresh review of the diff since the run's base",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:review:1"
+    },
+    "step": {
+      "const": "review"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "enum": [
+              "CRITICAL",
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "severity",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "done": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^T[0-9]{3}$"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "findings",
+    "done"
+  ],
+  "additionalProperties": false
+}

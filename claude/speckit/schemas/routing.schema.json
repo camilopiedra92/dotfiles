@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:routing:1",
+  "title": "The effective routing table of a run, each value with the layer it came from",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:routing:1"
+    },
+    "step": {
+      "const": "routing"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "versions": {
+      "type": "object",
+      "properties": {
+        "speckit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "claude_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "container": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pi": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "speckit",
+        "claude_code",
+        "container"
+      ],
+      "additionalProperties": false
+    },
+    "served": {
+      "type": "object",
+      "description": "the /models name behind each configured DeepSeek id, read at start (research R6)",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "phases": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "specify",
+          "clarify-ask",
+          "clarify-apply",
+          "plan",
+          "checklist",
+          "analyze",
+          "tasks",
+          "implement-deepseek",
+          "implement-sonnet",
+          "review",
+          "converge"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": {
+          "enum": [
+            "agent",
+            "model",
+            "effort",
+            "profile",
+            "prompt",
+            "writes",
+            "schema",
+            "result_to",
+            "timeout",
+            "max_timeout"
+          ]
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "value": {},
+            "layer": {
+              "enum": [
+                "defaults",
+                "repository",
+                "local",
+                "set"
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "layer"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "versions",
+    "served",
+    "phases"
+  ],
+  "additionalProperties": false
+}
