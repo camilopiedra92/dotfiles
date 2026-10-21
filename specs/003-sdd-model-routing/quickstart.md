@@ -11,7 +11,7 @@ offline against stand-ins; the last two need the real services.
    Expected: specify, clarify, plan, checklist, analyze, review and converge
    on `claude-opus-5-5`, tasks on `claude-sonnet-5-5`, verify calling no model;
    in that order; and every call carrying its row's `--effort`, its profile's
-   `--settings`, `--permission-mode dontAsk`, `--strict-mcp-config` with no
+   `--settings`, `--permission-mode dontAsk`, `--permission-prompts none`, `--strict-mcp-config` with no
    server, `--output-format json`, and `--json-schema` where the row has one, with the engine's run id equal to
    `SPECKIT_WORKFLOW_RUN_ID` and each attempt in the run's usage log
    (FR-025, contracts/routing.md).

@@ -12,8 +12,10 @@ dispatcher, `sdd-step agent`, that reads a declarative routing table: per
 phase, the agent, model, effort, permission profile, output schema and time
 limit. Opus for specify, clarify, plan, checklist, analyze, review and
 converge; Sonnet for tasks; DeepSeek through the pi coding agent for
-implementation, in a disposable checkout inside a container whose firewall
-denies all egress but an allow list; verify with no model, as the
+implementation; every agent step and every verify a contained pass
+(contracts/pass.md) — an export with no `.git`, the agent in the worker
+container behind a firewall that admits only its own provider, its output a
+patch judged against the step's writes before it is applied; verify with no model, as the
 repository's check command. Each step loads only its profile's context — no
 MCP servers — so same-model steps reuse the prompt cache. Every step whose
 result is read leaves a JSON outcome file, structured at generation with

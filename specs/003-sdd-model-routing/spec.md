@@ -63,8 +63,9 @@ as a fresh agent on the model routed to it, reading and writing only the
 feature's files. The run stops at each checkpoint for the owner's approval and
 carries on from there. The owner never switches a model by hand.
 
-**Why this priority**: it is the saving that needs no new provider and no new
-tool on the machine, and it works on its own: if it alone brings usage within
+**Why this priority**: it is the saving that needs no new provider — only the
+worker container and the owner's Claude token that every routed run needs —
+and it works on its own: if it alone brings usage within
 the smaller plan, the other stories are optional.
 
 **Independent Test**: in a scratch repository, run the routed workflow against a
@@ -139,10 +140,9 @@ committed.
    contained runtime is not available, **Then** no code is sent and the step
    says what is missing and how to provide it.
 6. **Given** a repository that has not opted in, **Then** implementation runs
-   on the lighter Claude model, on this machine rather than in the contained
-   runtime, but otherwise the same way: in a disposable checkout, under the
-   same brief, patch judgment, time limit, verify, review and loop limits; the
-   run says so.
+   on the lighter Claude model in the same contained pass — the same worker,
+   export, brief, patch judgment, time limit, verify, review and loop limits;
+   the run says so.
 7. **Given** either implementing agent fails, times out or is cut off midway,
    **Then** the feature's worktree is unchanged, the disposable checkout is
    removed, and the run can be resumed once the cause is fixed; **Given** the
@@ -250,12 +250,15 @@ what landed in the commit, and what was printed.
   deletes a lint, format, type-check or test configuration file MUST fail the
   step, naming the file, with nothing applied. Which files count is decided by
   the repository's existing configuration guard, not by a second list.
-- **FR-009**: The external provider's credential MUST come from the Keychain and
-  MUST NOT appear in a command-line argument, in the environment of any host
+- **FR-009**: Every credential the run uses — the external provider's key and
+  the owner's Claude token — MUST come from the Keychain and MUST reach a
+  container only on its stdin; it MUST NOT appear in a command-line argument, in the environment of any host
   process, in any file on the host (repositories, the disposable checkout and
   temporary files included), in an image or a container's stored
   configuration, in the container runtime's logs, in the run's state or logs,
-  or in the agent's session files.
+  or in the agent's session files — nor in a patch, an outcome or a result an
+  agent returns: those are scanned for every credential's exact value before
+  anything is applied, and a match fails the pass.
 - **FR-010**: Code MUST be sent to the external provider only from a repository
   the owner has opted in, as recorded when the run started — an opt-out
   during a run is honoured, an opt-in during a run is not; otherwise implementation MUST run on the lighter
@@ -263,8 +266,9 @@ what landed in the commit, and what was printed.
 - **FR-011**: Every program the routed run depends on MUST be declared in this
   repository's manifests (constitution I). Before the phase that needs it, a
   run MUST stop naming any missing prerequisite and how to provide it: the
-  agent CLIs, the routing's scripts, the repository's check command, and, for
-  the external path, the contained runtime and the credential.
+  routing's scripts, the repository's check command, the container runtime
+  and the owner's Claude token for every routed run, and, for the external
+  path, its credential.
 - **FR-012**: `sdd-init` MUST install the routing in a fresh repository in the
   same commit as Spec Kit, and MUST print the commands that add or update it
   in a repository that already has Spec Kit.
@@ -331,9 +335,9 @@ what landed in the commit, and what was printed.
 - **FR-026**: Each step MUST load only the context its row names: no MCP
   server, and only the tools and permissions of its profile, read from a copy
   frozen for the run where no step can change it; no step may change a skill,
-  a Spec Kit script, an outcome file, the routing, the opt-in or any profile,
-  and the operating system's sandbox MUST enforce the same limits on the
-  shell commands a step runs, so an unattended
+  a Spec Kit script, an outcome file, the routing, the opt-in or any profile:
+  each step runs in the worker container and reaches the repository only
+  through a patch limited to its writes (FR-028), so an unattended
   step can do nothing its phase does not need and same-model steps reuse the
   prompt cache.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
@@ -347,6 +351,10 @@ what landed in the commit, and what was printed.
   the repository only as a patch limited to the paths that step may write; no
   agent writes the worktree directly, no code an agent wrote runs outside the
   container, and no host tool reads anything an agent wrote as configuration.
+- **FR-029**: A patch that changes the repository's check command or the
+  files it runs MUST be flagged: verify records it, the review counts it as a
+  finding, and the owner's last checkpoint shows the changed files, since a
+  weakened check would otherwise pass its own verify.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
@@ -452,11 +460,12 @@ the workflow's own limit for the step sits just above the ceiling),
   the owner's choice of 2026-10-21 and move only by a deliberate edit to this
   repository or a routing layer (FR-027); a retired model or a moved pin surfaces as a failed step naming
   it, not as a silent change. Claude models are therefore named by full model
-  id, not by an alias such as `opus` that upstream repoints. Two dependencies
-  are not pinned: the container runtime (a Homebrew formula) and the Claude
-  Code CLI. A changed flag or a missing field in either's output fails the
-  step naming it, and a missing usage figure is never read as zero; each run
-  records both versions. DeepSeek's id `deepseek-flash` names no version
+  id, not by an alias such as `opus` that upstream repoints. The Claude Code
+  CLI and pi are pinned in the worker image and move by an edit to it, which
+  `drift.sh` reports when upstream moves; the container runtime (a Homebrew
+  formula) is not pinned. A changed flag or a missing field in any of their
+  outputs fails the step naming it, and a missing usage figure is never read
+  as zero; each run records all three versions. DeepSeek's id `deepseek-flash` names no version
   either: a pass whose response reports a model other than the one
   configured fails, naming both; if the response reports only the alias
   itself, a repoint behind it cannot be detected, and `deepseek-flash` is

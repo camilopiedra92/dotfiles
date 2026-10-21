@@ -93,7 +93,7 @@ exactly one new directory under `specs/`):
 | `tasks` | claude | claude-sonnet-5-5 | medium | author | `<f>/tasks.md` | — |
 | `implement-deepseek` | pi | deepseek-flash | high | — | everything but the protected set (contracts/pass.md) | — |
 | `implement-sonnet` | claude | claude-sonnet-5-5 | medium | implementer | everything but the protected set | — |
-| `review` | claude | claude-opus-5-5 | medium | reader | — | review |
+| `review` | claude | claude-opus-5-5 | medium | reader | — (reads `/input/diff.patch`) | review |
 | `converge` | claude | claude-opus-5-5 | medium | author | `<f>/tasks.md` | converge |
 
 `.specify/feature.json` is accepted only as the JSON Spec Kit writes, naming
@@ -108,7 +108,7 @@ the worker container a Claude row runs:
 claude -p "<row.prompt> <feature paths>" \
   --model <row.model> --effort <row.effort> \
   --permission-mode dontAsk --permission-prompts none \
-  --settings /bundle/profiles/<row.profile>.json \
+  --setting-sources "" --settings /bundle/profile.json \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
   --output-format json [--json-schema <schema>]
 ```
@@ -149,4 +149,6 @@ profiles add least privilege on top. Every profile is `dontAsk`.
 so these see an empty history; they are allowed so a skill that calls them
 does not fail. Profiles differ in permission rules only, never in the tools
 offered, so the tool definitions — part of the cached prefix — stay the same
-across a same-model group (research R16).
+across a same-model group (research R16). A patch touching the check
+command's own files is allowed but flagged (FR-029): the review counts it as a
+finding and the owner's last checkpoint shows it.

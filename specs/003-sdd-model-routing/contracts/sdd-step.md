@@ -41,8 +41,4 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 
 ## Never
 
-The credential in a command-line argument, the environment of any host
-process, any file on the host, an image layer, a container's stored
-configuration, the container runtime's logs, the run's state or logs, or
-pi's session files (FR-009). A mount of anything but the checkout and the
-run's cache volume (FR-007).
+See contracts/pass.md, "Never" and "Host git": they hold for every subcommand.

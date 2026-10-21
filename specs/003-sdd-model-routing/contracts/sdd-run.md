@@ -23,13 +23,16 @@ it, before any step runs:
 - the current directory is the root of a git repository with `.specify/`;
 - `sdd-routed` is installed in it, at this repository's version (else: the
   `specify workflow add` command that updates it);
-- `claude`, `specify`, `sdd-step`, `check-jsonschema` and `git` on `PATH`;
+- `specify`, `sdd-step`, `check-jsonschema` and `git` on `PATH` (the Claude
+  Code CLI runs inside the worker, not on the host);
+- the container runtime answering, and the Keychain item `claude-oauth`
+  present and not blank — every routed run needs both (research R21);
 - the routing table, its profiles and the outcome schemas where this repository
   installs them;
 - `git config --local sdd.check` is set.
 
-The external path's prerequisites (opt-in, the container runtime, the Keychain
-item) are checked by `sdd-step implement`, at the phase that needs
+The DeepSeek path's own prerequisites (the opt-in, the Keychain item
+`deepseek-api`) are checked by `sdd-step implement`, at the phase that needs
 them (FR-011): a repository not opted in never needs them.
 
 ## Exit status

@@ -159,6 +159,10 @@ boundary is the agent's own code. A proxy written here in front of Apple
 `container` — a component of our own where a published pattern exists.
 ## R6 — A disposable checkout, mounted alone
 
+*The checkout described here — a detached git worktree — is superseded by R20
+and R21: a `git archive` export with no `.git` (contracts/pass.md). The image,
+credential and git-on-the-host decisions stand.*
+
 **Decision**: for each implementation pass, `sdd-step implement` commits the
 feature directory, then creates a detached git worktree of that commit in a
 temporary directory — tracked files only, so no untracked `.env` or ignored
@@ -511,9 +515,10 @@ by its own step before the first pass, and an implement pass's limit covers
 the whole pass; the check command is frozen in the bundle.
 
 **Alternatives**: chasing vectors one by one — every round of review found
-another; a container for every Claude step too — the strongest boundary, but
-the subscription login would have to enter it, which this feature does not
-move (R19).
+another. A container for every Claude step was rejected here at first because
+the subscription login would have to enter it; R21 adopts it, with the token
+`claude setup-token` documents for scripts. The protected set listed above is
+superseded by contracts/pass.md's.
 
 ## R21 — Every agent step is a contained pass
 
