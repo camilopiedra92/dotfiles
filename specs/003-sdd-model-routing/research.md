@@ -257,6 +257,19 @@ and `deepseek-v4-pro` (HTTP 200, 2026-10-21), not the page's
 the Containerfile directory's hash and built when the tag is missing: a cache
 of a declared file (constitution IV).
 
+**Observed** (T006, 2026-10-21, pi 1.3.0 in a firewalled Apple container,
+its `models.json` pointing `baseUrl` at a gateway container that replaced a
+placeholder key with the owner's `deepseek-api` key read from its own
+stdin): the agent's container could not reach `api.deepseek.com` directly;
+`GET /models` through the gateway listed `deepseek-flash` with the name
+`DeepSeek-V4.1-Flash`; `pi -p --mode json --no-session --model
+deepseek/deepseek-flash --thinking high` answered (`POST /chat/completions ->
+200`, about $0.00016) and reported the model as the bare alias
+`deepseek-flash`. So the alias is accepted as unpinned (spec, Assumptions),
+and the egress proxy records, at the start of each run, the `/models` name
+behind the configured id in the bundle's `routing.json`, so a change of the
+model behind the alias shows between runs.
+
 **Credential**: written to the container's stdin, read once by the entrypoint
 into pi's environment inside the container, after the firewall is up; pi's
 session directory is outside `/work` and discarded with the container
