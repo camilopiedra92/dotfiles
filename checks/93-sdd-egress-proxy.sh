@@ -263,7 +263,7 @@ CNF
   local name
   for name in anthropic deepseek; do
     python3 -I "$EP_TMP/helpers/upstream.py" "$name" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" \
-      "$EP_TMP/$name.port" "$EP_TMP/$name.jsonl" > /dev/null 2>&1 &
+      "$EP_TMP/$name.port" "$EP_TMP/$name.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
     EP_PIDS+=($!)
   done
   # A certificate the proxy does not trust, for a registry it must not
@@ -273,20 +273,23 @@ CNF
     echo "could not make the rogue registry's certificate"
     return 1
   }
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/registry.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/registry.jsonl" > /dev/null 2>&1 &
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/registry.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/registry.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
   # A registry with github.com's path rule.
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/github.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/github.jsonl" > /dev/null 2>&1 &
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/github.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/github.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/rogue.port" "$EP_TMP/rogue-cert.pem" "$EP_TMP/rogue-key.pem" "$EP_TMP/rogue.jsonl" > /dev/null 2>&1 &
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/rogue.port" "$EP_TMP/rogue-cert.pem" "$EP_TMP/rogue-key.pem" "$EP_TMP/rogue.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
   # A registry listening but on no list: a refusal must come from the
   # proxy's list, not from nothing being there.
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/unlisted.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/unlisted.jsonl" > /dev/null 2>&1 &
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/unlisted.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/unlisted.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
   for name in anthropic deepseek registry github rogue unlisted; do
     ep_wait_for "$EP_TMP/$name.port" || {
-      echo "the $name stand-in did not start"
+      # What it said, and with which interpreter, so a failure on another
+      # machine (CI) explains itself.
+      echo "the $name stand-in did not start ($(command -v python3), $(python3 -I -c 'import ssl, sys; print(sys.version.split()[0], ssl.OPENSSL_VERSION)')):"
+      cat "$EP_TMP/standins.err"
       return 1
     }
   done
