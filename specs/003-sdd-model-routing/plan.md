@@ -14,7 +14,7 @@ limit. Opus for specify, clarify, plan, checklist, analyze, review and
 converge; Sonnet for tasks; DeepSeek through the pi coding agent for
 implementation; every agent step and every verify a contained pass
 (contracts/pass.md) — an export with no `.git`, the agent in the worker
-container behind a firewall that admits only its own provider, its output a
+container, whose only destination is the run's egress proxy, its output a
 patch judged against the step's writes before it is applied; verify with no model, as the
 repository's check command. Each step loads only its profile's context — no
 MCP servers — so same-model steps reuse the prompt cache. Every step whose
@@ -43,7 +43,8 @@ and uv.
 
 **Storage**: files only — the feature directory and its `.sdd/` outcome files,
 the run state Spec Kit keeps under `.specify/workflows/runs/`, local git
-config (`sdd.implement`, `sdd.check`), the Keychain item `deepseek-api`.
+config (`sdd.implement`, `sdd.check`), the Keychain items `claude-oauth` and
+`deepseek-api`, read only by the run's egress proxy and judge.
 
 **Testing**: `./check.sh`; a new `checks/91-sdd-routing.sh` driving `sdd-run`,
 `sdd-step` and the workflow on the real Spec Kit engine, against stand-ins
@@ -71,7 +72,7 @@ at once in separate worktrees.
 | Principle | How this plan meets it |
 |---|---|
 | I. Declared, never hand-installed | the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
-| II. One owner per layer | the container runtime is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
+| II. One owner per layer | the container runtime is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credentials in the Keychain, held only by the run's egress proxy on the host (research R23). |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand; so do `init-firewall.sh` and `entrypoint.sh`, adapted from Anthropic's reference and owned here, not vendored (research R6). The workflow and the schemas are driven by the same checks. |
 | IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds the chosen runtime's first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
 | V. Upstream's files stay upstream's | No file Spec Kit installs is edited, and its run state is never written by our scripts; the workflow reaches a repository only through `specify workflow add`; `config-guard.sh` is reused unchanged. |
@@ -126,7 +127,7 @@ claude/speckit/
 containers/worker/
 ├── Containerfile                # new
 ├── init-firewall.sh             # new: deny-by-default egress, Anthropic's reference pattern
-├── entrypoint.sh                # new: firewall, then the credential from stdin, then pi as node
+├── entrypoint.sh                # new: the firewall first, then the agent or check command as node
 ├── models.json                  # new: DeepSeek provider entry for pi
 ├── egress-registries.txt        # new: package registries; each agent pass adds only its provider's API host
 └── brief.md                     # new: the implementing agent's rules (FR-017)

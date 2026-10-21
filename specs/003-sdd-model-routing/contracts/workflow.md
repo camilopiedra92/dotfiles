@@ -24,7 +24,9 @@ text reaches the dispatcher through the run's `inputs.json`, never through a
 
 ## Steps, in order
 
-Agent steps are `shell` steps running `sdd-step agent <phase>`; the routing
+Agent steps are `shell` steps running `"$SDD_STEP" agent <phase>` — `SDD_STEP`
+is the absolute path `sdd-run` exports, so no step finds a tool through a
+`PATH`; the routing
 row named in the Phase column decides agent, model, effort, profile, schema
 and limit.
 

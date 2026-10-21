@@ -19,7 +19,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 - [x] CHK002 Does the spec define what "the feature's files" are that phases hand over through, so FR-002 can be judged? [Clarity, Spec §FR-002]
 - [x] CHK003 Are the checkpoints FR-004 lists the same as the gates in contracts/workflow.md, including `answer-clarify`, `fix-stuck` and `converge-stuck`? [Consistency, Spec §FR-004]
 - [x] CHK004 Is it specified who or what marks tasks `[X]` in a routed run, and on which evidence? [Completeness, Spec §FR-006]
-- [ ] CHK005 Are the requirements for a routed run that is not opted in (implementation on Sonnet) as complete as those for the external path — verify, review and loop limits included? [Coverage, Spec §FR-010]
+- [x] CHK005 Are the requirements for a routed run that is not opted in (implementation on Sonnet) as complete as those for the external path — verify, review and loop limits included? [Coverage, Spec §FR-010]
 - [x] CHK006 Is the content the external agent receives (tasks, constitution, test-first rules) defined precisely enough to tell a complete brief from a partial one? [Clarity, Spec §US2 AS1]
 - [ ] CHK007 Are the prerequisites FR-011 covers listed exhaustively, with the phase each one is checked at? [Completeness, Spec §FR-011, contracts/sdd-run.md]
 
@@ -55,14 +55,14 @@ defaults when interaction is impossible; run under the owner's delegation of
 ## Non-Functional: Security and Privacy
 
 - [x] CHK025 Is it specified what the external provider may retain of the code sent, and is the owner told before the first opt-in? [Privacy, Spec §FR-010, Gap]
-- [ ] CHK026 Are the places the credential must never appear listed exhaustively (arguments, environment of the host process, files, image layers, container configuration, run state, logs)? [Completeness, Spec §FR-009, contracts/sdd-step.md]
+- [x] CHK026 Are the places the credential must never appear listed exhaustively (arguments, environment of the host process, files, image layers, container configuration, run state, logs)? [Completeness, Spec §FR-009, contracts/sdd-step.md]
 - [x] CHK027 Is untrusted agent output kept out of shell commands by a stated requirement, not only by the contract? [Security, contracts/workflow.md "Guarantees", Gap]
 
 ## Dependencies and Assumptions
 
 - [ ] CHK028 Is the dependency on Apple's `container` stated with the macOS version it needs and what happens on a machine without it? [Dependency, research R5]
 - [x] CHK029 Is the assumption that pi follows a brief's test-first rules stated as an assumption to be measured, not a requirement met by construction? [Assumption, Spec §US2]
-- [ ] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
+- [x] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
 
 ## Notes
 

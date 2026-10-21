@@ -32,7 +32,7 @@ offline against stand-ins; the last two need the real services.
    `pyproject.toml`, makes `implement` exit 1 naming it; the feature's
    worktree is unchanged and no commit is made.
 8. **Failure leaves nothing behind** (US2 AS7): a stand-in agent that crashes
-   midway leaves the feature's worktree unchanged and no checkout behind.
+   midway leaves the feature's worktree unchanged and no export behind.
 9. **Prerequisites** (US2 AS5, SC-004, FR-011): each missing one stops the
    step naming it, and the stand-in container runtime records no call.
 10. **sdd-init** (US3): against a stand-in `specify`, a fresh repository gets

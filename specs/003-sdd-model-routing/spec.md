@@ -117,7 +117,7 @@ the code leaves the machine. It is only worth having once Story 1 works.
 
 **Independent Test**: run the implementation step against a fixture feature with
 a stand-in for the external agent that tries to read and write outside its
-checkout, change and delete a guarded configuration file, and fail midway;
+export, change and delete a guarded configuration file, and fail midway;
 read what landed in the feature's worktree, what the run reported and what it
 committed.
 
@@ -255,8 +255,9 @@ what landed in the commit, and what was printed.
   the repository's existing configuration guard, not by a second list.
 - **FR-009**: Every credential the run uses — the external provider's key and
   the owner's Claude token — MUST come from the Keychain and MUST be held only
-  by the egress proxy, which adds it to requests bound for its provider's API;
-  no agent, container or check command ever holds one. It MUST NOT appear in a
+  by host processes of the run — the egress proxy, which adds it to requests
+  bound for its provider's API, and the judge's scanner — in memory only; no
+  agent, container or check command ever holds one. It MUST NOT appear in a
   command-line argument, in the environment of any host
   process, in any file on the host (repositories, the export and
   temporary files included), in an image or a container's stored

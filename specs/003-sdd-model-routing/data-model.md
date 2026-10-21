@@ -13,10 +13,10 @@ No database: each entity is a file or a setting that already has an owner.
 | Opt-in | `git config --local sdd.implement` | `deepseek`, or absent | the owner |
 | Run bundle | `$SDD_RUN_DIR/` = `$(git rev-parse --git-common-dir)/sdd/<run_id>/`: `lock.json`, `optin.json`, `check.json`, `tools.json`, `routing.json`, `profiles/`, `hooks/`, `usage.jsonl` (contracts/routing.md) | — | `sdd-run`, `sdd-step` |
 | Check command | `git config --local sdd.check` | the command verify runs | the owner |
-| Credential | Keychain, generic password, service `deepseek-api` | the API key | the owner |
+| Credentials | Keychain, generic passwords, services `claude-oauth` (the owner's token from `claude setup-token`) and `deepseek-api` (the DeepSeek key) | read only by the egress proxy and the judge's scanner, in memory | the owner |
 | Worker image | the container runtime's image store | tag `sdd-worker:<hash of containers/worker/>` | `sdd-step prepare-worker` |
 | Tool caches | volumes `sdd-cache-implement-<run_id>` and `sdd-cache-verify-<run_id>`, never shared | — | implement passes; verify; removed when the run completes |
-| Egress proxy | a host process per run (`sdd-step egress-proxy`) | the run's credentials in memory; per-pass admission | `sdd-run`; stopped when the run pauses, completes or fails |
+| Egress proxy | a host process per run (`sdd-step egress-proxy`) | the run's credentials in memory (the DeepSeek key only when opted in); per-pass admission | `sdd-run`; stopped when its `specify` child exits, and exits itself when `sdd-run` is gone |
 
 ## Outcome files
 

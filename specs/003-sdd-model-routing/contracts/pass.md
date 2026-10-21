@@ -14,12 +14,16 @@ governs the run, and no host tool reads it as configuration.
 
 ## The egress proxy
 
-A process `sdd-run start` starts on the host for the run and stops with it
-(`sdd-step egress-proxy`), listening on an address only the run's containers
-can reach. It:
+A process `sdd-run start` and `resume` start on the host (`sdd-step
+egress-proxy`), listening on an address only the run's containers can reach.
+`sdd-run` runs `specify` as its child rather than replacing itself with it,
+and stops the proxy whenever that child exits — the run paused, completed or
+failed — and on its own interruption; the proxy also exits by itself when
+`sdd-run`'s process is gone, so no credential outlives the run's process. It:
 
 - holds the run's credentials, read from the Keychain at start through a pipe
-  and kept in its own memory only;
+  and kept in its own memory only: the Claude token always, the DeepSeek key
+  only when the bundle's opt-in says `deepseek`;
 - serves each provider's API as a plain-HTTP gateway inside the container's
   network — `ANTHROPIC_BASE_URL` for Claude, the pi provider's `baseUrl` for
   DeepSeek — and forwards each request over TLS to the real host, replacing
@@ -90,9 +94,9 @@ and no configuration an agent could have written runs during a run.
    - every created, changed or deleted path matches the row's `writes`
      (contracts/routing.md); for the implement rows, `writes` is everything
      but the protected set — `.git` and `.git*` files, `.claude`, `.specify`,
-     `.sdd`, `.github` and everything under them, `CLAUDE.md`,
+     `.sdd` and everything under them, `CLAUDE.md`,
      `CLAUDE.local.md`, `AGENTS.md`, `.mcp.json`, at any depth — whose members
-     govern the run, instruct a later agent, or run in CI;
+     govern the run or instruct a later agent;
    - every entry is a regular file whose mode is 644 or 755: a symlink, a
      submodule or any other mode change stops the pass;
    - for the implement rows, each path goes to the bundle's copy of
@@ -100,8 +104,8 @@ and no configuration an agent could have written runs during a run.
      the pass (FR-008); the frozen check command's own script, when the
      command names one, and every path config-guard covers, are recorded as
      check changes (FR-029); git hooks (the repository's `core.hooksPath` and
-     `.husky/`), editor tasks and every file whose mode becomes 755 are
-     recorded as automation changes (FR-030);
+     `.husky/`), CI workflows (`.github/`), editor tasks and every file whose
+     mode becomes 755 are recorded as automation changes (FR-030);
    - the patch, the result's text and `structured_output` are scanned for the
      exact value of every credential of the run — a second line behind the
      proxy, since no agent holds one — read from the Keychain into the scanner

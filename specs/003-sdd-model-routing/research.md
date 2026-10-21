@@ -540,7 +540,7 @@ agent touched. Claude runs in the container with the owner's subscription
 token from `claude setup-token` ("a one-year OAuth token for CI pipelines and
 scripts", requiring a Pro, Max, Team or Enterprise plan; code.claude.com,
 authentication, read 2026-10-21), read from the Keychain item `claude-oauth`
-and passed on stdin like the DeepSeek key. The container's home holds no
+(how it reaches the provider is R23's egress proxy; no container holds it). The container's home holds no
 settings, MCP server or global CLAUDE.md of the owner's, so each step's
 context is the export plus its profile — what R4 and R16 sought with
 `--setting-sources ""`, here by construction.
