@@ -38,7 +38,7 @@ any of them. The last group came from the fresh-context review of
 - Q: How do clarify's questions reach the owner, given a workflow step gets no terminal? → A: Through a file in the feature directory, which the owner answers before approving the checkpoint.
 - Q: How do agents hand over and how does the run decide what comes next? → A: Every step writes its outcome to a JSON file in the feature directory, validated against a schema; the run branches only on what a deterministic reader finds in valid outcome files, never on an agent's printed text, and a missing or invalid outcome fails the step. Proposed by the owner; checked against Anthropic's engineering posts "How we built our multi-agent research system" (subagent output to a filesystem, to avoid a "game of telephone") and "Effective harnesses for long-running agents" (state in a progress file, a JSON feature list and git; JSON because the model is less likely to overwrite it than Markdown; passing only after testing).
 - Q: Does verify need a model? → A: No; whether the check command passed is its exit status, so verify is a deterministic step and models are kept for judgment.
-- Q: What does the implementing agent see of the repository? → A: A disposable checkout of the committed code at the run's current commit, without untracked or ignored files; its changes come back as a patch the run judges before applying.
+- Q: What does the implementing agent see of the repository? → A: A export of the committed code at the run's current commit, without untracked or ignored files; its changes come back as a patch the run judges before applying.
 - Q: What bounds the external provider's spend? → A: A time limit per implementation pass (30 minutes), the prepaid balance as the hard ceiling, and the provider's spend reported per run.
 - Q: How is a repository's check command known? → A: Declared once per repository by the owner; a run without it stops before planning, naming how to declare it.
 - Q: What effort does each step run at? → A: Set per step by the routing, so neither the owner's interactive effort nor an environment variable leaks into a run: every Claude step at `medium`, the documented default for Opus 5.5 and Sonnet 5.5 today, and the DeepSeek step at `high`, the lowest reasoning level DeepSeek's own pi configuration maps to. A higher level for a judgment phase is a change to measure on one story first, then a one-line edit of the routing.
@@ -106,7 +106,7 @@ files each left, and where the run paused.
 ### User Story 2 - Implementation runs on DeepSeek, contained (Priority: P2)
 
 The implementation phase runs on DeepSeek through the pi coding agent, in a
-disposable checkout inside a contained runtime that sees nothing else of the
+export inside a contained runtime that sees nothing else of the
 machine. Its changes come back as a patch that is judged before it lands, and
 the work counts as done only after the project's check command has passed and
 a fresh review on the most capable model has found nothing above LOW.
@@ -125,10 +125,10 @@ committed.
 
 1. **Given** a feature with tasks, **When** the implementation step runs,
    **Then** the agent receives the brief defined in FR-017 and works in a
-   disposable checkout of the run's current commit.
-2. **Given** the agent tries to read or write outside its checkout, or to reach
+   export of the run's current commit.
+2. **Given** the agent tries to read or write outside its export, or to reach
    a network address not in the egress allow list (FR-007), **Then** the
-   attempt fails and nothing outside the checkout changes.
+   attempt fails and nothing outside the export changes.
 3. **Given** the agent's patch changes, creates or deletes a lint, format,
    type-check or test configuration file, **Then** the run fails naming the
    file, applies nothing, and the tasks stay unmarked.
@@ -144,10 +144,10 @@ committed.
    export, brief, patch judgment, time limit, verify, review and loop limits;
    the run says so.
 7. **Given** either implementing agent fails, times out or is cut off midway,
-   **Then** the feature's worktree is unchanged, the disposable checkout is
+   **Then** the feature's worktree is unchanged, the export is
    removed, and the run can be resumed once the cause is fixed; **Given** the
    process running the pass was itself killed, **Then** the next start or
-   resume removes whatever checkout, container or volume it left behind.
+   resume removes whatever export, container or volume it left behind.
 
 ---
 
@@ -186,7 +186,7 @@ what landed in the commit, and what was printed.
   fixed.
 - The run is interrupted mid-step (terminal closed, machine asleep): the owner
   is told how to continue, and which phases, if any, will run again.
-- Two features run at once: each run's agent sees only its own checkout and
+- Two features run at once: each run's agent sees only its own export and
   its own tool cache.
 - The fixed cost of starting each phase cold outweighs the saving on a small
   feature: the measurement in SC-001 shows it, and the result is recorded as it
@@ -209,13 +209,15 @@ what landed in the commit, and what was printed.
   review included.
 - **Severity**: CRITICAL, HIGH, MEDIUM, LOW, the scale converge and review
   write in their outcome files. "Blocking" means any finding above LOW.
-- **Disposable checkout**: a second working copy of the repository at the
-  run's current commit, holding tracked files only, created for one
-  implementation pass and removed after it. The feature's files are committed
-  before it is made, so the checkout holds every earlier phase's output.
-- **Egress allow list**: the provider's API host and the package registries
-  named in one file in this repository beside the worker image; nothing else
-  is reachable from the contained runtime.
+- **Export**: a copy of the repository's tracked files at the run's current
+  commit, with no repository metadata, made for one pass and removed after
+  it. The feature's files are committed before it is made, so it holds every
+  earlier phase's output.
+- **Egress proxy**: the only destination a pass's container can reach — a
+  process on the owner's machine that admits a request only to the hosts that
+  pass may use (its own provider's API; for implementation and verify, the
+  package registries) and that alone holds the credentials, adding them to
+  requests bound for the provider's API.
 
 ## Requirements *(mandatory)*
 
@@ -242,23 +244,27 @@ what landed in the commit, and what was printed.
 - **FR-006**: Tasks MUST be marked done only from the review's outcome, after
   the owner's last checkpoint, and only when the latest verify outcome passed
   and the review has nothing blocking; no implementing agent marks tasks.
-- **FR-007**: The external agent MUST work in a disposable checkout inside a
+- **FR-007**: Every agent MUST work in an export inside a
   contained runtime: it MUST NOT read or write anything of the host outside
-  that checkout and its own tool cache, and MUST NOT reach any network address
-  outside the egress allow list.
+  that export and its pass's own tool cache, and MUST NOT reach any network
+  destination but the egress proxy, which admits only the hosts that pass may
+  use.
 - **FR-008**: A patch from whichever agent implements that creates, changes or
   deletes a lint, format, type-check or test configuration file MUST fail the
   step, naming the file, with nothing applied. Which files count is decided by
   the repository's existing configuration guard, not by a second list.
 - **FR-009**: Every credential the run uses — the external provider's key and
-  the owner's Claude token — MUST come from the Keychain and MUST reach a
-  container only on its stdin; it MUST NOT appear in a command-line argument, in the environment of any host
-  process, in any file on the host (repositories, the disposable checkout and
+  the owner's Claude token — MUST come from the Keychain and MUST be held only
+  by the egress proxy, which adds it to requests bound for its provider's API;
+  no agent, container or check command ever holds one. It MUST NOT appear in a
+  command-line argument, in the environment of any host
+  process, in any file on the host (repositories, the export and
   temporary files included), in an image or a container's stored
   configuration, in the container runtime's logs, in the run's state or logs,
   or in the agent's session files — nor in a patch, an outcome or a result an
-  agent returns: those are scanned for every credential's exact value before
-  anything is applied, and a match fails the pass.
+  agent returns: those are also scanned for every credential's exact value
+  before anything is applied, a match failing the pass, as a second line
+  behind the proxy.
 - **FR-010**: Code MUST be sent to the external provider only from a repository
   the owner has opted in, as recorded when the run started — an opt-out
   during a run is honoured, an opt-in during a run is not; otherwise implementation MUST run on the lighter
@@ -344,17 +350,23 @@ what landed in the commit, and what was printed.
   the repository's check command, and nothing wider than its
   `implementer` profile; its writes reach the repository only as a patch
   judged against the protected set (FR-028).
-  What the check command itself writes outside the checkout (caches, temporary
+  What the check command itself writes outside the export (caches, temporary
   files) is not judged: the same command runs unattended in verify.
 - **FR-028**: Every agent step and every verify MUST run inside the worker
   container on a copy with no repository metadata, and its output MUST reach
   the repository only as a patch limited to the paths that step may write; no
   agent writes the worktree directly, no code an agent wrote runs outside the
   container, and no host tool reads anything an agent wrote as configuration.
-- **FR-029**: A patch that changes the repository's check command or the
-  files it runs MUST be flagged: verify records it, the review counts it as a
-  finding, and the owner's last checkpoint shows the changed files, since a
-  weakened check would otherwise pass its own verify.
+- **FR-029**: A patch that changes the check command's own script (the file
+  the frozen command names, when it names one) or a file the configuration
+  guard covers MUST be flagged: verify records it, it is a blocking finding
+  until the owner approves the last checkpoint, which shows the changed files,
+  since a weakened check would otherwise pass its own verify. Tests are judged
+  by the review (FR-019).
+- **FR-030**: A patch that adds or changes a file the owner's tools may run
+  later without asking — git hooks, CI workflows, editor tasks, executable
+  files — MUST be listed at the owner's last checkpoint; such a file never runs
+  during the run (FR-028), and whether it is merged is the owner's review.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
@@ -453,6 +465,16 @@ the workflow's own limit for the step sits just above the ceiling),
 
 ## Assumptions
 
+- **Threat model** (research R20, R23): the agents are protected against as
+  makers of mistakes and as carriers of instructions planted in what they
+  read — the repository, a dependency, a provider's response. Protected: the
+  owner's credentials and machine, the run's governance, and the checks
+  against silent weakening. Accepted as residual, and not defended further: a
+  deliberately malicious agent smuggling repository code out encoded through
+  a host it is allowed to reach; a planted automation file running after the
+  owner merges it, which FR-030 lists at the last checkpoint so the owner's
+  review can catch it.
+
 - "Most capable model" is Claude Opus and "lighter model" is Claude Sonnet,
   both through the owner's Claude subscription; the external provider is
   DeepSeek V4 Flash through its own prepaid API key, reached
@@ -469,7 +491,7 @@ the workflow's own limit for the step sits just above the ceiling),
   either: a pass whose response reports a model other than the one
   configured fails, naming both; if the response reports only the alias
   itself, a repoint behind it cannot be detected, and `deepseek-flash` is
-  accepted as unpinned, like the container runtime and the Claude Code CLI; pi moves only by an edit to the worker
+  accepted as unpinned, like the container runtime; pi moves only by an edit to the worker
   image, and a pass whose output lacks a field the run reads fails naming
   it.
 - The routed workflow is an addition: the interactive way of running Spec Kit

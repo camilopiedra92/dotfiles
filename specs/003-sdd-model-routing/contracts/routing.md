@@ -15,6 +15,7 @@ exports it to every step, and writes into it before any step runs:
 | `routing.json` | the merged effective table, each value with its layer |
 | `profiles/*.json` | copies of the profiles |
 | `hooks/` | a copy of `config-guard.sh`, run by the judge (contracts/pass.md) |
+| `tools.json` | the absolute paths of the host tools the run calls, resolved once at start |
 | `usage.jsonl` | appended by every agent attempt |
 
 Every step reads its routing, profile, hooks and opt-in only from the bundle,
@@ -113,13 +114,14 @@ claude -p "<row.prompt> <feature paths>" \
   --output-format json [--json-schema <schema>]
 ```
 
-as the non-root user, with the owner's Claude token (`claude setup-token`,
-Keychain item `claude-oauth`) read once from stdin into
-`CLAUDE_CODE_OAUTH_TOKEN`; the container's home holds no settings, no MCP
+as the non-root user, with `ANTHROPIC_BASE_URL` pointing at the egress proxy
+and `CLAUDE_CODE_OAUTH_TOKEN` set to a placeholder the proxy replaces with the
+owner's token (`claude setup-token`, Keychain item `claude-oauth`), which
+never enters the container (contracts/pass.md); the container's home holds no settings, no MCP
 server and no CLAUDE.md of the owner's, so a step loads only the export's
 tracked files and its profile (FR-026). A pi row runs `pi -p --mode json
---no-session --model deepseek/<row.model> --thinking <row.effort>` with the
-DeepSeek key the same way. Then, on the host:
+--no-session --model deepseek/<row.model> --thinking <row.effort>`, its provider's `baseUrl` the
+proxy and its key a placeholder, the same way. Then, on the host:
 
 - a result with `is_error` true, a `permission_denials` entry, or no result
   fails the step, naming the cause (spec, Edge Cases);

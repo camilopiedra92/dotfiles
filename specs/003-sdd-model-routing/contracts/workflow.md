@@ -30,6 +30,7 @@ and limit.
 
 | # | id | Kind | Phase row | Writes | Notes |
 |---|---|---|---|---|---|
+| 0 | `prepare-worker` | shell `sdd-step prepare-worker`, `timeout: 1800` | — | the worker image | builds it once, before the first agent step, outside every pass's limit |
 | 1 | `specify` | agent | `specify` | `spec.md` | |
 | 2 | `clarify-ask` | agent | `clarify-ask` | `clarify-questions.md`, `.sdd/clarify.json` | unattended: questions to the file with a recommendation each; the count as structured output |
 | 3 | `has-questions` | shell `sdd-step outcome clarify` | — | — | prints `yes`/`no` |
@@ -42,16 +43,15 @@ and limit.
 | 10 | `review-plan` | gate | owner | — | `plan_verdict`, shows `analysis.md`, reject aborts; then `sdd-step phase-done plan` |
 | 11 | `tasks` | agent | `tasks` | `tasks.md` | then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
-| 12.1 | `prepare-worker` | shell `sdd-step prepare-worker`, `timeout: 1800` | — | the worker image | builds it once, outside every pass's limit; both paths need it, since verify runs in it |
 | 13 | `build` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome converge` prints `converged` (FR-014) |
 | 13.1 | `fix-loop` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome verify` prints `pass` (FR-015) |
-| 13.1.1 | `implement` | shell `sdd-step implement` | `implement-deepseek` or `implement-sonnet`, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, checkout, judgment and time limit (US2 AS6) |
+| 13.1.1 | `implement` | shell `sdd-step implement` | `implement-deepseek` or `implement-sonnet`, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, export, judgment and time limit (US2 AS6) |
 | 13.1.2 | `verify` | shell `sdd-step verify` | — (no model, FR-020) | `.sdd/verify.json` | in the worker container, on a fresh export of `HEAD`, no network but the allow list |
 | 13.2 | `fix-stuck` | gate in `if` verify = fail | owner | — | `fix_verdict`: `retry` runs exactly one more 13.1.1–13.1.2 round and comes back here if it fails; `abort` stops |
 | 13.3 | `review` | agent | `review` | `.sdd/review.json` | fresh agent over the diff since the run's base, mounted as `/input/diff.patch` (contracts/pass.md), `reader` profile; deleted or weakened tests are blocking (FR-019) |
 | 13.4 | `converge` | agent | `converge` | `tasks.md`, `.sdd/converge.json` | findings by severity as structured output |
 | 14 | `converge-stuck` | gate in `if` converge = open | owner | — | `converge_verdict`: `retry` runs one more 13 pass and comes back here if still open; `abort` stops |
-| 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json` and, when there are any, the check changes `verify.json` recorded (FR-029); approve runs 16 |
+| 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json`, the check changes (FR-029) and the automation changes (FR-030) the implement passes recorded; approve runs 16 |
 | 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006); then `sdd-step phase-done build` |
 
 Same-model steps are adjacent — 1–9 on Opus, 11 on Sonnet, 13.1.1 on the

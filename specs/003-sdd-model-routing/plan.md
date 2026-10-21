@@ -58,7 +58,7 @@ schemas are checked against valid and invalid sample outcomes.
 **Performance Goals**: none of its own; SC-001 is a usage target.
 
 **Constraints**: the credential never where FR-009 lists; no edit to Spec
-Kit's files (constitution V); the agent sees only its checkout and its run's
+Kit's files (constitution V); the agent sees only its export and its pass's
 cache (FR-007).
 
 **Scale/Scope**: one owner, a handful of features a week, at most a few runs
@@ -106,7 +106,8 @@ uv-tools.txt                     # + check-jsonschema
 bin/
 ├── sdd-init.sh                  # + installs sdd-routed
 ├── sdd-run.sh                   # new
-└── sdd-step.sh                  # new
+├── sdd-step.sh                  # new
+└── sdd-egress-proxy.py          # new: the run's egress proxy, Python standard library
 claude/speckit/
 ├── sdd-routed.yml               # new: the workflow
 ├── routing.yml                  # new: the routing table, one row per phase

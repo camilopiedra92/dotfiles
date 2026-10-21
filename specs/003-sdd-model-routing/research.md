@@ -500,9 +500,10 @@ on the host; the patch and the judgment steps could change skills,
 Kit's own limit.
 
 **Threat model**: the implementing and judging agents are untrusted authors.
-What they write is data until judged; nothing they wrote runs outside a
-sandbox or container; nothing that governs the run is within their reach; no
-host tool reads anything they wrote as configuration.
+What they write is data until judged; nothing they wrote runs outside the
+container; nothing that governs the run is within their reach; no host tool
+reads anything they wrote as configuration. Scoped in R23: against mistakes
+and planted instructions, with two residual risks accepted.
 
 **Decisions that follow**: the disposable copy is a `git archive` export with
 no `.git`, and the patch is a `git diff --no-index` run outside any repository
@@ -579,6 +580,44 @@ and the list frozen in the run bundle like every other input that governs a
 run. A server holding the owner's credentials never runs in an unattended
 pass. Not built now: no phase asks for it, and an extension point nobody uses
 is code to maintain for nothing.
+
+## R23 — The egress proxy, and the threat model's scope
+
+**Finding** (sixth review round, 2026-10-21): an agent holding a credential in
+its environment can always smuggle it out encoded — the exact-value scan
+misses base64 — through any host it may reach, a package registry included;
+and a cache shared between the implementer and verify let an implementer plant
+a tool verify would run. Each round had found new channels of this kind.
+
+**Decision**: no container holds a credential. A proxy on the host
+(contracts/pass.md, "The egress proxy") is every container's only
+destination: it holds the credentials, adds them to requests bound for the
+provider's API — the LLM-gateway arrangement Claude Code documents, including
+for subscription OAuth traffic forwarded to Anthropic (code.claude.com,
+llm-gateway, read 2026-10-21) — tunnels the package registries for implement
+and verify passes, and refuses everything else; the container's firewall
+allows only the proxy, so no DNS leaves it either. Caches are per pass kind,
+never shared between implementer and verify. The proxy is written in Python's
+standard library, run by `/usr/bin/python3`, as config-guard is, with checks
+(constitution III).
+
+**Scope**: protected against agents' mistakes and against instructions
+planted in what they read (prompt injection) — the credentials, the machine,
+the run's governance and its checks. Accepted, written in the spec's
+Assumptions and not defended further: a deliberately malicious agent smuggling
+repository code out encoded through a host it is allowed to reach; a planted
+automation file (hook, CI workflow, editor task) running after the owner
+merges it, which FR-030 lists at the last checkpoint. Security practice
+states a threat model's limits rather than chasing every channel: each of the
+six review rounds found another, and the owner's merge review is the control
+these two are left to.
+
+**Alternatives**: credentials on the container's stdin with an exact-value
+scan — encoded copies pass it; Claude Code's sandbox credential masking —
+host-side and Claude-only, not for pi; mitmproxy — a new dependency where the
+standard library suffices for a plain-HTTP gateway and a `CONNECT` tunnel;
+blocking every automation path in the patch — legitimate features add hooks
+and CI, as this one adds checks.
 
 ## R13 — Time and spend
 

@@ -5,11 +5,40 @@ runs as one contained pass, the same way (research R21). It enforces the threat
 model of research R20 by construction rather than by naming files. Every host step of a pass —
 this contract's and every `sdd-step` and `sdd-run` subcommand's — starts in
 the run bundle's directory with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and calls
-its tools by absolute path, so no file in any worktree or export (a
+its tools by the absolute paths `sdd-run start` resolved once, from the
+bundle's directory with the owner's `PATH`, and froze in `tools.json`, so no file in any worktree or export (a
 `mise.toml`, an `.envrc`, a `.tool-versions`, whatever a future tool reads)
 ever configures a host tool: an agent's
 output is data until judged, it runs only inside the container, it never
 governs the run, and no host tool reads it as configuration.
+
+## The egress proxy
+
+A process `sdd-run start` starts on the host for the run and stops with it
+(`sdd-step egress-proxy`), listening on an address only the run's containers
+can reach. It:
+
+- holds the run's credentials, read from the Keychain at start through a pipe
+  and kept in its own memory only;
+- serves each provider's API as a plain-HTTP gateway inside the container's
+  network — `ANTHROPIC_BASE_URL` for Claude, the pi provider's `baseUrl` for
+  DeepSeek — and forwards each request over TLS to the real host, replacing
+  the authorization the agent sent (a placeholder) with the real credential;
+  this is the gateway arrangement Claude Code documents for subscription
+  traffic (code.claude.com, llm-gateway: a gateway passing such traffic to
+  Anthropic forwards the OAuth capability in `anthropic-beta`);
+- tunnels `CONNECT` to the package registries for implement and verify
+  passes, and refuses every other destination, logging each refusal;
+- admits each pass only to the hosts its pass type allows (Steps, 3), keyed
+  by the pass's own token on the proxy, so a judgment pass cannot reach the
+  registries and a Claude pass cannot reach DeepSeek.
+
+The container's firewall allows the proxy's address and nothing else, DNS
+included: names are resolved by the proxy. No agent, container or check
+command ever holds a credential (FR-009). **Pending**: that Claude Code's
+`-p` runs on the subscription through such a gateway with a placeholder token,
+and that pi does through its `baseUrl` (T003, T006); if Claude Code cannot,
+the work stops for the owner.
 
 ## Host git
 
@@ -34,19 +63,20 @@ and no configuration an agent could have written runs during a run.
    for the review row, `/input/diff.patch`: the diff from the run's base
    commit to `HEAD`, made on the host (Host git), which the export, having no
    history, cannot show (FR-019).
-3. **Container**: the worker image (built by `prepare-worker`), the export
-   mounted alone at `/work`, the inputs above, the run's cache volume for the
-   implement rows and verify only, `NET_ADMIN`/`NET_RAW` only for the firewall
-   script, which runs first and denies all egress but the pass's allow list:
-   its own provider's API host for a judgment or review row
-   (`api.anthropic.com`); that host plus the registries in
-   `egress-registries.txt` for an implement row (`api.anthropic.com` or
-   `api.deepseek.com`); the registries alone for verify. Then the agent, or
-   the check command, runs as the non-root user `node`; Claude with
+3. **Container**: the worker image (built by `prepare-worker`, the
+   workflow's first step), the export mounted alone at `/work`, the inputs
+   above, a cache volume of the pass's own kind — `sdd-cache-implement-<run_id>`
+   for implement passes, `sdd-cache-verify-<run_id>` for verify, never shared
+   between the two, so nothing an implementer leaves in a cache is run by
+   verify — and `NET_ADMIN`/`NET_RAW` only for the firewall script, which runs
+   first and allows the egress proxy's address and nothing else. The proxy
+   admits, per pass: its own provider's API for a judgment or review row;
+   that API plus the registries for an implement row; the registries alone
+   for verify. Then the agent, or the check command, runs as the non-root user
+   `node`, with a placeholder where a credential would be; Claude with
    `--setting-sources ""` so a tracked `.claude/settings.json` in the export
-   adds nothing to its profile (pending T003; the container and the writes list
-   bound it either way); the credential, when there is one, is written to
-   stdin and read once by the entrypoint. For the specify row no feature
+   adds nothing to its profile (pending T003; the container and the writes
+   list bound it either way). For the specify row no feature
    directory exists yet: Spec Kit's `create-new-feature.sh` numbers one in the
    export, and the judge accepts exactly one new directory under `specs/`
    (contracts/routing.md); for the other rows `SPECIFY_FEATURE_DIRECTORY` names
@@ -67,12 +97,16 @@ and no configuration an agent could have written runs during a run.
      submodule or any other mode change stops the pass;
    - for the implement rows, each path goes to the bundle's copy of
      `config-guard.sh`, run by absolute interpreter path, and an `ask` stops
-     the pass (FR-008); a path the frozen check command runs (its script, or
-     under its directory) is recorded as a check change (FR-029);
+     the pass (FR-008); the frozen check command's own script, when the
+     command names one, and every path config-guard covers, are recorded as
+     check changes (FR-029); git hooks (the repository's `core.hooksPath` and
+     `.husky/`), editor tasks and every file whose mode becomes 755 are
+     recorded as automation changes (FR-030);
    - the patch, the result's text and `structured_output` are scanned for the
-     exact value of every credential of the run, read from the Keychain into
-     the scanner through a pipe and never written; a match stops the pass,
-     naming the credential, not showing it (FR-009).
+     exact value of every credential of the run — a second line behind the
+     proxy, since no agent holds one — read from the Keychain into the scanner
+     through a pipe and never written; a match stops the pass, naming the
+     credential, not showing it (FR-009).
    A path or entry the judge refuses is named; nothing is applied.
 7. **Apply**: `git apply -p0 --index` of the judged patch on the feature's
    worktree, which no agent ever wrote, and one commit, `<phase>: <feature>
@@ -87,7 +121,7 @@ and no configuration an agent could have written runs during a run.
 ## Verify
 
 The same pass with no agent: the export of `HEAD`, `/bundle/check.json`, the
-cache volume, the container with the registries only, the check command run
+verify cache volume, the container admitted by the proxy to the registries only, the check command run
 as `node`, no patch, no apply; its exit status, the tail of its output, and
 the check changes the implement passes recorded since the last verify go to
 `.sdd/verify.json` (FR-020, FR-028, FR-029).
@@ -99,6 +133,7 @@ the check changes the implement passes recorded since the last verify go to
   configuration, the container runtime's logs, the run's state or logs, an
   agent's session files, or anything an agent returns (FR-009).
 - A mount but the export, the inputs of step 2 (read-only) and, for implement
-  rows and verify, the run's cache volume.
+  rows and verify, that pass kind's own cache volume.
+- A route out of a container but through the egress proxy.
 - A host tool run with its working directory, `PATH` or configuration taken
   from a worktree or an export.
