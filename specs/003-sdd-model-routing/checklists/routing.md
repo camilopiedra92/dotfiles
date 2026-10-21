@@ -39,7 +39,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 ## Acceptance Criteria Quality
 
-- [ ] CHK016 Is SC-001's baseline arm defined precisely enough to be rerun — which steps on which model, which implement path, which fixture state? [Measurability, Spec §SC-001]
+- [x] CHK016 Is SC-001's baseline arm defined precisely enough to be rerun — which steps on which model, which implement path, which fixture state? [Measurability, Spec §SC-001]
 - [x] CHK017 Is it stated how SC-001 counts usage the subscription spends but a step does not report (retries, a failed step, the converge loop's extra passes)? [Measurability, Spec §SC-001]
 - [x] CHK018 Is SC-003's probe defined by what it attempts, so "0 writes land" has a fixed denominator? [Measurability, Spec §SC-003]
 - [x] CHK019 Can SC-005's "one answer per checkpoint" be met by the clarify checkpoint, where the owner writes several answers? [Measurability, Spec §SC-005, §FR-005]
