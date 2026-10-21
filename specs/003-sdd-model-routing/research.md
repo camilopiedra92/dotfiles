@@ -289,9 +289,11 @@ whose `resume_from` input makes every phase before the first unfinished one
 a skipped `if`. Spec Kit 1.2.2 says a `running` run is not resumable, and its
 code has no handling for a process that died (grep of `workflows/` for a stale
 or orphaned run: nothing). **Pending**: the first task kills a run mid-step
-and records what `state.json` holds; `sdd-run` then either resumes it through
-the engine or tells the owner which phases a new run would redo — never by
-editing Spec Kit's state files.
+and records what `state.json` holds, to confirm the `running` state FR-022
+relies on. A run interrupted with Ctrl-C is a different case: the engine marks
+it `paused` with no gate (`engine.py`, 1.2.2, `KeyboardInterrupt`), so
+`sdd-run resume <id>` without a verdict cleans up and lets the engine run the
+interrupted step again. Spec Kit's state files are never edited.
 
 **Stale copy**: the workflow's `version` field is compared by `sdd-run` with
 this repository's file; a mismatch stops the run, naming the `specify workflow

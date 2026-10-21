@@ -290,7 +290,9 @@ what landed in the commit, and what was printed.
   the command that starts a new run from the existing feature directory at
   the first unfinished phase (Spec Kit 1.2.2 resumes only paused or failed
   runs); a new run from a feature with no finished phase is refused, and the
-  owner starts again from the description;
+  owner starts again from the description. A run the engine paused outside a
+  checkpoint (interrupted by the owner) is resumed with no verdict: the
+  resume cleans up and runs the interrupted step again;
   finished phases' files MUST NOT be rewritten by that new run. A phase is
   finished when its checkpoint was approved, or, for tasks, when its output
   was written; each is recorded in an outcome file as it happens. Whether a
@@ -375,7 +377,10 @@ fixed above 30 minutes),
   review, there is no `fix-stuck` checkpoint and no separate marking. The
   baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
   repository, added to the fixture from the same dotfiles commit as the
-  routed one. In both counted runs every review checkpoint is approved,
+  routed one, and started with `sdd-run start --workflow sdd-baseline`, so
+  it gets the same prerequisites, permissions, effort, output format, run id
+  and usage record; its implement step is also allowed the repository's
+  check command. In both counted runs every review checkpoint is approved,
   `fix-stuck` and `converge-stuck` are answered `abort`; an arm that reaches
   either is not a counted run: it is recorded and run once more, and a second
   such run is the arm's result, recorded as it came out. The one model step not on the most capable model is
@@ -417,7 +422,9 @@ fixed above 30 minutes),
   step naming it, and a missing usage figure is never read as zero; each run
   records both versions. DeepSeek's id `deepseek-flash` names no version
   either: a pass whose response reports a model other than the one
-  configured fails, naming both; pi moves only by an edit to the worker
+  configured fails, naming both; if the response reports only the alias
+  itself, a repoint behind it cannot be detected, and `deepseek-flash` is
+  accepted as unpinned, like `container` and the Claude Code CLI; pi moves only by an edit to the worker
   image, and a pass whose output lacks a field the run reads fails naming
   it.
 - The routed workflow is an addition: the interactive way of running Spec Kit

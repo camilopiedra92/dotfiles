@@ -43,16 +43,17 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    time limit (research R13).
 5. **Patch**: the checkout's changes against `HEAD`, new and deleted files
    included.
-6. **Judge**: each created, changed or deleted path passed to
+6. **Check the response**: a response reporting a model other than the
+   configured one, or lacking a usage field, fails the pass naming it, with
+   nothing applied.
+7. **Judge**: each created, changed or deleted path passed to
    `claude/config-guard.sh` as a `Write` of its new content (empty when
    deleted); an `ask` stops with exit 1 naming the path, nothing applied.
-7. **Apply and commit** on the feature's worktree: `worker: <feature>
+8. **Apply and commit** on the feature's worktree: `worker: <feature>
    (<model>)`; `.sdd/implement.json` records the files, the commit, and
    the pass's usage: pi's tokens, or Claude's reported cost and model usage.
-   A response reporting a model other than the configured one, or lacking a
-   usage field, fails the pass naming it.
-8. **Clean up**: the checkout, the container and, when the run completes, its
-   volume removed whatever happened in 4–7. A pass whose own process was
+9. **Clean up**: the checkout, the container and, when the run completes, its
+   volume removed whatever happened in 4–8. A pass whose own process was
    killed cannot clean up; `sdd-run start` and `resume` call `sdd-step
    cleanup` first (US2 AS7).
 
