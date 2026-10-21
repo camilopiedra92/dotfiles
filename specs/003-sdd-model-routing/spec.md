@@ -14,7 +14,7 @@ agent, contained so it can touch only the feature's code. Built on Spec Kit's
 own workflow engine, installed by `sdd-init`. Every agent hands its work to
 the next as files on disk, not as text. Goal: fit the owner's work into a
 smaller Claude subscription (Max 5x → Pro) without losing quality." Spiked on
-2026-10-21 on Spec Kit 1.1.3, in a throwaway repository with a stand-in
+2026-10-21 on Spec Kit 1.1.3, rerun on 1.2.2, in a throwaway repository with a stand-in
 `claude` that records its arguments: a workflow step with `model: opus`
 dispatched `claude -p "/speckit-specify …" --model opus`; a run without a
 terminal paused at the first gate; a `shell` step saw no terminal and an empty
@@ -355,7 +355,7 @@ what landed in the commit, and what was printed.
   separate marking. The one model step not on the most capable model is
   story-workers' own worker inside that implement command, on the lighter
   model at `medium` as its decision 0001 sets it; it is part of the
-  baseline as `sdd-init` installs it today. Spec Kit 1.1.3; the Claude Code
+  baseline as `sdd-init` installs it today. Spec Kit 1.2.2; the Claude Code
   version recorded with the result. One counted run per
   arm; recorded as it comes out. Whether the owner
   moves to the smaller plan is decided afterwards, from a week of real usage.

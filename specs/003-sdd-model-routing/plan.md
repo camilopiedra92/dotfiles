@@ -23,7 +23,8 @@ scripts are Bash; `shellcheck` and `shfmt` run in `./check.sh`); YAML for the
 workflow (Spec Kit workflow schema 1.0); JSON Schema (draft 2020-12) for the
 outcome files; a Containerfile for the worker image.
 
-**Primary Dependencies**: Spec Kit CLI 1.1.3 (workflow engine, `uv-tools.txt`);
+**Primary Dependencies**: Spec Kit CLI 1.2.2 (workflow engine with per-step
+output capture, ≥ 1.2.1 required; `uv-tools.txt`, moved in dotfiles PR #154);
 Claude Code CLI; new and approved by the owner on 2026-10-21: Apple
 `container` 1.5.0 (`Brewfile`), `check-jsonschema` (`uv-tools.txt`), and,
 inside the image only, Node 26, `@earendil-works/pi-coding-agent@1.3.0`, mise

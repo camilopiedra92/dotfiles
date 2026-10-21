@@ -1,7 +1,8 @@
 # Research: Model routing per Spec Kit phase
 
 Decisions for `003-sdd-model-routing`, each with what was observed and what
-lost. Probes ran on 2026-10-21 against Spec Kit 1.1.3 (`specify version`) in
+lost. Probes ran on 2026-10-21 against Spec Kit 1.1.3 and were rerun the same
+day on 1.2.2 (dotfiles PR #154), which this feature requires (R11), in
 throwaway repositories under the session scratchpad, with a stand-in `claude`
 that records its arguments unless stated otherwise. "Pending" marks a claim
 the first implementation tasks still have to observe on this machine.
@@ -67,8 +68,9 @@ gate's options, so free answers do not fit.
 ## R4 — Headless permissions fail closed
 
 **Decision**: `sdd-run` sets
-`SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--permission-mode dontAsk --settings
-<routing-settings.json>"`, whose `allow` list holds the file tools,
+`SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--permission-mode dontAsk
+--output-format json --settings <routing-settings.json>"` (`--output-format`:
+R11), whose `allow` list holds the file tools,
 `.specify/scripts/bash/*` and read-only git. Since verify runs no model (R10),
 no judgment phase needs a project's check command, so one machine-wide list
 serves every phase but one: the lighter model's implementation pass (R6),
@@ -231,9 +233,24 @@ ended `failed` on its first pass).
 
 ## R11 — Measuring SC-001
 
-**Decision**: each Claude step's JSON result carries `total_cost_usd` and
-`modelUsage`, captured in the run's `state.json` (probe: step `output` holds
-`stdout`). `sdd-run usage <run_id>` sums every attempt per model, failed and
+**Correction**: an earlier version of this entry said a Claude step's result
+lands in `state.json`. It does not on 1.1.3: `command` and `prompt` steps
+stream to the terminal and keep empty `stdout` — the probe had only seen a
+`shell` step captured, and the claim generalised it. Upstream fixed it in
+1.2.1 with opt-in capture (github/spec-kit#4957), so this feature requires
+Spec Kit ≥ 1.2.1 and runs on 1.2.2.
+
+**Decision**: every Claude step sets `capture: true` and an explicit
+`timeout` (a captured `command` step otherwise stops at 600 seconds, too
+short for plan or converge: 3600 for judgment phases, set per step).
+Captured steps are dispatched without `--output-format json`, so `sdd-run`
+adds it to `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`; observed on 1.2.2 with a
+stand-in `claude`: `-p /speckit-specify probe --permission-mode dontAsk
+--output-format json --model claude-opus-5-5`, and the step's `stdout` in
+`state.json` held the JSON result. Since no decision reads an agent's text
+(R10), JSON on every step changes nothing else. Captured text is kept in
+`state.json` unredacted (upstream's warning), which holds no secret here:
+the credential never reaches a Claude step (FR-009). `sdd-run usage <run_id>` sums every attempt per model, failed and
 resumed ones included, and the provider's tokens from the worker's outcomes.
 **Pending**: that a failed or resumed step's earlier attempt is still in
 `state.json` or `log.jsonl`; the first task observes it, and if it is not,
@@ -250,7 +267,7 @@ to `<feature>/.sdd/phases.json`; `--from` starts at the first phase not in it. O
 if the pending probe shows the engine allows it, or reported with the phases
 that will run again, and restarted with `sdd-run start --from <feature dir>`,
 whose `resume_from` input makes every phase before the first unfinished one
-a skipped `if`. Spec Kit 1.1.3 says a `running` run is not resumable, and its
+a skipped `if`. Spec Kit 1.2.2 says a `running` run is not resumable, and its
 code has no handling for a process that died (grep of `workflows/` for a stale
 or orphaned run: nothing). **Pending**: the first task kills a run mid-step
 and records what `state.json` holds; `sdd-run` then either resumes it through

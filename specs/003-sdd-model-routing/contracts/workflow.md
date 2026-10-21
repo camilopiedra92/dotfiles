@@ -46,6 +46,12 @@ Every gate binds one of them with `verdict_input` (R3).
 | 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json`; approve runs 16 |
 | 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006); then `sdd-step phase-done build` |
 
+## Dispatch
+
+Every Claude step sets `capture: true` and `timeout: 3600` (research R11);
+`sdd-run` adds `--output-format json` to the run's extra arguments, so each
+step's captured `stdout` is Claude's JSON result.
+
 ## Guarantees
 
 - Every model step is a fresh `claude -p` process (research R2).

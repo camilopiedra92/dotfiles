@@ -62,7 +62,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 - [x] CHK028 Is the dependency on Apple's `container` stated with the macOS version it needs and what happens on a machine without it? [Dependency, research R5]
 - [x] CHK029 Is the assumption that pi follows a brief's test-first rules stated as an assumption to be measured, not a requirement met by construction? [Assumption, Spec §US2]
-- [ ] CHK030 Are the version pins this feature relies on (Spec Kit 1.1.3's engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
+- [ ] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
 
 ## Notes
 
