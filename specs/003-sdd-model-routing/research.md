@@ -121,7 +121,9 @@ feature's worktree, commits, and removes the checkout. A pass that fails,
 times out or crashes leaves the feature's worktree untouched, so resume finds
 it clean (US2 AS7). The Sonnet path uses the same checkout, judgment and time limit,
 running `claude -p` on the host in it rather than in the VM: Claude is under
-the headless permissions of R4, and no code leaves for a new provider. Every
+the headless permissions of R4 plus `Bash(<sdd.check>)`, so it can see its
+tests fail (FR-023), and no code leaves for a new provider; its JSON result
+goes into `implement.json` for `sdd-run usage`. Every
 checkout, container and volume is labelled with its run id, so `sdd-step
 cleanup` can remove what a killed pass left.
 
@@ -237,7 +239,13 @@ resumed ones included, and the provider's tokens from the worker's outcomes.
 
 ## R12 — Interrupted runs and stale copies
 
-**Interrupted**: Spec Kit 1.1.3 says a `running` run is not resumable, and its
+**Interrupted** (FR-022): `sdd-run` writes the run id and its own process id
+to `<feature>/.sdd/run.json` at start and resume. On resume, a run in state
+`running` whose recorded process is gone is either resumed through the engine,
+if the pending probe shows the engine allows it, or reported with the phases
+that will run again, and restarted with `sdd-run start --from <feature dir>`,
+whose `resume_from` input makes every phase before the first unfinished one
+a skipped `if`. Spec Kit 1.1.3 says a `running` run is not resumable, and its
 code has no handling for a process that died (grep of `workflows/` for a stale
 or orphaned run: nothing). **Pending**: the first task kills a run mid-step
 and records what `state.json` holds; `sdd-run` then either resumes it through
@@ -248,10 +256,45 @@ editing Spec Kit's state files.
 this repository's file; a mismatch stops the run, naming the `specify workflow
 add` command that replaces the copy (US1 AS7).
 
+## R14 — Effort per model
+
+**Decision**: `routing-settings.json`, passed with `--settings`, sets
+`modelSettings` — `{"claude-opus-5-5": {"effortLevel": "medium"},
+"claude-sonnet-5-5": {"effortLevel": "medium"}}` — and `sdd-run` unsets
+`CLAUDE_CODE_EFFORT_LEVEL` before any step (FR-021). pi gets DeepSeek's
+`high` reasoning level explicitly.
+
+**Observed in the docs** (code.claude.com, model-config and settings,
+2026-10-21): effort resolves as an explicit choice (`CLAUDE_CODE_EFFORT_LEVEL`,
+`--effort`, `/effort`) first, then settings (`modelSettings` per model, or
+`effortLevel`), then the model's default — `medium` for Opus 5.5 and Sonnet
+5.5. `--settings` sits above user, project and local files, below managed.
+`max` is accepted by neither settings key. This machine's user settings hold
+`medium` for both models, saved through `/effort`; the shell sets
+`CLAUDE_EFFORT=medium`, a name Claude Code does not document. **Pending**: a
+probe that a `--settings` level wins over the user file's for a `-p` run, and
+how the result reports the level (FR-021's record).
+
+**Why medium**: the owner's policy (`docs/claude-settings.md`) is each
+model's default unless measured otherwise, and story-workers' decision 0001
+already writes a level only to decouple it from the session's. Writing the
+defaults out does the same here: a `/effort high` in an interactive session,
+or an exported variable, no longer reaches a routed run. DeepSeek's pi
+configuration maps every level below the highest to `high` (DeepSeek's "pi
+mono" page), so `high` is its floor.
+
+**Alternatives**: `high` or `xhigh` for the judgment phases — plausible for
+plan, review and converge, but unmeasured, and it spends the allowance this
+feature exists to save; reopen with a one-story A/B. Effort per step rather
+than per model — Spec Kit passes extra arguments per run (R4), so each step's
+model is the only lever; reopen if Spec Kit adds per-step arguments, together
+with R10's `--json-schema`.
+
 ## R13 — Time and spend
 
 **Decision**: `sdd-step implement` ends a pass after 30 minutes
-(`sdd.implementTimeout` overrides it), stopping the container; the provider's
+(`sdd.implementTimeout` overrides it), stopping the container or the `claude`
+process; the provider's
 prepaid balance is the hard ceiling; each worker outcome records pi's reported
 tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has
 no `timeout`; the limit is the script's own, around `container stop`.

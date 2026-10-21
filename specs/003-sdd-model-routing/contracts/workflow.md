@@ -13,6 +13,7 @@ outcome files live in `<f>/.sdd/` and are read only through `sdd-step outcome`
 | Input | Type | Default |
 |---|---|---|
 | `spec` | string, required | — |
+| `resume_from` | `enum: ["", specify, plan, tasks, build]` | `""`; set only by `sdd-run start --from`; every phase before it is skipped (FR-022) |
 | `clarify_verdict`, `spec_verdict`, `plan_verdict`, `done_verdict` | `enum: ["", approve, reject]` | `""` |
 | `fix_verdict`, `converge_verdict` | `enum: ["", retry, abort]` | `""` |
 

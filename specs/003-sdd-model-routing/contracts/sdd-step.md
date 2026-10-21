@@ -30,7 +30,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    built when absent.
 4. **Agent**. Sonnet: `claude -p --model claude-sonnet-5-5` with the same
    brief, its working directory the checkout, under the routing settings of
-   research R4, stopped after the time limit. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
+   research R4 plus `Bash(<sdd.check>)` (FR-023), stopped after the time
+   limit; its JSON result kept for step 7. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
    `/work`, the volume `sdd-cache-<run_id>` for the tool cache, network limited
    to the hosts in `containers/pi-worker/egress.txt` (research R5, pending); the credential written to stdin and read once by the entrypoint;
    pi given the brief of FR-017 (`containers/pi-worker/brief.md` plus the
@@ -42,8 +43,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    `claude/config-guard.sh` as a `Write` of its new content (empty when
    deleted); an `ask` stops with exit 1 naming the path, nothing applied.
 7. **Apply and commit** on the feature's worktree: `worker: <feature>
-   (<model>)`; `.sdd/implement.json` records the files, the commit, pi's
-   tokens.
+   (<model>)`; `.sdd/implement.json` records the files, the commit, and
+   the pass's usage: pi's tokens, or Claude's reported cost and model usage.
 8. **Clean up**: the checkout, the container and, when the run completes, its
    volume removed whatever happened in 4–7. A pass whose own process was
    killed cannot clean up; `sdd-run start` and `resume` call `sdd-step

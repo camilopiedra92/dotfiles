@@ -32,7 +32,7 @@ any of them. The last group came from the fresh-context review of
 `checklists/routing.md` and was answered the same way.
 
 - Q: How many converge passes may run before the run pauses for the owner? → A: Three; then it pauses with the open findings.
-- Q: After a failed suite or review, how many fix rounds go back to the implementing agent before the run stops for the owner? → A: Two per convergence pass; then the run pauses, and work never moves to another agent on its own.
+- Q: After a failed check command, how many fix rounds go back to the implementing agent before the run stops for the owner? → A: Two per convergence pass; then the run pauses, and work never moves to another agent on its own.
 - Q: What does SC-001's usage count? → A: Every attempt of every Claude step, failed and resumed ones included, at list price, as each reports it.
 - Q: Does this feature's success decide the move to the smaller plan? → A: No; the feature succeeds at SC-001's 40%, and the move is decided from a week of real usage afterwards.
 - Q: How do clarify's questions reach the owner, given a workflow step gets no terminal? → A: Through a file in the feature directory, which the owner answers before approving the checkpoint.
@@ -41,6 +41,7 @@ any of them. The last group came from the fresh-context review of
 - Q: What does the implementing agent see of the repository? → A: A disposable checkout of the committed code at the run's current commit, without untracked or ignored files; its changes come back as a patch the run judges before applying.
 - Q: What bounds the external provider's spend? → A: A time limit per implementation pass (30 minutes), the prepaid balance as the hard ceiling, and the provider's spend reported per run.
 - Q: How is a repository's check command known? → A: Declared once per repository by the owner; a run without it stops before planning, naming how to declare it.
+- Q: What effort does each model run at? → A: Set explicitly per model by the routing, so neither the owner's interactive effort nor an environment variable leaks into a run: Opus and Sonnet at `medium`, each model's documented default today, and DeepSeek at `high`, the lowest reasoning level DeepSeek's own pi configuration maps to. A higher level for the judgment phases is a change to measure on one story first, not to assume.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -277,19 +278,35 @@ what landed in the commit, and what was printed.
   file against its schema; a missing or invalid outcome file MUST fail the
   step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.
+- **FR-021**: Each model's effort MUST be set by the routing, per model, and
+  MUST NOT follow the owner's interactive effort or any effort environment
+  variable; it changes only by an edit to this repository, and each run
+  records the level every step ran at.
+- **FR-022**: A run left `running` by a process that no longer exists MUST,
+  on the owner's next resume, either continue through the engine or stop
+  naming the phases that will run again and the command that starts a new
+  run from the existing feature directory at the first unfinished phase;
+  finished phases' files MUST NOT be rewritten by that new run.
+- **FR-023**: The lighter model's implementation pass MUST be allowed to run
+  the repository's check command, and nothing wider than the headless
+  allow list plus that command.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
 - **FR-017**: The implementing agent's brief MUST name: the tasks to do —
   every task in `tasks.md` not marked done, converge's appended ones included
-  —, the spec, the plan and every file the plan links, the constitution, the owner's test-first rules (tests
+  —, the spec, the plan and every other file `/speckit-plan` wrote in the
+  feature directory (research, data model, contracts, quickstart), the
+  constitution, the owner's test-first rules (tests
   from the acceptance scenarios first, seen to fail, then the simplest code;
   no change to a check's configuration; nothing outside the tasks), and, on a
   fix round, the latest verify outcome. Both implementing agents get the same
   brief.
-- **FR-018**: Each implementation pass by the external agent MUST end within a
-  time limit, 30 minutes unless the owner sets another, and the run MUST
-  report the provider's spend.
+- **FR-018**: Each implementation pass, by either agent, MUST end within a
+  time limit, 30 minutes unless the owner sets another, enforced by the run
+  itself; the run MUST report each pass's usage — the provider's tokens and
+  price for the external agent, the reported Claude usage for the lighter
+  model.
 - **FR-019**: A deleted or weakened test MUST be a blocking finding of the
   review.
 
@@ -317,10 +334,15 @@ what landed in the commit, and what was printed.
   unreported, and an arm with one is run again. The reference fixture is the
   `checkout` fixture of the story-workers preset's Eval 002 at the commit
   named in the eval's record, with the same prepared clarify answers in both
-  arms. The baseline is the same workflow with every Claude step on the most
-  capable model and implementation by Spec Kit's own implement command, in a
-  repository set up by `sdd-init` as of dotfiles commit `180490c`
-  (constitution-authoring v1.2.1, story-workers v0.2.0). One counted run per
+  arms. The baseline is a workflow file of its own, kept with the eval: the
+  routed workflow with every Claude step on the most capable model at the
+  same effort, and its implement-and-verify loop replaced by Spec Kit's own
+  implement command, which marks tasks itself (a measurement arm, not bound
+  by FR-006); review, converge and the gates run as in the routed arm. The
+  repository is set up by `sdd-init` as of dotfiles commit `180490c`
+  (constitution-authoring v1.2.1, story-workers v0.2.0, whose workers run on
+  the lighter model at `medium`, its decision 0001); Spec Kit 1.1.3; the
+  Claude Code version recorded with the result. One counted run per
   arm; recorded as it comes out. Whether the owner
   moves to the smaller plan is decided afterwards, from a week of real usage.
 - **SC-002**: In the same comparison, the routed run passes as many of the
@@ -349,7 +371,11 @@ what landed in the commit, and what was printed.
   the owner's choice of 2026-10-21 and move only by a deliberate edit to this
   repository; a retired model or a moved pin surfaces as a failed step naming
   it, not as a silent change. Claude models are therefore named by full model
-  id, not by an alias such as `opus` that upstream repoints.
+  id, not by an alias such as `opus` that upstream repoints. Two dependencies
+  are not pinned: the `container` runtime (a Homebrew formula) and the Claude
+  Code CLI. A changed flag or a missing field in either's output fails the
+  step naming it, and a missing usage figure is never read as zero; each run
+  records both versions.
 - The routed workflow is an addition: the interactive way of running Spec Kit
   phases in one Claude session stays as it is.
 - A routed run never calls Spec Kit's implement command, so the story-workers

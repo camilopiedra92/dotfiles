@@ -25,7 +25,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 ## Requirement Clarity
 
-- [ ] CHK008 Is "contained to the feature's worktree" defined for reads as well as writes, and for network access? [Clarity, Spec §FR-007]
+- [x] CHK008 Is "contained to the feature's worktree" defined for reads as well as writes, and for network access? [Clarity, Spec §FR-007]
 - [x] CHK009 Is "no access to the owner's credentials other than the one it needs" defined so a reviewer can list what the agent can and cannot reach? [Clarity, Spec §FR-007]
 - [x] CHK010 Is the set of "lint, format, type-check or test configuration" files defined, or delegated to a named source of truth? [Clarity, Spec §FR-008, research R7]
 - [x] CHK011 Is "findings above LOW" tied to a severity scale that converge actually emits? [Clarity, Spec §FR-014]
@@ -33,14 +33,14 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 ## Requirement Consistency
 
-- [ ] CHK013 Do US2 AS4 and FR-015 agree on what happens after two failed fix rounds, and with contracts/workflow.md's `fix-loop` of three iterations? [Consistency]
+- [x] CHK013 Do US2 AS4 and FR-015 agree on what happens after two failed fix rounds, and with contracts/workflow.md's `fix-loop` of three iterations? [Consistency]
 - [x] CHK014 Is the Assumption that story-workers stays installed consistent with a routed run's implement step bypassing it, and is the interaction specified? [Consistency, Spec §Assumptions]
 - [x] CHK015 Does FR-003's "MUST NOT edit files Spec Kit installs" hold for `specify workflow add` copying the workflow into `.specify/workflows/`? [Consistency, constitution V]
 
 ## Acceptance Criteria Quality
 
 - [ ] CHK016 Is SC-001's baseline arm defined precisely enough to be rerun — which steps on which model, which implement path, which fixture state? [Measurability, Spec §SC-001]
-- [ ] CHK017 Is it stated how SC-001 counts usage the subscription spends but a step does not report (retries, a failed step, the converge loop's extra passes)? [Measurability, Spec §SC-001]
+- [x] CHK017 Is it stated how SC-001 counts usage the subscription spends but a step does not report (retries, a failed step, the converge loop's extra passes)? [Measurability, Spec §SC-001]
 - [x] CHK018 Is SC-003's probe defined by what it attempts, so "0 writes land" has a fixed denominator? [Measurability, Spec §SC-003]
 - [x] CHK019 Can SC-005's "one answer per checkpoint" be met by the clarify checkpoint, where the owner writes several answers? [Measurability, Spec §SC-005, §FR-005]
 
@@ -55,7 +55,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 ## Non-Functional: Security and Privacy
 
 - [x] CHK025 Is it specified what the external provider may retain of the code sent, and is the owner told before the first opt-in? [Privacy, Spec §FR-010, Gap]
-- [ ] CHK026 Are the places the credential must never appear listed exhaustively (arguments, environment of the host process, files, image layers, container configuration, run state, logs)? [Completeness, Spec §FR-009, contracts/sdd-step.md]
+- [x] CHK026 Are the places the credential must never appear listed exhaustively (arguments, environment of the host process, files, image layers, container configuration, run state, logs)? [Completeness, Spec §FR-009, contracts/sdd-step.md]
 - [x] CHK027 Is untrusted agent output kept out of shell commands by a stated requirement, not only by the contract? [Security, contracts/workflow.md "Guarantees", Gap]
 
 ## Dependencies and Assumptions

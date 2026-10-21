@@ -7,7 +7,8 @@ repository's root.
 
 | Command | Does |
 |---|---|
-| `sdd-run start "<description>"` | `sdd-step cleanup`, the prerequisites below, sets `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS` (research R4), then execs `specify workflow run sdd-routed -i spec=<description>` |
+| `sdd-run start --from <feature dir>` | as `start`, for a feature whose run died: `resume_from` set to the first phase whose outcome file is missing (FR-022) |
+| `sdd-run start "<description>"` | `sdd-step cleanup`, the prerequisites below, unsets `CLAUDE_CODE_EFFORT_LEVEL` (research R14), sets `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS` (research R4), writes `.sdd/run.json`, then execs `specify workflow run sdd-routed -i spec=<description>` |
 | `sdd-run resume <run_id> [<verdict>]` | `sdd-step cleanup`, the same checks and environment, then `specify workflow resume <run_id>`, binding the verdict to the input of the gate the run is paused at |
 | `sdd-run usage <run_id>` | per Claude model, every attempt's reported cost; attempts that reported none, listed as unreported; the provider's tokens and their price; the totals |
 

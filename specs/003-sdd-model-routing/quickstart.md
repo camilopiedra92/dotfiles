@@ -39,7 +39,7 @@ offline against stand-ins; the last two need the real services.
 11. **Containment** (US2 AS2, SC-003): with the real `container`, a probe image
     tries to read `~/.ssh`, the Keychain and another repository, to write the
     home directory, another repository and the feature's worktree, and to
-    reach a host other than the provider's. All fail; nothing on the host
+    reach a host outside `egress.txt`. All fail; nothing on the host
     changes.
 12. **SC-001 and SC-002**: in the story-workers repository, the `checkout`
     fixture run twice with the same prepared clarify answers — `sdd-run
