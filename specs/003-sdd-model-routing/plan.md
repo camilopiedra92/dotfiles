@@ -71,7 +71,7 @@ at once in separate worktrees.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Declared, never hand-installed | `/usr/bin/python3`, which the egress proxy and config-guard run on, comes with the Command Line Tools that Homebrew's installer, an allowed bootstrap, installs; the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
+| I. Declared, never hand-installed | `/usr/bin/python3`, which the egress proxy and config-guard run on, comes with the Command Line Tools that Homebrew's installer, an allowed bootstrap, installs; the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/worker/Containerfile`, every input pinned by hash and the result checked against a committed inventory (FR-032, research R26); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
 | II. One owner per layer | the container runtime is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credentials in the Keychain, held only by the run's egress proxy on the host (research R23). |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand; so do `init-firewall.sh` and `entrypoint.sh`, adapted from Anthropic's reference and owned here, not vendored (research R6). The workflow and the schemas are driven by the same checks. |
 | IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds the chosen runtime's first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
@@ -129,7 +129,11 @@ containers/worker/
 ├── init-firewall.sh             # new: deny-by-default egress, Anthropic's reference pattern
 ├── entrypoint.sh                # new: the firewall first, then the agent or check command as node
 ├── models.json                  # new: DeepSeek provider entry for pi
-├── egress-registries.txt        # new: package registries; each agent pass adds only its provider's API host
+├── egress-registries.txt        # new: package registries, read-only through the proxy's TLS inspection (FR-031, R25)
+├── package.json                 # new: the Claude Code CLI and pi, for npm ci (FR-032, R26)
+├── package-lock.json            # new: their whole tree with integrity hashes
+├── inventory.sh                 # new: lists every Debian and npm package the image installs, with its version
+├── inventory.txt                # new: that list for the committed recipe; prepare-worker refuses a build that differs
 └── brief.md                     # new: the implementing agent's rules (FR-017)
 checks/91-sdd-routing.sh         # new
 docs/sdd-routing.md              # new: how to run it, and the eval's result

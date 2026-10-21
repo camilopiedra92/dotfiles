@@ -768,6 +768,63 @@ standard library suffices for a plain-HTTP gateway and a `CONNECT` tunnel;
 blocking every automation path in the patch — legitimate features add hooks
 and CI, as this one adds checks.
 
+## R25 — Read-only registries: TLS inspection at the egress proxy
+
+**Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the
+registries, a pass could publish (`npm publish`, a `PUT`) or push (`git push`,
+a `POST` to `git-receive-pack`) the repository to an account it names, the one
+smuggling channel whose sink an attacker can read.
+
+**Spike** (2026-10-21, throwaway, in the worker image on Apple `container`): a
+proxy made a certificate authority with `openssl` in its own container, signed
+one certificate per registry host, terminated each `CONNECT` with the host's
+certificate (ALPN `http/1.1`) and forwarded to the real host over verified
+TLS. In the worker, with the authority added to the system store and
+`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` pointing at
+it: `npm install left-pad@1.3.0`, `uv pip install six==1.16.0` and `mise
+install jq@1.7.1` (GitHub release, via `mise-versions.jdx.dev`) all worked; a
+`PUT` to `registry.npmjs.org` was refused with 403. npm also sent `POST
+/-/npm/v1/security/advisories/bulk` (its audit); the image has no `git`.
+
+**Decision** (FR-031): the proxy terminates TLS for the registry hosts with
+an authority made at its start, whose key stays in its container; its
+certificate reaches the worker through the bundle and the entrypoint installs
+it; only `GET` and `HEAD` are forwarded, on `github.com` only
+`/<owner>/<repo>/releases/download/…` and `/<owner>/<repo>/archive/…`; npm's
+audit is turned off in the worker, so no read needs another method.
+
+**Alternatives**: mitmproxy or Squid's ssl-bump — a new dependency where the
+standard library and the image's `openssl` suffice; an allowlist by SNI alone
+— it cannot see the method, so publishing stays open; installing dependencies
+in a step without an agent and running every agent offline — an implementer
+could no longer add a dependency the tasks need; registry mirrors (Verdaccio,
+devpi) — a service per ecosystem to run and keep current.
+
+## R26 — A worker image reproducible in its packages
+
+**Finding** (owner's review of R23, 2026-10-21): apt packages and npm's
+transitive dependencies were unpinned, so a rebuild could differ.
+
+**Observed** (2026-10-21): two `container build --no-cache` runs of one
+three-line recipe, `SOURCE_DATE_EPOCH` set, gave different image digests;
+`--output` takes only `type` and `dest`, and an unknown `rewrite-timestamp`
+option left the build hung. Bit-identical images are out of reach with this
+builder.
+
+**Decision** (FR-032): every input pinned by hash — the base by digest, apt
+from `snapshot.debian.org` at a fixed date with exact versions, npm from
+`containers/worker/package-lock.json` with `npm ci` (integrity hashes), mise
+and uv by checksum — and an inventory of every installed Debian and npm
+package with its version, committed beside the recipe; `prepare-worker`
+reads the built image's inventory and refuses any difference. drift.sh reports
+the snapshot's age and the pins behind upstream, so the pins move on purpose.
+
+**Alternatives**: Nix or apko/melange — reproducible bits, at the price of a
+second build toolchain beside the one the machine already runs; Docker with
+BuildKit's `rewrite-timestamp` — Docker Desktop is installed but undeclared
+here, and Apple `container` was chosen (R5); recording only the image digest
+— a rebuild would always differ and the check would say nothing.
+
 ## R13 — Time and spend
 
 **Decision**: `sdd-step implement` ends a pass at the effective implement

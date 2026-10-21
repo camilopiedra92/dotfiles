@@ -370,6 +370,19 @@ what landed in the commit, and what was printed.
   later without asking — git hooks, CI workflows, editor tasks, executable
   files — MUST be listed at the owner's last checkpoint; such a file never runs
   during the run (FR-028), and whether it is merged is the owner's review.
+- **FR-031**: The package registries MUST be read-only to every pass: the
+  egress proxy terminates TLS for each registry host with a certificate
+  authority made for the run, whose private key never leaves the proxy's
+  container, and forwards only `GET` and `HEAD` — on `github.com`, only to
+  release and archive downloads; any other method or path is refused and
+  logged. The worker trusts that authority for the pass and nothing a pass
+  runs may publish, push or upload.
+- **FR-032**: The worker image MUST be built from inputs pinned by hash —
+  the base image by digest, Debian packages from a dated archive snapshot at
+  exact versions, npm packages from a lockfile with integrity hashes, every
+  downloaded tool by checksum — and `prepare-worker` MUST refuse an image whose
+  installed packages and versions differ from the inventory committed beside
+  its recipe, naming the difference.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
@@ -473,10 +486,16 @@ the workflow's own limit for the step sits just above the ceiling),
   read — the repository, a dependency, a provider's response. Protected: the
   owner's credentials and machine, the run's governance, and the checks
   against silent weakening. Accepted as residual, and not defended further: a
-  deliberately malicious agent smuggling repository code out encoded through
-  a host it is allowed to reach; a planted automation file running after the
-  owner merges it, which FR-030 lists at the last checkpoint so the owner's
-  review can catch it.
+  deliberately malicious agent smuggling repository code out encoded in the
+  read requests it is allowed to make (FR-031 leaves it no way to publish,
+  push or upload, and no host whose logs an attacker reads); a planted
+  automation file running after the owner merges it, which FR-030 lists at
+  the last checkpoint so the owner's review can catch it.
+- **Reproducibility** (research R26): the worker image is reproducible in its
+  installed packages and versions, verified on every build (FR-032), not in
+  its bits: Apple's builder (container 1.6.0) gave two no-cache builds of one
+  recipe different digests with `SOURCE_DATE_EPOCH` set, and has no output
+  option to rewrite timestamps (observed 2026-10-21).
 
 - "Most capable model" is Claude Opus and "lighter model" is Claude Sonnet,
   both through the owner's Claude subscription; the external provider is
