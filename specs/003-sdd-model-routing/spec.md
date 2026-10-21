@@ -214,7 +214,7 @@ what landed in the commit, and what was printed.
   it. The feature's files are committed before it is made, so it holds every
   earlier phase's output.
 - **Egress proxy**: the only destination a pass's container can reach — a
-  process on the owner's machine that admits a request only to the hosts that
+  container of its own on a network made for the run, that admits a request only to the hosts that
   pass may use (its own provider's API; for implementation and verify, the
   package registries) and that alone holds the credentials, adding them to
   requests bound for the provider's API.
@@ -255,8 +255,8 @@ what landed in the commit, and what was printed.
   the repository's existing configuration guard, not by a second list.
 - **FR-009**: Every credential the run uses — the external provider's key and
   the owner's Claude token — MUST come from the Keychain and MUST be held only
-  by host processes of the run — the egress proxy, which adds it to requests
-  bound for its provider's API, and the judge's scanner — in memory only; no
+  by the run's egress proxy, which adds it to requests bound for its
+  provider's API, and by the judge's scanner on the host, in memory only; no
   agent, container or check command ever holds one. It MUST NOT appear in a
   command-line argument, in the environment of any host
   process, in any file on the host (repositories, the export and

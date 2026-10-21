@@ -157,6 +157,26 @@ may break in any release; its sandbox also covers shell commands only, not
 the file tools. pi's own sandbox extension — runs in pi's process, so the
 boundary is the agent's own code. A proxy written here in front of Apple
 `container` — a component of our own where a published pattern exists.
+**Observed** (T002, 2026-10-21, macOS 27.0.1, `container` 1.6.0 from Homebrew;
+the formula's caveat names `container system start`): `container system start
+--enable-kernel-install` started the services and downloaded the default
+kernel to `~/Library/Application Support/com.apple.container/kernels/` (29 MB
+in all); its launchd services are registered for the session, no
+LaunchAgent plist is written, so they do not survive a reboot. A
+`debian:bookworm-slim` container run with `--cap-add CAP_NET_ADMIN --cap-add
+CAP_NET_RAW` installed `iptables` and, with `OUTPUT` set to DROP and one host
+allowed, reached `registry.npmjs.org` (HTTP 200) and was refused
+`example.com`. A host server bound to the network's gateway address
+(`192.168.64.1`) could not start before a VM existed — the bridge interface
+appears only while one runs — and binding it to `0.0.0.0` would expose it to
+the local network. Two containers on the default network (`192.168.64.0/24`)
+did reach each other: a container whose firewall allowed only the other's
+address on one port got HTTP 200 from it and was refused both the host and
+the internet. **Runtime chosen: Apple `container`**, declared in the `Brewfile`;
+colima was not needed. Its kernel is applied by `install.sh` (step 6b) and
+reported by `drift.sh` (seen red with the kernel moved away); `sdd-run` starts
+the services when they are not running.
+
 ## R6 — A disposable checkout, mounted alone
 
 *The checkout described here — a detached git worktree — is superseded by R20
@@ -589,17 +609,19 @@ misses base64 — through any host it may reach, a package registry included;
 and a cache shared between the implementer and verify let an implementer plant
 a tool verify would run. Each round had found new channels of this kind.
 
-**Decision**: no container holds a credential. A proxy on the host
-(contracts/pass.md, "The egress proxy") is every container's only
-destination: it holds the credentials, adds them to requests bound for the
+**Decision**: no agent's container holds a credential. A proxy (contracts/pass.md,
+"The egress proxy") is every agent container's only destination. Since T002
+(R5) it runs in a container of its own — its own VM — on a network created for
+the run, not as a host process: a host listener would have to bind every
+interface, the bridge address existing only while a VM runs. The proxy: it holds the credentials, adds them to requests bound for the
 provider's API — the LLM-gateway arrangement Claude Code documents, including
 for subscription OAuth traffic forwarded to Anthropic (code.claude.com,
 llm-gateway, read 2026-10-21) — tunnels the package registries for implement
 and verify passes, and refuses everything else; the container's firewall
 allows only the proxy, so no DNS leaves it either. Caches are per pass kind,
 never shared between implementer and verify. The proxy is written in Python's
-standard library, run by `/usr/bin/python3`, as config-guard is, with checks
-(constitution III).
+standard library and runs on the worker image's Python, with checks
+(constitution III); its credentials reach it on its container's stdin.
 
 **Scope**: protected against agents' mistakes and against instructions
 planted in what they read (prompt injection) — the credentials, the machine,

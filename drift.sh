@@ -1018,6 +1018,12 @@ for problem in problems:
     print(problem)
 PY
 }
+# The container runtime's default kernel, which install.sh applies on a first
+# start (step 6b): without it every routed Spec Kit run fails at its first pass.
+report "the container runtime has its default kernel" \
+  "./install.sh, or: container system start --enable-kernel-install" \
+  "$([ -e "$HOME/Library/Application Support/com.apple.container/kernels/default.kernel-arm64" ] || echo 'default.kernel-arm64 is missing')"
+
 report "every command on PATH can run" \
   "remove the link, or reinstall whatever put it there" \
   "$(broken_commands)"

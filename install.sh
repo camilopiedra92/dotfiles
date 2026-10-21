@@ -419,6 +419,19 @@ if ! rustc --version > /dev/null 2>&1; then
   /opt/homebrew/opt/rustup/bin/rustup default stable
 fi
 
+# --- 6b. Container kernel ---
+# Apple's `container` (Brewfile) runs Linux VMs from a default kernel it
+# downloads on its first start, to ~/Library/Application Support/
+# com.apple.container/kernels/ — machine state no manifest names, so it is
+# applied here and reported by drift.sh. `container system start` also
+# registers launchd services, which do not survive a reboot; sdd-run starts
+# them when a routed run needs them (specs/003-sdd-model-routing, research R5).
+CONTAINER_KERNEL="$HOME/Library/Application Support/com.apple.container/kernels/default.kernel-arm64"
+if [ ! -e "$CONTAINER_KERNEL" ]; then
+  log "Installing the container runtime's default kernel"
+  container system start --enable-kernel-install
+fi
+
 # --- 7. CLI tools from uv ---
 # uv-tools.txt exists because `uv tool` is the one package manager here with no
 # manifest to read; see the header of that file for why these live neither in the

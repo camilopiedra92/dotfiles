@@ -16,7 +16,7 @@ No database: each entity is a file or a setting that already has an owner.
 | Credentials | Keychain, generic passwords, services `claude-oauth` (the owner's token from `claude setup-token`) and `deepseek-api` (the DeepSeek key) | read only by the egress proxy and the judge's scanner, in memory | the owner |
 | Worker image | the container runtime's image store | tag `sdd-worker:<hash of containers/worker/>` | `sdd-step prepare-worker` |
 | Tool caches | volumes `sdd-cache-implement-<run_id>` and `sdd-cache-verify-<run_id>`, never shared | — | implement passes; verify; removed when the run completes |
-| Egress proxy | a host process per run (`sdd-step egress-proxy`) | the run's credentials in memory (the DeepSeek key only when opted in); per-pass admission | `sdd-run`; stopped when its `specify` child exits, and exits itself when `sdd-run` is gone |
+| Egress proxy | a container per run, on the run's own network `sdd-<run_id>` (`sdd-step egress-proxy`) | the run's credentials in memory (the DeepSeek key only when opted in); per-pass admission | `sdd-run`; stopped when its `specify` child exits, and exits itself after a minute without `sdd-run`'s heartbeat |
 
 ## Outcome files
 

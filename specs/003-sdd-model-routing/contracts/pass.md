@@ -14,15 +14,19 @@ governs the run, and no host tool reads it as configuration.
 
 ## The egress proxy
 
-A process `sdd-run start` and `resume` start on the host (`sdd-step
-egress-proxy`), listening on an address only the run's containers can reach.
+A container `sdd-run start` and `resume` start (`sdd-step egress-proxy`) on a
+network created for the run (`container network create sdd-<run_id>`), which
+the run's other containers join and nothing else does; networks are isolated
+from one another (research R5). It runs the worker image's Python with
+`sdd-egress-proxy.py`, its credentials written to its stdin at start.
 `sdd-run` runs `specify` as its child rather than replacing itself with it,
 and stops the proxy whenever that child exits — the run paused, completed or
-failed — and on its own interruption; the proxy also exits by itself when
-`sdd-run`'s process is gone, so no credential outlives the run's process. It:
+failed — and on its own interruption; the proxy also exits by itself when it
+hears nothing from `sdd-run` for a minute, and the network is removed with it,
+so no credential outlives the run's process. It:
 
-- holds the run's credentials, read from the Keychain at start through a pipe
-  and kept in its own memory only: the Claude token always, the DeepSeek key
+- holds the run's credentials, read from the Keychain at start and written to
+  its container's stdin, kept in its own memory only: the Claude token always, the DeepSeek key
   only when the bundle's opt-in says `deepseek`;
 - serves each provider's API as a plain-HTTP gateway inside the container's
   network — `ANTHROPIC_BASE_URL` for Claude, the pi provider's `baseUrl` for
@@ -37,8 +41,8 @@ failed — and on its own interruption; the proxy also exits by itself when
   by the pass's own token on the proxy, so a judgment pass cannot reach the
   registries and a Claude pass cannot reach DeepSeek.
 
-The container's firewall allows the proxy's address and nothing else, DNS
-included: names are resolved by the proxy. No agent, container or check
+Each agent container's firewall allows the proxy's address and port and
+nothing else, DNS included: names are resolved by the proxy. No agent, container or check
 command ever holds a credential (FR-009). **Pending**: that Claude Code's
 `-p` runs on the subscription through such a gateway with a placeholder token,
 and that pi does through its `baseUrl` (T003, T006); if Claude Code cannot,
