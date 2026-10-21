@@ -1,0 +1,57 @@
+# The worker image every contained pass runs in (specs/003-sdd-model-routing,
+# contracts/pass.md, research R5, R6). Built by `sdd-step prepare-worker` and
+# tagged with this directory's hash, so a change here builds a new image.
+# Apple Silicon only, as the rest of this repository: the downloaded artifacts
+# below are the arm64 ones, checked against hashes recorded here.
+
+# node:24-bookworm-slim, the multi-arch index digest read 2026-10-21.
+FROM docker.io/library/node:24-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4
+
+# Versions read 2026-10-21: Claude Code is this machine's (`claude --version`);
+# pi is the package research R6 names; mise and uv are this machine's, their
+# hashes confirmed against the SHASUMS each release publishes.
+ARG CLAUDE_CODE_VERSION=2.1.306
+ARG PI_VERSION=1.3.0
+ARG MISE_VERSION=2026.10.7
+ARG MISE_SHA256=67bfc43bcc28de3a461b29fcf13a94a06019e4a1d3be37e4ff2c1347a576449b
+ARG UV_VERSION=0.13.0
+ARG UV_SHA256=3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3
+
+# iptables for the firewall; python3 for the egress proxy, which runs on this
+# image (research R23); ca-certificates and curl for the downloads below and
+# for the toolchain's own. setpriv, which drops to node, is in util-linux,
+# already in the base. No ipset or resolver: the firewall allows one address.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends iptables python3 ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; cd /tmp \
+  && curl -fsSL -o mise.tgz "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-arm64.tar.gz" \
+  && echo "${MISE_SHA256}  mise.tgz" | sha256sum -c - \
+  && tar -xzf mise.tgz && install -m 755 mise/bin/mise /usr/local/bin/mise \
+  && curl -fsSL -o uv.tgz "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-unknown-linux-gnu.tar.gz" \
+  && echo "${UV_SHA256}  uv.tgz" | sha256sum -c - \
+  && tar -xzf uv.tgz --strip-components=1 -C /usr/local/bin uv-aarch64-unknown-linux-gnu/uv uv-aarch64-unknown-linux-gnu/uvx \
+  && rm -rf /tmp/*
+
+# --ignore-scripts, so no install script from either dependency tree runs at
+# build time. Claude Code's one script is then run by name: it copies the
+# native binary npm already installed from an optional dependency over the
+# `claude` placeholder, offline (read in install.cjs, 2026-10-21); without it
+# `claude` only prints how to run it.
+RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+  && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
+  && npm cache clean --force
+
+COPY init-firewall.sh entrypoint.sh models.json egress-registries.txt /usr/local/lib/sdd/
+
+# pi's models.json exists owned by node, so the entrypoint (root) can write
+# the proxy's URL into it without changing its owner.
+RUN chmod 755 /usr/local/lib/sdd/init-firewall.sh /usr/local/lib/sdd/entrypoint.sh \
+  && install -d -o node -g node /home/node/.pi /home/node/.pi/agent /work \
+  && install -m 644 -o node -g node /usr/local/lib/sdd/models.json /home/node/.pi/agent/models.json
+
+WORKDIR /work
+# Root, for the firewall; the entrypoint drops to node before the command.
+USER root
+ENTRYPOINT ["/usr/local/lib/sdd/entrypoint.sh"]
