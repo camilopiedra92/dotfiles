@@ -296,6 +296,11 @@ what landed in the commit, and what was printed.
   process's start time, so a reused process id is not mistaken for it.
 - **FR-024**: A run MUST stop before any step on a Spec Kit older than the
   version the routing requires, naming the manifest update that brings it.
+- **FR-025**: The Spec Kit behaviours the routing relies on beyond its
+  version — the extra arguments it passes to every Claude step, the run id it
+  fixes, and per-step output capture — MUST each be asserted by a check, so a
+  Spec Kit update that drops one fails the gate before it lands instead of
+  silently routing without it.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
   the repository's check command, and nothing wider than the headless
   allow list plus that command; its Edit and Write tool calls MUST be
@@ -315,7 +320,9 @@ what landed in the commit, and what was printed.
   fix round, the latest verify outcome. Both implementing agents get the same
   brief.
 - **FR-018**: Each implementation pass, by either agent, MUST end within a
-  time limit, 30 minutes of wall-clock time unless the owner sets another,
+  time limit, 30 minutes of wall-clock time unless the owner sets a shorter
+one (a longer one is refused, since the workflow's own limit for the step is
+fixed above 30 minutes),
   enforced by the run itself before any outer limit can cut it off, so the
   pass always stops its agent and cleans up; a pass that spans the machine's
   sleep may reach its limit on waking, which fails it with nothing applied; the run MUST report each pass's usage — the provider's tokens and
@@ -364,7 +371,9 @@ what landed in the commit, and what was printed.
   review, there is no `fix-stuck` checkpoint and no separate marking. The
   baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
   repository, added to the fixture from the same dotfiles commit as the
-  routed one. The one model step not on the most capable model is
+  routed one. In both counted runs every review checkpoint is approved,
+  `fix-stuck` and `converge-stuck` are answered `abort`, and an arm that
+  reaches either is recorded so. The one model step not on the most capable model is
   story-workers' own worker inside that implement command, on the lighter
   model at `medium` as its decision 0001 sets it; it is part of the
   baseline as `sdd-init` installs it today. Spec Kit 1.2.2; the Claude Code

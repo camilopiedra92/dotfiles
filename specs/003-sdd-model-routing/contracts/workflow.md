@@ -12,7 +12,7 @@ outcome files live in `<f>/.sdd/` and are read only through `sdd-step outcome`
 
 | Input | Type | Default |
 |---|---|---|
-| `spec` | string, required | — |
+| `spec` | string; required unless `resume_from` is set, when `sdd-run start --from` passes the feature's `spec.md` path | `""` |
 | `resume_from` | `enum: ["", specify, plan, tasks, build]` | `""`; set only by `sdd-run start --from`; every phase before it is skipped (FR-022) |
 | `clarify_verdict`, `spec_verdict`, `plan_verdict`, `done_verdict` | `enum: ["", approve, reject]` | `""` |
 | `fix_verdict`, `converge_verdict` | `enum: ["", retry, abort]` | `""` |
@@ -50,7 +50,7 @@ Every gate binds one of them with `verdict_input` (R3).
 
 Every Claude step sets `capture: true` and a `timeout`: 3600 for judgment
 phases, 1800 for `tasks`. The `shell` steps set theirs too, since Spec Kit's
-default is 300 seconds: `implement` its own limit plus 300, `verify` 3600,
+default is 300 seconds: `implement` 2100 (the 1800-second maximum of research R13 plus 300), `verify` 3600,
 the rest keep the default (research R11);
 `sdd-run` adds `--output-format json` to the run's extra arguments, so each
 step's captured `stdout` is Claude's JSON result.

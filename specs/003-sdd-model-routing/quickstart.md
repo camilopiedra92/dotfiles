@@ -9,7 +9,11 @@ offline against stand-ins; the last two need the real services.
    workflow in a scratch repository against a stand-in `claude` that records
    `--model` and the prompt of each call and writes canned outcome files.
    Expected: specify, clarify, plan, checklist, analyze, review and converge
-   on `opus`, tasks on `sonnet`, verify calling no model; in that order.
+   on `claude-opus-5-5`, tasks on `claude-sonnet-5-5`, verify calling no model;
+   in that order; and every call carrying `--permission-mode dontAsk`,
+   `--settings` and `--output-format json`, with the engine's run id equal to
+   `SPECKIT_WORKFLOW_RUN_ID` and each Claude step's output in `state.json`
+   (FR-025).
 2. **Gates** (US1 AS3, FR-004): with no TTY the run pauses at each gate;
    `sdd-run resume <id> approve` continues, `reject` aborts, at every gate.
 3. **Clarify through a file** (US1 AS4): two canned questions pause the run at

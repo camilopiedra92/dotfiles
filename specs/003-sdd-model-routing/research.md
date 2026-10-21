@@ -251,8 +251,8 @@ short for plan or converge): 3600 for the judgment phases, 1800 for tasks.
 Shell steps have a limit of their own — 300 seconds unless set
 (`workflows/step/shell/__init__.py`, `config.get("timeout", 300)`, read on
 1.2.2) — enforced by killing the shell, which would orphan a running
-`container` or `claude`. So `implement` sets `timeout:` to its own limit plus
-300 seconds, `verify` to 3600, and `sdd-step implement` enforces its limit
+`container` or `claude`. So `implement` sets `timeout: 2100`, its maximum limit
+plus 300 seconds, `verify` to 3600, and `sdd-step implement` enforces its limit
 first, stopping its agent and cleaning up before Spec Kit's limit can fire.
 Any leftover from a kill the script could not see is removed by `cleanup`
 (R6).
@@ -343,7 +343,9 @@ with R10's `--json-schema`.
 ## R13 — Time and spend
 
 **Decision**: `sdd-step implement` ends a pass after 30 minutes
-(`sdd.implementTimeout` overrides it), stopping the container or the `claude`
+(`sdd.implementTimeout` may lower it; a value above 1800 is refused, because
+the step's `timeout` in the workflow is a fixed number, 2100, and the inner
+limit must always fire first), stopping the container or the `claude`
 process; the provider's
 prepaid balance is the hard ceiling; each worker outcome records pi's reported
 tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has
