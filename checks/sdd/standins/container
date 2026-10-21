@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Stand-in for Apple's `container` CLI in checks/91-sdd-routing.sh. It records
+# every call, one JSON line in calls.jsonl beside it, and for `run` executes
+# the command in place of the container: the agent stand-ins resolve the
+# container paths it was given (/work, /bundle, /input) through SDD_STANDIN_MOUNTS,
+# so no real VM, network or image is involved. The runtime it stands for is
+# found through the bundle's tools.json, the only way the pass finds it.
+set -uo pipefail
+here=$(cd "$(dirname "$0")" && pwd -P)
+record() { /usr/bin/python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$here/calls.jsonl"; }
+record container "$@"
+case "${1:-}" in
+  run)
+    shift
+    mounts='' name='' env=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -v | --volume) mounts="$mounts$2;"; shift ;;
+        -e | --env) env+=("$2"); shift ;;
+        --name) name=$2; shift ;;
+        --network | --label | -l | --cap-add | -u | --user | -w | --workdir | --cwd | --mount | -c | --cpus | -m | --memory) shift ;;
+        -i | --interactive | --rm | --remove | -d | --detach | --read-only) ;;
+        -*) echo "container stand-in: unknown flag $1" >&2; exit 125 ;;
+        *) break ;;
+      esac
+      shift
+    done
+    shift # the image
+    work=$(printf '%s' "$mounts" | tr ';' '\n' | awk -F: '$2 == "/work" { print $1 }')
+    [ -n "$work" ] || { echo "container stand-in: nothing mounted at /work" >&2; exit 125; }
+    cmd=$1
+    shift
+    # Inside the container the agent is on PATH; here the stand-ins are.
+    [ -x "$here/$cmd" ] && cmd=$here/$cmd
+    cd "$work" || exit 125
+    [ -n "$name" ] && echo $$ > "$here/running.$name"
+    env -i PATH=/usr/bin:/bin SDD_STANDIN_MOUNTS="$mounts" SDD_STANDIN_DIR="$here" "${env[@]}" "$cmd" "$@" &
+    child=$!
+    [ -n "$name" ] && echo "$child" > "$here/running.$name"
+    wait "$child"
+    status=$?
+    rm -f "$here/running.$name"
+    exit "$status"
+    ;;
+  stop | kill)
+    shift
+    for name in "$@"; do
+      [ -f "$here/running.$name" ] && kill "$(cat "$here/running.$name")" 2> /dev/null
+      rm -f "$here/running.$name"
+    done
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac

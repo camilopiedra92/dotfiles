@@ -4,6 +4,13 @@
 # subcommand, from the repository root.
 #
 # Usage:  sdd-step outcome <clarify|verify|review|converge>
+#         sdd-step agent <phase>
+#         sdd-step implement
+#         sdd-step verify
+#
+# Every subcommand runs inside a run: SDD_RUN_DIR names its bundle, and every
+# host tool is found there or at a fixed system path, never through the PATH
+# or the working directory the workflow gave it (contracts/pass.md).
 #
 # The workflow branches only on the fixed tokens printed here, never on an
 # agent's text (FR-016): each outcome file is validated against its schema
@@ -21,13 +28,25 @@ die() {
   exit 1
 }
 
+[ -n "${SDD_RUN_DIR:-}" ] && [ -f "$SDD_RUN_DIR/tools.json" ] || die "SDD_RUN_DIR names no run bundle; run through sdd-run"
+REPO=$(pwd -P)
+# From here on, nothing the repository or the caller's PATH holds is found by
+# name: a mise.toml or .envrc in the worktree configures nothing (T005).
+PATH=/usr/bin:/bin:/usr/sbin:/sbin
+PY=/usr/bin/python3
+
+tool() {
+  "$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$SDD_RUN_DIR/tools.json" "$1" 2> /dev/null ||
+    die "tools.json names no $1"
+}
+
 # The feature directory Spec Kit's own scripts use, from .specify/feature.json,
 # accepted only in the shape create-new-feature.sh writes, so a planted path
 # cannot point a step outside specs/.
 feature_dir() {
   local dir
   [ -f .specify/feature.json ] || die "no .specify/feature.json; run from the repository root of a feature"
-  dir=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["feature_directory"])' \
+  dir=$("$PY" -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["feature_directory"])' \
     .specify/feature.json 2> /dev/null) || die ".specify/feature.json does not name a feature_directory"
   [[ "$dir" =~ ^specs/[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*$ ]] || die "feature directory '$dir' is not specs/<nnn>-<slug>"
   [ -d "$dir" ] || die "feature directory $dir does not exist"
@@ -44,9 +63,9 @@ outcome() {
   esac
   file=$(feature_dir)/.sdd/$step.json
   [ -f "$file" ] || die "outcome $step: $file is missing"
-  check-jsonschema --schemafile "$SCHEMAS/$step.schema.json" "$file" > /dev/null 2>&1 ||
+  "$(tool check-jsonschema)" --schemafile "$SCHEMAS/$step.schema.json" "$file" > /dev/null 2>&1 ||
     die "outcome $step: $file does not match $step.schema.json"
-  python3 -I - "$step" "$file" << 'PY'
+  "$PY" -I - "$step" "$file" << 'PY'
 import json, sys
 
 step, doc = sys.argv[1], json.load(open(sys.argv[2]))
@@ -69,5 +88,11 @@ case "${1:-}" in
     shift
     outcome "$@"
     ;;
-  *) die "usage: sdd-step outcome <step>" ;;
+  agent | implement | verify)
+    # The pass starts in the bundle's directory, with no environment but what
+    # it sets itself.
+    cd "$SDD_RUN_DIR" || die "cannot enter $SDD_RUN_DIR"
+    exec /usr/bin/env -i HOME="$HOME" "$PY" -I "$DOTFILES/bin/sdd-pass.py" "$@" "$REPO"
+    ;;
+  *) die "usage: sdd-step <outcome|agent|implement|verify> ..." ;;
 esac

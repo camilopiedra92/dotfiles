@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stand-in for /usr/bin/security: answers find-generic-password -s <svc> -w
+# with the fake value in secrets/<svc> beside it, as the Keychain would, and
+# records the call without the value.
+here=$(cd "$(dirname "$0")" && pwd -P)
+/usr/bin/python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' security "$@" >> "$here/calls.jsonl"
+svc=''
+while [ $# -gt 0 ]; do
+  [ "$1" = -s ] && svc=$2
+  shift
+done
+[ -f "$here/secrets/$svc" ] || { echo "security: The specified item could not be found in the keychain." >&2; exit 44; }
+cat "$here/secrets/$svc"

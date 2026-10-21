@@ -49,7 +49,9 @@ sdd_outcome() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   f=specs/001-probe
-  mkdir -p "$tmp/.specify" "$tmp/$f/.sdd"
+  mkdir -p "$tmp/.specify" "$tmp/$f/.sdd" "$tmp/run"
+  # Every subcommand finds its tools through the run bundle (contracts/pass.md).
+  printf '{"check-jsonschema":"%s"}\n' "$(command -v check-jsonschema)" > "$tmp/run/tools.json"
   printf '{"feature_directory":"%s"}\n' "$f" > "$tmp/.specify/feature.json"
   local step=$PWD/bin/sdd-step.sh
   put() { # step json-fields
@@ -58,14 +60,14 @@ sdd_outcome() {
   }
   expect() { # step want why
     local got
-    got=$(cd "$tmp" && "$step" outcome "$1" 2> /dev/null) || got="<exit $?>"
+    got=$(cd "$tmp" && SDD_RUN_DIR=$tmp/run "$step" outcome "$1" 2> /dev/null) || got="<exit $?>"
     [ "$got" = "$2" ] || {
       echo "$1, $3: printed '$got', wanted '$2'"
       status=1
     }
   }
   refuses() { # step why
-    if (cd "$tmp" && "$step" outcome "$1" > /dev/null 2>&1); then
+    if (cd "$tmp" && SDD_RUN_DIR=$tmp/run "$step" outcome "$1" > /dev/null 2>&1); then
       echo "$1, $2: exited 0"
       status=1
     fi
@@ -109,4 +111,292 @@ if command -v check-jsonschema > /dev/null 2>&1; then
   check "sdd-step outcome prints each step's token and refuses a missing or invalid file" sdd_outcome
 else
   skip "sdd-step outcome prints each step's token and refuses a missing or invalid file" check-jsonschema
+fi
+
+# The contained pass (contracts/pass.md, FR-028, research R20, R21), run end to
+# end through `sdd-step agent` and `sdd-step verify` against the stand-ins in
+# checks/sdd/standins: a container runtime that runs the command in the export
+# instead of a VM, agents that apply a fixture's edits, and a Keychain holding
+# fake credentials. Each case builds a fresh repository and bundle
+# (checks/sdd/bundle.py). Every case also runs with a PATH whose first entry
+# holds a git, a python3, a tar and a mise that would leave a mark, and with the
+# repository's own hooks and fsmonitor set to leave one: a host step that
+# found a tool through PATH, or ran repository configuration, shows.
+sdd_pass() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out
+
+  fresh() {
+    rm -rf "$tmp/case" && mkdir -p "$tmp/case" || return 1
+    local c=$tmp/case
+    repo=$c/repo sa=$c/standins
+    cp -R "$dotfiles/checks/sdd/standins" "$sa"
+    # One stand-in answers for both agents, linked here rather than in git.
+    ln -s agent "$sa/claude" && ln -s agent "$sa/pi"
+    mkdir -p "$sa/secrets" "$sa/fixture" "$c/evil"
+    printf '%s' "$claude_secret" > "$sa/secrets/claude-oauth"
+    printf '%s' "$deepseek_secret" > "$sa/secrets/deepseek-api"
+    local tool
+    for tool in git python3 python tar mise check-jsonschema; do
+      printf '#!/bin/sh\ntouch %s/pwned-%s\nexit 1\n' "$c" "$tool" > "$c/evil/$tool"
+      chmod +x "$c/evil/$tool"
+    done
+    mkdir -p "$repo/.specify" "$repo/$f" "$repo/src" "$repo/githooks"
+    (
+      cd "$repo" || exit 1
+      git init -q -b main
+      printf '{"feature_directory":"%s"}\n' "$f" > .specify/feature.json
+      printf '# Spec\n' > "$f/spec.md"
+      printf -- '- [ ] T001 do it\n' > "$f/tasks.md"
+      printf 'print(1)\n' > src/app.py
+      printf '[lint]\nselect = ["E"]\n' > ruff.toml
+      printf '#!/bin/sh\necho checking; exit 0\n' > check-app.sh
+      chmod +x check-app.sh
+      printf '#!/bin/sh\ntouch %s/pwned-hook\n' "$c" > githooks/pre-commit
+      chmod +x githooks/pre-commit
+      printf '[tools]\npython = "3.12"\n' > mise.toml
+      git add -A && git -c user.name=t -c user.email=t@t commit -qm base
+      git config core.hooksPath githooks
+      git config core.fsmonitor "$c/evil/mise"
+      git config user.name owner && git config user.email owner@example.com
+    ) || return 1
+    run=$(python3 -I "$dotfiles/checks/sdd/bundle.py" "$c" "$dotfiles") || return 1
+    printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"%s"}\n' \
+      "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
+  }
+  # The agent's result: text, and structured output when given.
+  result() {
+    printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10}}}\n' \
+      "$1" "${2:-null}" > "$sa/fixture/result.json"
+  }
+  edit() { # path content
+    mkdir -p "$sa/fixture/edits/$(dirname "$1")"
+    printf '%s' "$2" > "$sa/fixture/edits/$1"
+  }
+  pass() { # subcommand args...: runs it as the workflow would, from the repository root
+    (cd "$repo" && PATH="$tmp/case/evil:$PATH" SDD_RUN_DIR=$run "$step" "$@" 2>&1)
+  }
+  fail() {
+    echo "$1"
+    status=1
+  }
+  # The check's own git, with the repository's planted hooks and fsmonitor off,
+  # so only a host step of the pass can leave their marks.
+  tgit() { git -C "$repo" -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
+  commits() { tgit rev-list --count HEAD; }
+  clean_after() { # case: no exports left, no pwned marks
+    [ -z "$(ls -A "$run/passes" 2> /dev/null)" ] || fail "$1: left $(ls "$run/passes") in the bundle"
+    local mark
+    for mark in "$tmp"/case/pwned-*; do
+      [ -e "$mark" ] && fail "$1: a host step ran $(basename "$mark" | sed 's/^pwned-//') from PATH or repository configuration"
+    done
+    grep -qF -e "$claude_secret" -e "$deepseek_secret" "$sa/agents.jsonl" "$sa/calls.jsonl" 2> /dev/null &&
+      fail "$1: a credential reached the container runtime or an agent"
+    return 0
+  }
+
+  # 1. A plan pass writing what its row allows: exported, judged, applied, one commit.
+  fresh || return 1
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  local before
+  before=$(commits)
+  out=$(pass agent plan) || fail "allowed: failed: $out"
+  [ "$(cat "$repo/$f/plan.md" 2> /dev/null)" = "# Plan" ] || fail "allowed: plan.md not applied"
+  [ "$(commits)" -eq $((before + 1)) ] || fail "allowed: $(($(commits) - before)) commits, wanted one"
+  tgit log -1 --format=%s | grep -qx "plan: 001-probe (claude-opus-5-5)" ||
+    fail "allowed: commit subject '$(tgit log -1 --format=%s)'"
+  tgit diff --quiet HEAD || fail "allowed: the worktree differs from the commit"
+  # The export: tracked files only, no .git, mounted alone at /work.
+  /usr/bin/python3 -I - "$sa/agents.jsonl" "$sa/calls.jsonl" << 'PY' || status=1
+import json, sys
+agent = [json.loads(l) for l in open(sys.argv[1])][-1]
+runs = [c for c in map(json.loads, open(sys.argv[2])) if c[:2] == ["container", "run"]]
+mounts = dict(m.split(":")[1:2] + [m.split(":")[0]] for m in agent["env"]["SDD_STANDIN_MOUNTS"].split(";") if m)
+bad = []
+argv = agent["argv"]
+for flag, want in [("--model", "claude-opus-5-5"), ("--effort", "medium"), ("--permission-mode", "dontAsk"),
+                   ("--permission-prompts", "none"), ("--setting-sources", "project"),
+                   ("--settings", "/bundle/profile.json"), ("--output-format", "json")]:
+    if flag not in argv or argv[argv.index(flag) + 1] != want:
+        bad.append(f"allowed: claude not given {flag} {want}: {argv}")
+if "--strict-mcp-config" not in argv:
+    bad.append("allowed: claude not given --strict-mcp-config")
+if not argv or not argv[1].startswith("/speckit-plan"):
+    bad.append(f"allowed: prompt is not the row's: {argv[:2]}")
+run = runs[-1]
+if "--cap-add" not in run or "--network" not in run or run[run.index("--network") + 1] != "sdd-run1":
+    bad.append(f"allowed: container not on the run's network with the firewall capability: {run}")
+if set(mounts) - {"/work", "/bundle", "/input"}:
+    bad.append(f"allowed: mounted more than the export and inputs: {sorted(mounts)}")
+for m in run:
+    if m.endswith(":/bundle") or (":/bundle" in m and not m.endswith(":ro")):
+        bad.append(f"allowed: inputs not read-only: {m}")
+if bad:
+    print("\n".join(bad))
+sys.exit(1 if bad else 0)
+PY
+  clean_after allowed
+
+  # 2. A write outside the row's list stops the pass, naming the path; nothing applied.
+  fresh || return 1
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  edit src/app.py "print(2)"
+  before=$(commits)
+  if out=$(pass agent plan); then fail "outside writes: succeeded"; fi
+  printf '%s' "$out" | grep -qF "src/app.py" || fail "outside writes: did not name src/app.py: $out"
+  [ "$(commits)" -eq "$before" ] && [ ! -e "$repo/$f/plan.md" ] || fail "outside writes: something was applied"
+  clean_after "outside writes"
+
+  # 3. The protected set, for an implement row, at any depth.
+  local protected
+  for protected in .claude/settings.json docs/CLAUDE.md .gitattributes .specify/feature.json "$f/.sdd/review.json" AGENTS.md .mcp.json; do
+    fresh || return 1
+    printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd-route.tmp"
+    mkdir -p "$repo/$f/.sdd" && mv "$repo/$f/.sdd-route.tmp" "$repo/$f/.sdd/route.json"
+    result "implemented"
+    edit "$protected" "planted"
+    if out=$(pass implement); then fail "protected $protected: succeeded"; fi
+    printf '%s' "$out" | grep -qF "$protected" || fail "protected $protected: not named: $out"
+    clean_after "protected $protected"
+  done
+
+  # 4. config-guard: emptying ruff.toml is an `ask`, which stops the pass.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "implemented"
+  edit ruff.toml ""
+  if out=$(pass implement); then fail "config-guard ask: succeeded"; fi
+  printf '%s' "$out" | grep -qF "ruff.toml" || fail "config-guard ask: did not name ruff.toml: $out"
+  clean_after "config-guard ask"
+
+  # 5. A judge that cannot run fails the pass closed.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  rm "$run/hooks/config-guard.sh"
+  result "implemented"
+  edit src/app.py "print(2)"
+  if out=$(pass implement); then fail "judge missing: succeeded without config-guard"; fi
+  [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "judge missing: applied"
+  clean_after "judge missing"
+
+  # 6. A new symlink stops the pass. A file made executable is applied, and
+  # verify then lists it among the automation changes (FR-030). git records
+  # only the executable bit, so no other mode can reach a patch.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "implemented"
+  printf 'ln -s /etc/passwd src/link\n' > "$sa/fixture/script"
+  if out=$(pass implement); then fail "symlink: succeeded"; fi
+  printf '%s' "$out" | grep -qF "src/link" || fail "symlink: path not named: $out"
+  clean_after symlink
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "implemented"
+  printf 'chmod 755 src/app.py\n' > "$sa/fixture/script"
+  out=$(pass implement) || fail "executable: failed: $out"
+  [ -x "$repo/src/app.py" ] || fail "executable: the mode was not applied"
+  rm -f "$sa/fixture/script"
+  out=$(pass verify) || fail "executable: verify failed: $out"
+  /usr/bin/python3 -I -c 'import json,sys; sys.exit("src/app.py" not in json.load(open(sys.argv[1]))["automation_changes"])' \
+    "$repo/$f/.sdd/verify.json" || fail "executable: verify.json does not list src/app.py among automation changes"
+  clean_after executable
+
+  # 7. A credential's exact value in the patch or in structured output stops the
+  # pass, naming the credential and never showing it.
+  local where
+  for where in patch structured; do
+    fresh || return 1
+    case $where in
+      patch)
+        result "planned"
+        edit "$f/plan.md" "token $claude_secret"
+        out=$(pass agent plan) && fail "secret in $where: succeeded"
+        ;;
+      structured)
+        result "reviewed" "{\"findings\":[{\"severity\":\"LOW\",\"text\":\"$claude_secret\"}],\"done\":[]}"
+        out=$(pass agent review) && fail "secret in $where: succeeded"
+        ;;
+    esac
+    printf '%s' "$out" | grep -qF claude-oauth || fail "secret in $where: credential not named: $out"
+    printf '%s' "$out" | grep -qF "$claude_secret" && fail "secret in $where: the value was shown"
+    [ ! -e "$repo/$f/plan.md" ] && [ ! -e "$repo/$f/.sdd/review.json" ] || fail "secret in $where: something was written"
+    clean_after "secret in $where"
+  done
+
+  # 8. Results: structured output to the row's outcome file with the common
+  # fields, the result's text to result_to, a start and an end usage line.
+  fresh || return 1
+  result "reviewed" '{"findings":[{"severity":"LOW","text":"fine"}],"done":["T001"]}'
+  out=$(pass agent review) || fail "review results: failed: $out"
+  (cd "$repo" && SDD_RUN_DIR=$run "$step" outcome review 2> /dev/null) | grep -qx clear ||
+    fail "review results: .sdd/review.json missing or invalid"
+  fresh || return 1
+  result "the analysis"
+  out=$(pass agent analyze) || fail "analyze results: failed: $out"
+  [ "$(cat "$repo/$f/analysis.md" 2> /dev/null)" = "the analysis" ] || fail "analyze results: analysis.md not the result's text"
+  [ "$(grep -c '"event": *"start"' "$run/usage.jsonl" 2> /dev/null)" -eq 1 ] &&
+    [ "$(grep -c '"event": *"end"' "$run/usage.jsonl" 2> /dev/null)" -eq 1 ] ||
+    fail "analyze results: usage.jsonl lacks one start and one end line"
+  clean_after "results"
+
+  # 9. An agent past its row's timeout: the container stopped, nothing applied.
+  fresh || return 1
+  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["phases"]["plan"]["timeout"]["value"]=2; json.dump(d,open(p,"w"))' "$run/routing.json"
+  echo 20 > "$sa/fixture/sleep"
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  if out=$(pass agent plan); then fail "timeout: succeeded"; fi
+  grep -q '"stop"' "$sa/calls.jsonl" || fail "timeout: the container was not stopped"
+  [ ! -e "$repo/$f/plan.md" ] || fail "timeout: applied"
+  clean_after "timeout"
+
+  # 10. An agent error, or a denied tool, fails the step naming the cause.
+  fresh || return 1
+  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash"}]}\n' > "$sa/fixture/result.json"
+  if out=$(pass agent plan); then fail "denial: succeeded"; fi
+  printf '%s' "$out" | grep -qi "denied\|denial" || fail "denial: cause not named: $out"
+  clean_after "denial"
+
+  # 11. Verify: the frozen check command in the container with the verify
+  # cache, no patch and no commit; its result in verify.json.
+  fresh || return 1
+  printf 'echo changed > src/app.py\n' > "$sa/fixture/script"
+  printf '#!/bin/sh\necho checking; echo changed > src/app.py; exit 3\n' > "$repo/check-app.sh"
+  tgit commit -qam "failing check"
+  before=$(commits)
+  out=$(pass verify) || fail "verify: exited non-zero: $out"
+  printf '%s' "$out" | grep -qx fail || fail "verify: did not print fail: $out"
+  [ "$(commits)" -eq "$before" ] && [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "verify: changed the repository"
+  (cd "$repo" && SDD_RUN_DIR=$run "$step" outcome verify 2> /dev/null) | grep -qx fail || fail "verify: verify.json missing or wrong"
+  grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" || fail "verify: not on the verify cache volume"
+  clean_after verify
+
+  # 12. Implement runs on the implement cache, never the verify one.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "implemented"
+  edit src/app.py "print(2)"
+  out=$(pass implement) || fail "implement: failed: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(2)" ] || fail "implement: not applied"
+  grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-implement-run1" || fail "implement: not on the implement cache volume"
+  grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" && fail "implement: mounted the verify cache"
+  clean_after implement
+
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "the contained pass exports, judges, applies and cleans up, and no credential or repository configuration reaches a host step" sdd_pass
+else
+  skip "the contained pass exports, judges, applies and cleans up, and no credential or repository configuration reaches a host step" check-jsonschema
 fi

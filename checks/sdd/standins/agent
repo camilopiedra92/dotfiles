@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Stand-in for the agents inside the worker (checks/91-sdd-routing.sh links
+# `claude` and `pi` to it). It
+# records its arguments, environment and stdin, applies the edits of the
+# fixture the check prepared in fixture/ beside it — files under
+# fixture/edits/ copied over the working directory, paths in fixture/delete
+# removed, fixture/script run — and prints fixture/result.json as the agent's
+# JSON result.
+set -uo pipefail
+dir=$SDD_STANDIN_DIR
+fx=$dir/fixture
+stdin=$(cat 2> /dev/null || true)
+/usr/bin/python3 -I -c '
+import json, os, sys
+print(json.dumps({"agent": os.path.basename(sys.argv[2]), "argv": sys.argv[3:], "env": dict(os.environ), "stdin": sys.argv[1]}))
+' "$stdin" "$0" "$@" >> "$dir/agents.jsonl"
+[ -f "$fx/sleep" ] && sleep "$(cat "$fx/sleep")"
+[ -d "$fx/edits" ] && cp -R "$fx/edits/." .
+if [ -f "$fx/delete" ]; then
+  while read -r path; do rm -rf "./$path"; done < "$fx/delete"
+fi
+[ -f "$fx/script" ] && bash "$fx/script"
+[ -f "$fx/result.json" ] && cat "$fx/result.json"
+exit "$(cat "$fx/exit" 2> /dev/null || echo 0)"
