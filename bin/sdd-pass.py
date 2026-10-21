@@ -605,7 +605,33 @@ def prepare_worker(run):
             raise PassFailed("building the worker image failed:\n" + r.stdout.decode(errors="replace")[-1500:])
     with open(os.path.join(run.dir, "worker.json"), "w") as f:
         json.dump({"image": tag}, f)
+    prune_workers(run, rt, tag)
     print(tag)
+
+
+def prune_workers(run, rt, current):
+    """Deletes the worker images a change of containers/worker/ superseded,
+    keeping the current one and any a live run of this repository still uses;
+    each build would otherwise stay on disk for good (review of Phase 2)."""
+    root = os.path.dirname(run.dir)
+    keep = {current}
+    for rid in os.listdir(root):
+        try:
+            if process_alive(load(os.path.join(root, rid, "lock.json"))):
+                keep.add(load(os.path.join(root, rid, "worker.json"))["image"])
+        except (OSError, ValueError, KeyError):
+            continue
+    r = subprocess.run([rt, "image", "list", "--format", "json"], env=HOST_ENV, stdout=subprocess.PIPE,
+                       stderr=subprocess.DEVNULL, cwd=run.dir)
+    try:
+        names = [i["configuration"]["name"] for i in json.loads(r.stdout or "[]")]
+    except (ValueError, KeyError, TypeError):
+        return
+    for name in names:
+        short = name.split("/")[-1]
+        if re.fullmatch(r"sdd-worker:[0-9a-f]{12}", short) and short not in keep:
+            subprocess.run([rt, "image", "delete", name], env=HOST_ENV, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, cwd=run.dir)
 
 
 def egress_proxy(run):

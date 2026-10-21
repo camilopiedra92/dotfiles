@@ -743,6 +743,21 @@ states a threat model's limits rather than chasing every channel: each of the
 six review rounds found another, and the owner's merge review is the control
 these two are left to.
 
+**Observed** (review of Phase 2, 2026-10-21): from the worker, as `node`, with
+its firewall up, an `AF_VSOCK` connection to every port from 1 to 65535 on
+CID 1 (local) and CID 2 (the host) was reset, none accepted, and the guest's
+own CID answered ENODEV: the firewall filters IP only, and no vsock service
+was reachable around it. The registries include `github.com` and its release
+hosts, which mise's downloads need; a `git push` to an account the agent
+names is the accepted smuggling channel above, as an `npm publish` is.
+
+Residuals named by that review and accepted, each with its reason: `git
+archive` applies the repository's own attribute filters, which only the
+owner configures (no agent writes `.git` or `.gitattributes`); the worker
+image's tag names its recipe (containers/worker/), not its bits — apt
+packages and npm's transitive dependencies are not pinned, so a rebuild after
+an image is deleted may differ, and drift.sh reports the pins that are.
+
 **Alternatives**: credentials on the container's stdin with an exact-value
 scan — encoded copies pass it; Claude Code's sandbox credential masking —
 host-side and Claude-only, not for pi; mitmproxy — a new dependency where the

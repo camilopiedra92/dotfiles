@@ -100,6 +100,15 @@ print(json.dumps(out))
   image)
     case "${2:-}" in
       inspect) grep -qxF "${3:-}" "$here/images.txt" 2> /dev/null || exit 1 ;;
+      # As the real CLI: each name qualified with its registry.
+      list | ls) /usr/bin/python3 -I -c 'import json,sys; print(json.dumps([{"configuration": {"name": "docker.io/library/" + l.strip()}} for l in open(sys.argv[1]) if l.strip()]))' "$here/images.txt" 2> /dev/null || echo '[]' ;;
+      delete | rm)
+        shift 2
+        for name in "$@"; do
+          grep -vxF "${name#docker.io/library/}" "$here/images.txt" > "$here/images.new"
+          mv -f "$here/images.new" "$here/images.txt"
+        done
+        ;;
       *) exit 0 ;;
     esac
     ;;

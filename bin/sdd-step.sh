@@ -64,7 +64,9 @@ outcome() {
   esac
   file=$(feature_dir)/.sdd/$step.json
   [ -f "$file" ] || die "outcome $step: $file is missing"
-  "$(tool check-jsonschema)" --schemafile "$SCHEMAS/$step.schema.json" "$file" > /dev/null 2>&1 ||
+  # As every host step: from the bundle, with no environment of the caller's.
+  (cd "$SDD_RUN_DIR" && /usr/bin/env -i HOME="$HOME" PATH="$PATH" "$(tool check-jsonschema)" \
+    --schemafile "$SCHEMAS/$step.schema.json" "$REPO/$file" > /dev/null 2>&1) ||
     die "outcome $step: $file does not match $step.schema.json"
   "$PY" -I - "$step" "$file" << 'PY'
 import json, sys

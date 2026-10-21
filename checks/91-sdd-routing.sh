@@ -640,6 +640,19 @@ sdd_lifecycle() {
     fail "prepare-worker: worker.json does not record $tag"
   out=$(sub prepare-worker) || fail "prepare-worker: second run failed: $out"
   [ "$(calls build | wc -l | tr -d ' ')" -eq 1 ] || fail "prepare-worker: built again although the image was present"
+  # Superseded worker images go, unless a live run still uses one; images
+  # that are not the worker's are not touched.
+  local held=$repo/.git/sdd/run3
+  mkdir -p "$held"
+  printf '{"run_id":"run3","pid":%s,"started":"%s","base":"x"}\n' "$$" "$(LC_ALL=C ps -o lstart= -p $$ | sed 's/^ *//')" > "$held/lock.json"
+  printf '{"image":"sdd-worker:bbbbbbbbbbbb"}\n' > "$held/worker.json"
+  printf '%s\n' sdd-worker:aaaaaaaaaaaa sdd-worker:bbbbbbbbbbbb debian:bookworm-slim >> "$sa/images.txt"
+  out=$(sub prepare-worker) || fail "prepare-worker: third run failed: $out"
+  grep -qx sdd-worker:aaaaaaaaaaaa "$sa/images.txt" && fail "prepare-worker: kept a superseded worker image"
+  grep -qx sdd-worker:bbbbbbbbbbbb "$sa/images.txt" || fail "prepare-worker: deleted the image a live run uses"
+  grep -qx debian:bookworm-slim "$sa/images.txt" || fail "prepare-worker: deleted an image that is not the worker's"
+  grep -qx "$tag" "$sa/images.txt" || fail "prepare-worker: deleted the current worker image"
+  rm -rf "$held"
 
   # egress-proxy, opted out: Claude's credential only.
   local opt pid
