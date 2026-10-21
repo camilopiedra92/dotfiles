@@ -97,7 +97,7 @@ gate's options, so free answers do not fit.
 **Decision**: every Claude step runs with `--permission-mode dontAsk` and
 the `--settings` file its routing row names — a profile in
 `claude/speckit/profiles/`. `judgment` (specify, clarify, plan, checklist, tasks, converge) allows the
-file tools, `.specify/scripts/bash/*` and read-only git; `readonly` (analyze,
+file tools, the named Spec Kit scripts (R19) and exact read-only git; `readonly` (analyze,
 review) allows reading and nothing that writes; every step also runs with
 `--setting-sources ""`, so its profile — which carries the config-guard and
 git-guard hooks — is its only source of permissions and hooks, and neither the
@@ -316,7 +316,7 @@ refused exits, version matching, held-out tests). Measuring from tasks onward
 is exact rather than a shortcut: every earlier phase runs on Opus in both
 arms. Correction, the same day: the harness runs single-step arms only (one
 `claude -p /speckit-implement` per run), so it does not "already settle" a
-multi-step arm's gates and counting; SC-001 now fixes those, and T045
+multi-step arm's gates and counting; SC-001 now fixes those, and T046
 extends the harness to them. Three counted runs per arm on both fixtures,
 from Anthropic's "Demystifying evals for AI agents". The routed arm starts with `sdd-run start --from`, the fixture's state
 carrying `.sdd/phases.json` with specify and plan done.
@@ -476,6 +476,36 @@ the operating system enforces around the shell commands").
 alone — it covers shell commands, not the file tools; running every Claude
 step in a container — the strongest boundary, but the Claude steps need the
 owner's subscription login inside it, which this feature does not move.
+
+## R20 — The threat model, and what follows from it
+
+**Finding** (adversarial analysis, 2026-10-21): a disposable checkout that is a
+git worktree has a `.git` file the agent can rewrite, so a host-side `git diff`
+could run a hook it planted (`core.fsmonitor`); verify ran model-written tests
+on the host; the patch and the judgment steps could change skills,
+`CLAUDE.md` or `.sdd/` files later steps read; specify must write
+`.specify/feature.json`; a cold image build could eat the margin before Spec
+Kit's own limit.
+
+**Threat model**: the implementing and judging agents are untrusted authors.
+What they write is data until judged; nothing they wrote runs outside a
+sandbox or container; nothing that governs the run is within their reach; no
+host tool reads anything they wrote as configuration.
+
+**Decisions that follow**: the disposable copy is a `git archive` export with
+no `.git`, and the patch is a `git diff --no-index` run outside any repository
+with system and global configuration disabled; verify runs in the worker
+container on a fresh export, egress limited to the allow list, for both paths;
+the patch is refused if it touches the protected set (`.git*`, `.claude/**`,
+`.specify/**`, `.sdd/**`, `CLAUDE.md`, `AGENTS.md`), and the profiles deny
+writing it, except `.specify/feature.json` by exact path; the image is built
+by its own step before the first pass, and an implement pass's limit covers
+the whole pass; the check command is frozen in the bundle.
+
+**Alternatives**: chasing vectors one by one — every round of review found
+another; a container for every Claude step too — the strongest boundary, but
+the subscription login would have to enter it, which this feature does not
+move (R19).
 
 ## R13 — Time and spend
 

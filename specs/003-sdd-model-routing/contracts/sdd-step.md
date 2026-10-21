@@ -12,7 +12,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | `agent <phase>` | runs a Claude routing row (contracts/routing.md) | — | 0 when the result is a success with no denial; non-zero naming the cause otherwise |
 | `route` | reads the opt-in frozen in `$SDD_RUN_DIR/optin.json`, writes `.sdd/route.json` | `deepseek`, or `sonnet` plus a line on how to opt in and DeepSeek's terms | 0 |
 | `outcome <step>` | validates `.sdd/<step>.json` | the step's token: `yes`/`no` (clarify), `pass`/`fail` (verify), `converged`/`open` (converge), `blocking`/`clear` (review) | 0; non-zero when the file is missing or invalid |
-| `verify` | runs `git config sdd.check`, writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
+| `prepare-worker` | builds the worker image `sdd-pi-worker:<hash of containers/pi-worker/>` when absent, before any pass, so no pass's limit pays for a build (both paths need it: verify runs in it) | the image tag | 0; non-zero naming the runtime's error |
+| `verify` | runs the check command frozen in the bundle (`$SDD_RUN_DIR/check.json`) inside the worker container, on a fresh `git archive` export of `HEAD` mounted alone, firewall up — model-written tests never run on the host — writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
 | `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
@@ -21,7 +22,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 ## `implement`, step by step
 
 1. **Prerequisites**, each stopping with exit 1 before any code leaves the
-   machine (SC-004); the effective implement row's `timeout` is within its `max_timeout`.
+   machine (SC-004); the effective implement row's `timeout` is within its `max_timeout`, and
+   it bounds the whole pass, steps 2–9, not only the agent.
    For deepseek (as `route.json` says): opted in both in the bundle and now — a repository opted
    out since `route` ran sends nothing and the pass runs on sonnet instead,
    saying so, after sonnet's prerequisites, and records `agent: sonnet` in
@@ -30,10 +32,12 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    blank. For sonnet: `claude` on `PATH`.
 2. **Checkout**: the feature directory (`.sdd/` included) committed first,
    `sdd: <feature> before implement`, so every earlier phase's output is in
-   `HEAD`; then a detached git worktree of `HEAD` in a temporary directory,
-   named and labelled with the run id — tracked files only.
-3. **Image** (deepseek): `sdd-pi-worker:<hash of containers/pi-worker/>`,
-   built when absent.
+   `HEAD`; then `git archive HEAD` extracted into a temporary directory,
+   named and labelled with the run id — tracked files only, and no `.git`:
+   the copy is not a repository, so nothing the agent writes there can be
+   read by git as configuration or hooks.
+3. **Image**: built by `prepare-worker` before the first pass; absent here,
+   the pass fails rather than build inside its own limit.
 4. **Agent**, with the brief of FR-017 (`containers/pi-worker/brief.md` plus
    the feature's paths and, on a fix round, `.sdd/verify.json`), stopped after
    the time limit — the effective implement row's `timeout` — which fires
@@ -49,14 +53,20 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
      `containers/pi-worker/egress.txt`; then pi runs as the non-root user
      `node`, `pi -p --mode json --no-session --model deepseek/<row.model>
      --thinking <row.effort>`, the credential read once from stdin.
-5. **Patch**: the checkout's changes against `HEAD`, new and deleted files
+5. **Patch**: `git diff --no-index --binary` between a second, untouched
+   export of `HEAD` and the agent's copy, run with `GIT_CONFIG_NOSYSTEM=1`,
+   `GIT_CONFIG_GLOBAL=/dev/null` and from outside any repository, so no
+   configuration or hook from either directory is read; new and deleted files
    included.
 6. **Check the response**: a response reporting a model other than the
    configured one, or lacking a usage field, fails the pass naming it, with
    nothing applied.
-7. **Judge**: each created, changed or deleted path passed to
-   `claude/config-guard.sh` as a `Write` of its new content (empty when
-   deleted); an `ask` stops with exit 1 naming the path, nothing applied.
+7. **Judge**: a path in the protected set — `.git*`, `.claude/**`,
+   `.specify/**`, `.sdd/**`, `CLAUDE.md`, `AGENTS.md`, at any depth — stops
+   with exit 1 naming it, nothing applied (FR-026); then each created,
+   changed or deleted path is passed to the bundle's copy of
+   `config-guard.sh` as a `Write` of its new content (empty when deleted); an
+   `ask` stops with exit 1 naming the path, nothing applied (FR-008).
 8. **Apply and commit** on the feature's worktree: `worker: <feature>
    (<model>)`; `.sdd/implement.json` records the files, the commit, and
    the pass's usage: pi's tokens, or Claude's reported cost and model usage;

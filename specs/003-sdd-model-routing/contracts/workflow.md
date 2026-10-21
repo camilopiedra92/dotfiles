@@ -42,10 +42,11 @@ and limit.
 | 10 | `review-plan` | gate | owner | — | `plan_verdict`, shows `analysis.md`, reject aborts; then `sdd-step phase-done plan` |
 | 11 | `tasks` | agent | `tasks` | `tasks.md` | then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
+| 12.1 | `prepare-worker` | shell `sdd-step prepare-worker`, `timeout: 1800` | — | the worker image | builds it once, outside every pass's limit; both paths need it, since verify runs in it |
 | 13 | `build` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome converge` prints `converged` (FR-014) |
 | 13.1 | `fix-loop` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome verify` prints `pass` (FR-015) |
 | 13.1.1 | `implement` | shell `sdd-step implement` | `implement-deepseek` or `implement-sonnet`, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, checkout, judgment and time limit (US2 AS6) |
-| 13.1.2 | `verify` | shell `sdd-step verify` | — (no model, FR-020) | `.sdd/verify.json` | |
+| 13.1.2 | `verify` | shell `sdd-step verify` | — (no model, FR-020) | `.sdd/verify.json` | in the worker container, on a fresh export of `HEAD`, no network but the allow list |
 | 13.2 | `fix-stuck` | gate in `if` verify = fail | owner | — | `fix_verdict`: `retry` runs exactly one more 13.1.1–13.1.2 round and comes back here if it fails; `abort` stops |
 | 13.3 | `review` | agent | `review` | `.sdd/review.json` | fresh agent over the diff since the run's base, read-only profile; deleted or weakened tests are blocking (FR-019) |
 | 13.4 | `converge` | agent | `converge` | `tasks.md`, `.sdd/converge.json` | findings by severity as structured output |

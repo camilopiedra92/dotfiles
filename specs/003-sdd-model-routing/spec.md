@@ -342,6 +342,11 @@ what landed in the commit, and what was printed.
   limited to its disposable checkout, and one outside it fails the pass.
   What the check command itself writes outside the checkout (caches, temporary
   files) is not judged: the same command runs unattended in verify.
+- **FR-028**: Code an agent wrote MUST NOT run outside a boundary: the
+  implementing agent's tests run inside its sandbox or container, and verify
+  runs the check command inside the worker container on a fresh copy, with
+  egress limited to the allow list; and nothing an agent wrote may be read as
+  configuration by a tool the run executes on the host.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.

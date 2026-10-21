@@ -11,6 +11,7 @@ exports it to every step, and writes into it before any step runs:
 |---|---|
 | `lock.json` | run id, `sdd-run`'s process id and its start time (FR-022) |
 | `optin.json` | the repository's opt-in as read at start (`sdd.implement`) |
+| `check.json` | the repository's check command as read at start (`sdd.check`) |
 | `routing.json` | the merged effective table, each value with its layer |
 | `profiles/*.json` | copies of the profiles, their hook commands rewritten to the bundle's absolute paths |
 | `hooks/` | copies of `config-guard.sh` and `git-guard.sh` |
@@ -142,7 +143,7 @@ The `pi` row is run by `sdd-step implement` (contracts/sdd-step.md), with
 
 | Profile | Allows |
 |---|---|
-| `judgment` | Read, Glob, Grep; Edit and Write in the worktree; `Bash` for each named Spec Kit script the phases run (`check-prerequisites.sh`, `setup-plan.sh`, `setup-tasks.sh`, `create-new-feature.sh`), with any arguments; read-only git |
+| `judgment` | Read, Glob, Grep; Edit and Write in the worktree, plus `.specify/feature.json` by exact path, which Spec Kit's specify writes; `Bash` for each named Spec Kit script the phases run (`check-prerequisites.sh`, `setup-plan.sh`, `setup-tasks.sh`, `create-new-feature.sh`), with any arguments; read-only git |
 | `readonly` | Read, Glob, Grep; read-only git |
 | `implement-sonnet` | Read, Glob, Grep; Edit and Write limited to the pass's checkout; `Bash(<sdd.check>)` — not a file in `profiles/`: composed per pass by `sdd-step implement` (FR-023) |
 
@@ -154,7 +155,9 @@ subcommand are denied.
 Every profile is `dontAsk`: what it does not allow is denied, never asked.
 Every profile denies Edit and Write on the git common directory (by absolute
 path, so linked worktrees are covered), `.claude/**`, `.specify/**`,
-`.sdd/**` and the run bundle: no step can change a skill, a Spec Kit script,
+`.sdd/**` (but `.specify/feature.json`), `CLAUDE.md`, `AGENTS.md` and `.git`
+at any depth (a worktree's `.git` file included), and the run bundle: no step
+can change a skill, a Spec Kit script, the instructions a later step loads,
 an outcome file, the routing or its own permissions. Every profile also turns
 on Claude Code's Bash sandbox (`sandbox.enabled`, `allowUnsandboxedCommands:
 false`, no allowed network domain, writes limited to the worktree minus those
