@@ -374,7 +374,10 @@ fixed above 30 minutes),
     `converge-stuck` are answered `abort`. The same rule counts runs in
     both arms: a run counts only if its last verify passed; one that reaches
     either stuck checkpoint, or a baseline run whose last verify failed, is
-    not counted and is run again under the harness's rerun limit.
+    not counted and is run again under the harness's rerun limit. If either
+    arm on a fixture reaches that limit with fewer than three counted runs,
+    SC-001 and SC-002 are not met on that fixture, and the counts are
+    recorded.
   - **Recorded per run**: Spec Kit, Claude Code, `container` and pi versions,
     and the dotfiles commit.
   - **Where**: the harness already fixes fixture layout, hermetic setup,
