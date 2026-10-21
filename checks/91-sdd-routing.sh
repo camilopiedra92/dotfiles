@@ -677,6 +677,9 @@ sdd_lifecycle() {
   calls() { grep -F "\"$1\"" "$sa/calls.jsonl" 2> /dev/null; }
 
   # prepare-worker: builds once, from dotfiles' containers/worker/, and records the tag.
+  # The built image's inventory, as the stand-in answers its inventory run:
+  # here the committed one, so the build is accepted.
+  cp "$dotfiles/containers/worker/inventory.txt" "$sa/inventory.out" 2> /dev/null
   local tag
   tag=$(sub prepare-worker) || fail "prepare-worker: failed: $tag"
   [[ "$tag" =~ ^sdd-worker:[0-9a-f]{12}$ ]] || fail "prepare-worker: printed '$tag', not sdd-worker:<12 hex>"
@@ -705,6 +708,29 @@ sdd_lifecycle() {
   grep -qx debian:bookworm-slim "$sa/images.txt" || fail "prepare-worker: deleted an image that is not the worker's"
   grep -qx "$tag" "$sa/images.txt" || fail "prepare-worker: deleted the current worker image"
   rm -rf "$paused" "$done"
+
+  # A build whose installed packages differ from the committed inventory
+  # (FR-032) is refused, naming each difference; it is deleted, since a
+  # present image is one prepare-worker accepted, and nothing is recorded.
+  if [ -s "$sa/inventory.out" ]; then
+    grep -vxF "$tag" "$sa/images.txt" > "$sa/images.new" && mv "$sa/images.new" "$sa/images.txt"
+    rm -f "$run/worker.json"
+    {
+      sed 1d "$dotfiles/containers/worker/inventory.txt"
+      echo "deb planted-package 9.9"
+    } | sort > "$sa/inventory.out"
+    local first
+    first=$(head -1 "$dotfiles/containers/worker/inventory.txt")
+    if out=$(sub prepare-worker); then fail "inventory: a differing build was accepted"; fi
+    printf '%s' "$out" | grep -qF "deb planted-package 9.9" || fail "inventory: the added package is not named: $out"
+    printf '%s' "$out" | grep -qF "$first" || fail "inventory: the missing package is not named: $out"
+    [ ! -e "$run/worker.json" ] || fail "inventory: worker.json recorded a refused image"
+    grep -qx "$tag" "$sa/images.txt" && fail "inventory: the refused image was kept"
+    cp "$dotfiles/containers/worker/inventory.txt" "$sa/inventory.out"
+    out=$(sub prepare-worker) || fail "inventory: the committed inventory was refused: $out"
+  else
+    fail "inventory: containers/worker/inventory.txt is missing or empty"
+  fi
 
   # egress-proxy, opted out: Claude's credential only.
   local opt pid

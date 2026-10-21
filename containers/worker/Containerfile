@@ -3,28 +3,52 @@
 # tagged with this directory's hash, so a change here builds a new image.
 # Apple Silicon only, as the rest of this repository: the downloaded artifacts
 # below are the arm64 ones, checked against hashes recorded here.
+#
+# Every input is pinned by hash (FR-032, research R26): the base by digest,
+# Debian packages from the base's own archive snapshot at exact versions, npm
+# packages from package-lock.json, mise and uv by checksum. Bit-identical
+# images are out of reach with Apple's builder (R26), so prepare-worker checks
+# each build's installed packages against inventory.txt instead.
 
 # node:24-bookworm-slim, the multi-arch index digest read 2026-10-21 (the tag
 # moved that day; drift.sh's report caught the first pin).
 FROM docker.io/library/node:24-bookworm-slim@sha256:8cabefbd444809cf0e319b5831c65da1ea202200ca552a5e75fd7938a6f86658
 
-# Versions read 2026-10-21, each upstream's latest then: Claude Code (also
-# this machine's), pi (the package research R6 names), mise and uv, their
-# hashes confirmed against the checksums each release publishes. drift.sh
-# reports any of them, and the base's digest, once upstream moves on.
-ARG CLAUDE_CODE_VERSION=2.1.306
-ARG PI_VERSION=1.3.0
+# The Debian archive snapshot the base image was built from, as its own
+# /etc/apt/sources.list.d/debian.sources names it: packages added here come
+# from the same moment, so they agree with what the base installed.
+ARG DEBIAN_SNAPSHOT=20261020T213255Z
+
+# Versions read 2026-10-21, each upstream's latest then: mise and uv, their
+# hashes confirmed against the checksums each release publishes. The agents'
+# versions are in package.json. drift.sh reports any pin, and the base's
+# digest and the snapshot's age, once upstream moves on.
 ARG MISE_VERSION=2026.10.17
 ARG MISE_SHA256=cac510e51793ad45e65fe92305bdbe4309c9c60b5907badbc7eba111738ab08f
 ARG UV_VERSION=0.13.4
 ARG UV_SHA256=1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab
 
-# iptables for the firewall; python3 for the egress proxy, which runs on this
-# image (research R23); ca-certificates and curl for the downloads below and
-# for the toolchain's own. setpriv, which drops to node, is in util-linux,
-# already in the base. No ipset or resolver: the firewall allows one address.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends iptables python3 ca-certificates curl \
+# iptables for the firewall; python3 and openssl for the egress proxy, which
+# runs on this image and makes the run's certificate authority with openssl
+# (research R23, R25); ca-certificates for the system store the entrypoint
+# adds that authority to, and curl for the downloads below. setpriv, which
+# drops to node, is in util-linux, already in the base. No ipset or resolver:
+# the firewall allows one address. No git: nothing a pass does needs it.
+#
+# Plain HTTP, as Debian's own sources: apt verifies every Release file's
+# signature with the base's debian-archive-keyring. check-valid-until=no,
+# because a snapshot's Release files carry the Valid-Until of their day and
+# apt would refuse a pinned snapshot a week later; the signature still holds.
+RUN rm -f /etc/apt/sources.list.d/debian.sources \
+  && printf '%s\n' \
+    "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bookworm main" \
+    "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT} bookworm-updates main" \
+    "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT} bookworm-security main" \
+    > /etc/apt/sources.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+    iptables=1.8.9-2 python3=3.11.2-1+b1 openssl=3.0.22-1~deb12u1 \
+    ca-certificates=20250419~deb12u2 curl=7.88.1-10+deb12u15 \
   && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; cd /tmp \
@@ -36,20 +60,25 @@ RUN set -eu; cd /tmp \
   && tar -xzf uv.tgz --strip-components=1 -C /usr/local/bin uv-aarch64-unknown-linux-gnu/uv uv-aarch64-unknown-linux-gnu/uvx \
   && rm -rf /tmp/*
 
-# --ignore-scripts, so no install script from either dependency tree runs at
-# build time. Claude Code's one script is then run by name: it copies the
-# native binary npm already installed from an optional dependency over the
-# `claude` placeholder, offline (read in install.cjs, 2026-10-21); without it
-# `claude` only prints how to run it.
-RUN npm install -g --ignore-scripts "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" "@earendil-works/pi-coding-agent@${PI_VERSION}" \
-  && node /usr/local/lib/node_modules/@anthropic-ai/claude-code/install.cjs \
+# npm ci, from the lockfile's whole tree with its integrity hashes, into
+# /opt/sdd, whose bins go on PATH by link. --ignore-scripts, so no install
+# script from either dependency tree runs at build time. Claude Code's one
+# script is then run by name: it copies the native binary npm already
+# installed from an optional dependency over the `claude` placeholder,
+# offline (read in install.cjs, 2026-10-21); without it `claude` only prints
+# how to run it.
+COPY package.json package-lock.json /opt/sdd/
+RUN cd /opt/sdd \
+  && npm ci --ignore-scripts --no-audit --no-fund \
+  && node node_modules/@anthropic-ai/claude-code/install.cjs \
+  && ln -s /opt/sdd/node_modules/.bin/claude /opt/sdd/node_modules/.bin/pi /usr/local/bin/ \
   && npm cache clean --force
 
-COPY init-firewall.sh entrypoint.sh models.json egress-registries.txt /usr/local/lib/sdd/
+COPY init-firewall.sh entrypoint.sh inventory.sh models.json egress-registries.txt /usr/local/lib/sdd/
 
 # pi's models.json exists owned by node, so the entrypoint (root) can write
 # the proxy's URL into it without changing its owner.
-RUN chmod 755 /usr/local/lib/sdd/init-firewall.sh /usr/local/lib/sdd/entrypoint.sh \
+RUN chmod 755 /usr/local/lib/sdd/init-firewall.sh /usr/local/lib/sdd/entrypoint.sh /usr/local/lib/sdd/inventory.sh \
   && install -d -o node -g node /home/node/.pi /home/node/.pi/agent /work \
   && install -m 644 -o node -g node /usr/local/lib/sdd/models.json /home/node/.pi/agent/models.json
 

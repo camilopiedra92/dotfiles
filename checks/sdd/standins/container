@@ -14,32 +14,58 @@
 # planted, prints a ready line, and waits to be stopped.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
-record() { /usr/bin/python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >> "$here/calls.jsonl"; }
+record() { /usr/bin/python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >>"$here/calls.jsonl"; }
 record container "$@"
 case "${1:-}" in
-  run)
-    shift
-    mounts='' name='' env=() labels=''
+run)
+  shift
+  mounts='' name='' env=() labels='' entrypoint=''
 
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        -v | --volume) mounts="$mounts$2;"; shift ;;
-        -e | --env) env+=("$2"); shift ;;
-        --name) name=$2; shift ;;
-        --label | -l) labels="$labels$2 "; shift ;;
-        --network | --cap-add | -u | --user | -w | --workdir | --cwd | --mount | -c | --cpus | -m | --memory | --entrypoint) shift ;;
-        -i | --interactive | --rm | --remove | -d | --detach | --read-only) ;;
-        -*) echo "container stand-in: unknown flag $1" >&2; exit 125 ;;
-        *) break ;;
-      esac
+  while [ $# -gt 0 ]; do
+    case "$1" in
+    -v | --volume)
+      mounts="$mounts$2;"
       shift
-    done
-    shift # the image
-    [ -n "$name" ] && printf '%s' "$labels" > "$here/labels.$name"
-    case " $* " in
-      *sdd-egress-proxy.py*)
-        IFS= read -r line
-        /usr/bin/python3 -I -c '
+      ;;
+    -e | --env)
+      env+=("$2")
+      shift
+      ;;
+    --name)
+      name=$2
+      shift
+      ;;
+    --label | -l)
+      labels="$labels$2 "
+      shift
+      ;;
+    --entrypoint)
+      entrypoint=$2
+      shift
+      ;;
+    --network | --cap-add | -u | --user | -w | --workdir | --cwd | --mount | -c | --cpus | -m | --memory) shift ;;
+    -i | --interactive | --rm | --remove | -d | --detach | --read-only) ;;
+    -*)
+      echo "container stand-in: unknown flag $1" >&2
+      exit 125
+      ;;
+    *) break ;;
+    esac
+    shift
+  done
+  shift # the image
+  # prepare-worker's inventory run: the image's packages, as the check
+  # staged them in inventory.out.
+  case "${entrypoint:-}" in */inventory.sh)
+    cat "$here/inventory.out"
+    exit 0
+    ;;
+  esac
+  [ -n "$name" ] && printf '%s' "$labels" >"$here/labels.$name"
+  case " $* " in
+  *sdd-egress-proxy.py*)
+    IFS= read -r line
+    /usr/bin/python3 -I -c '
 import json, os, sys
 c = json.loads(sys.argv[1])
 here = sys.argv[2]
@@ -50,42 +76,45 @@ json.dump({"providers": seen, "admissions": c.get("admissions"), "heartbeat_seco
 models = {"deepseek": {"data": [{"id": "deepseek-flash", "name": "DeepSeek-Standin-Flash"}]}} if "deepseek" in c["providers"] else {}
 print(json.dumps({"api_port": 8080, "models": models}), flush=True)
 ' "$line" "$here" || exit 125
-        sleep 300 &
-        child=$!
-        [ -n "$name" ] && echo "$child" > "$here/running.$name"
-        wait "$child"
-        rm -f "$here/running.$name"
-        exit 0
-        ;;
-    esac
-    work=$(printf '%s' "$mounts" | tr ';' '\n' | awk -F: '$2 == "/work" { print $1 }')
-    [ -n "$work" ] || { echo "container stand-in: nothing mounted at /work" >&2; exit 125; }
-    cmd=$1
-    shift
-    # Inside the container the agent is on PATH; here the stand-ins are.
-    [ -x "$here/$cmd" ] && cmd=$here/$cmd
-    cd "$work" || exit 125
-    [ -n "$name" ] && echo $$ > "$here/running.$name"
-    env -i PATH=/usr/bin:/bin SDD_STANDIN_MOUNTS="$mounts" SDD_STANDIN_DIR="$here" "${env[@]}" "$cmd" "$@" &
+    sleep 300 &
     child=$!
-    [ -n "$name" ] && echo "$child" > "$here/running.$name"
+    [ -n "$name" ] && echo "$child" >"$here/running.$name"
     wait "$child"
-    status=$?
-    # --rm: a finished pass container is gone.
-    rm -f "$here/running.$name" "$here/labels.$name"
-    exit "$status"
-    ;;
-  stop | kill | rm | delete)
-    shift
-    for name in "$@"; do
-      [ -f "$here/running.$name" ] && kill "$(cat "$here/running.$name")" 2> /dev/null
-      rm -f "$here/running.$name" "$here/labels.$name"
-    done
+    rm -f "$here/running.$name"
     exit 0
     ;;
-  list | ls)
-    # --all --format json: every container the stand-in has, with its labels.
-    /usr/bin/python3 -I -c '
+  esac
+  work=$(printf '%s' "$mounts" | tr ';' '\n' | awk -F: '$2 == "/work" { print $1 }')
+  [ -n "$work" ] || {
+    echo "container stand-in: nothing mounted at /work" >&2
+    exit 125
+  }
+  cmd=$1
+  shift
+  # Inside the container the agent is on PATH; here the stand-ins are.
+  [ -x "$here/$cmd" ] && cmd=$here/$cmd
+  cd "$work" || exit 125
+  [ -n "$name" ] && echo $$ >"$here/running.$name"
+  env -i PATH=/usr/bin:/bin SDD_STANDIN_MOUNTS="$mounts" SDD_STANDIN_DIR="$here" "${env[@]}" "$cmd" "$@" &
+  child=$!
+  [ -n "$name" ] && echo "$child" >"$here/running.$name"
+  wait "$child"
+  status=$?
+  # --rm: a finished pass container is gone.
+  rm -f "$here/running.$name" "$here/labels.$name"
+  exit "$status"
+  ;;
+stop | kill | rm | delete)
+  shift
+  for name in "$@"; do
+    [ -f "$here/running.$name" ] && kill "$(cat "$here/running.$name")" 2>/dev/null
+    rm -f "$here/running.$name" "$here/labels.$name"
+  done
+  exit 0
+  ;;
+list | ls)
+  # --all --format json: every container the stand-in has, with its labels.
+  /usr/bin/python3 -I -c '
 import glob, json, os, sys
 out = []
 for f in glob.glob(os.path.join(sys.argv[1], "labels.*")):
@@ -93,40 +122,43 @@ for f in glob.glob(os.path.join(sys.argv[1], "labels.*")):
     out.append({"configuration": {"id": os.path.basename(f)[len("labels."):], "labels": labels}})
 print(json.dumps(out))
 ' "$here"
-    ;;
-  inspect)
-    printf '[{"status":{"networks":[{"ipv4Address":"127.0.0.1/8"}]}}]\n'
-    ;;
-  image)
-    case "${2:-}" in
-      inspect) grep -qxF "${3:-}" "$here/images.txt" 2> /dev/null || exit 1 ;;
-      # As the real CLI: each name qualified with its registry.
-      list | ls) /usr/bin/python3 -I -c 'import json,sys; print(json.dumps([{"configuration": {"name": "docker.io/library/" + l.strip()}} for l in open(sys.argv[1]) if l.strip()]))' "$here/images.txt" 2> /dev/null || echo '[]' ;;
-      delete | rm)
-        shift 2
-        for name in "$@"; do
-          grep -vxF "${name#docker.io/library/}" "$here/images.txt" > "$here/images.new"
-          mv -f "$here/images.new" "$here/images.txt"
-        done
-        ;;
-      *) exit 0 ;;
-    esac
-    ;;
-  build)
-    shift
-    while [ $# -gt 0 ]; do
-      [ "$1" = -t ] || [ "$1" = --tag ] && echo "$2" >> "$here/images.txt"
-      shift
+  ;;
+inspect)
+  printf '[{"status":{"networks":[{"ipv4Address":"127.0.0.1/8"}]}}]\n'
+  ;;
+image)
+  case "${2:-}" in
+  inspect) grep -qxF "${3:-}" "$here/images.txt" 2>/dev/null || exit 1 ;;
+  # As the real CLI: each name qualified with its registry.
+  list | ls) /usr/bin/python3 -I -c 'import json,sys; print(json.dumps([{"configuration": {"name": "docker.io/library/" + l.strip()}} for l in open(sys.argv[1]) if l.strip()]))' "$here/images.txt" 2>/dev/null || echo '[]' ;;
+  delete | rm)
+    shift 2
+    for name in "$@"; do
+      grep -vxF "${name#docker.io/library/}" "$here/images.txt" >"$here/images.new"
+      mv -f "$here/images.new" "$here/images.txt"
     done
     ;;
-  network | volume)
-    kind=$1 verb=${2:-} target=${3:-}
-    case "$verb" in
-      create) echo "$target" >> "$here/${kind}s.txt" ;;
-      delete | rm) [ -f "$here/${kind}s.txt" ] && grep -vxF "$target" "$here/${kind}s.txt" > "$here/${kind}s.new"; mv -f "$here/${kind}s.new" "$here/${kind}s.txt" 2> /dev/null ;;
-      list | ls) cat "$here/${kind}s.txt" 2> /dev/null ;;
-    esac
-    exit 0
-    ;;
   *) exit 0 ;;
+  esac
+  ;;
+build)
+  shift
+  while [ $# -gt 0 ]; do
+    [ "$1" = -t ] || [ "$1" = --tag ] && echo "$2" >>"$here/images.txt"
+    shift
+  done
+  ;;
+network | volume)
+  kind=$1 verb=${2:-} target=${3:-}
+  case "$verb" in
+  create) echo "$target" >>"$here/${kind}s.txt" ;;
+  delete | rm)
+    [ -f "$here/${kind}s.txt" ] && grep -vxF "$target" "$here/${kind}s.txt" >"$here/${kind}s.new"
+    mv -f "$here/${kind}s.new" "$here/${kind}s.txt" 2>/dev/null
+    ;;
+  list | ls) cat "$here/${kind}s.txt" 2>/dev/null ;;
+  esac
+  exit 0
+  ;;
+*) exit 0 ;;
 esac
