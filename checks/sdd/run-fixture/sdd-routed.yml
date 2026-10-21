@@ -1,0 +1,22 @@
+# A workflow for checks/95-sdd-run.sh: the id, version and gates sdd-run
+# reads (contracts/workflow.md); the real one is claude/speckit/sdd-routed.yml.
+schema_version: "1.0"
+workflow:
+  id: "sdd-routed"
+  name: "SDD routed (fixture)"
+  version: "1.0.0"
+  description: "fixture"
+inputs:
+  spec: {type: string, default: ""}
+steps:
+  - id: plan
+    type: shell
+    run: "true"
+  - id: review-spec
+    type: gate
+    verdict_input: spec_verdict
+    options: [approve, reject]
+  - id: review-plan
+    type: gate
+    verdict_input: plan_verdict
+    options: [approve, reject]

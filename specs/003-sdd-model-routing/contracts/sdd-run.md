@@ -15,6 +15,41 @@ repository's root.
 | `sdd-run abort <run_id>` | ends a run stopped for the owner: records it aborted in the bundle, removes its containers, network and exports, and leaves the feature's worktree as it is |
 | `sdd-run usage <run_id>` | from the run's `usage.jsonl` (contracts/routing.md): per model, every attempt's reported cost; attempts with a start and no end, or no usage, listed as unreported; the provider's tokens priced from `models.json`; the totals |
 
+## As built (T038, 2026-10-21)
+
+- `bin/sdd-run.sh` checks that `/usr/bin/python3` runs, then hands over to
+  `bin/sdd-run.py` on it. YAML (the routing layers, the workflow) is read
+  with `check-jsonschema`'s own interpreter, which carries `ruamel.yaml`: a
+  host tool this feature already declares, so the system Python needs no
+  YAML library.
+- Order of `start`: the prerequisites, the layers merged and validated, the
+  bundle written (`lock.json` atomically: run id, pid, its `LC_ALL=C ps -o
+  lstart=` start time, the base commit and the worktree), the run linked as
+  `~/.local/state/sdd/runs/<run_id>`, then `sdd-step cleanup`, then `sdd-step
+  prepare-worker` — before the proxy, which runs on the worker image; the
+  workflow's own step 0 then finds the image present and re-checks its
+  inventory —, then the egress proxy (in a session of its own, so a Ctrl-C
+  meant for Spec Kit does not reach it), answering once it has written
+  `proxy.json` and `proxy-ca.pem`, its heartbeat touched every 2 seconds
+  while Spec Kit runs, and stopped with SIGTERM when Spec Kit exits.
+- Run ids: twelve random hex digits, never one the registry or this
+  repository holds, so they are unique across repositories.
+- `finished.json` (`outcome`: `completed`, `aborted`, `died`, `not started`)
+  is written when a run completes, is aborted, dies mid-step (Spec Kit still
+  records it `running` and its process is gone — `sdd-step cleanup` finds it)
+  or fails before Spec Kit starts; its registry link goes with it, and
+  cleanup drops links whose bundle is gone or finished. A paused or stopped
+  run is not finished: its process is gone too, but `resume` takes it up.
+- `resume` of a run that died: refused, naming `sdd-run start --from <feature
+  dir>` and the phases that will run again. `resume` reuses the bundle as it
+  is, rewrites only the lock, and refuses when the run's worker image is gone.
+- After Spec Kit exits, the bundle's `routing.json` is copied to the
+  feature's `.sdd/routing.json` once the feature directory exists.
+- `sdd-run routing` prints one line per phase and field: phase, field, value,
+  layer. `sdd-run usage` prints one line per model (attempts and cost, and
+  DeepSeek's tokens), one `unreported` line naming each attempt with no end
+  or no usage, and the total.
+
 ## Prerequisites checked by `start` and `resume`
 
 Each missing one stops with exit 1 and one line naming it and how to provide

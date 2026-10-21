@@ -863,6 +863,37 @@ def cleanup(run, only=None):
         for name in os.listdir(adm) if os.path.isdir(adm) else []:
             if name.endswith(".json"):
                 os.remove(os.path.join(adm, name))
+        finish_if_died(d)
+    prune_registry()
+
+
+def finish_if_died(bundle):
+    """A run whose process is gone while Spec Kit still records it running
+    died mid-step: Spec Kit will not resume it (research R3), so it is
+    finished and holds its worker image no longer. A paused or stopped run
+    is not: its process is gone too, but resume takes it up."""
+    if os.path.exists(os.path.join(bundle, "finished.json")):
+        return
+    try:
+        repo = load(os.path.join(bundle, "lock.json"))["repo"]
+        state = load(os.path.join(repo, ".specify", "workflows", "runs", os.path.basename(bundle), "state.json"))
+    except (OSError, ValueError, KeyError, TypeError):
+        state = {"status": "running"}  # no record to resume from
+    if state.get("status") == "running":
+        with open(os.path.join(bundle, "finished.json"), "w") as f:
+            json.dump({"at": now(), "outcome": "died"}, f)
+        print(f"finished {os.path.basename(bundle)} (its process died mid-step)")
+
+
+def prune_registry():
+    """Drops the run registry's links to bundles that are gone or finished,
+    in every repository, so no abandoned run holds a worker image."""
+    registry = os.path.join(HOST_ENV["HOME"], ".local", "state", "sdd", "runs")
+    for name in os.listdir(registry) if os.path.isdir(registry) else []:
+        link = os.path.join(registry, name)
+        target = os.path.realpath(link)
+        if not os.path.isdir(target) or os.path.exists(os.path.join(target, "finished.json")):
+            os.unlink(link)
 
 
 def main():
