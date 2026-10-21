@@ -86,7 +86,7 @@ sdd_run_prereqs() {
     done
   }
   for case in old-speckit no-specify no-workflow old-workflow runtime-down no-runtime no-token blank-token \
-    no-sdd-step proxy-down no-check; do
+    no-sdd-step proxy-down no-check no-pi-integration; do
     [ -z "$SR" ] || rm -rf "$SR"
     sr_fresh || return 1
     case $case in
@@ -133,6 +133,12 @@ sdd_run_prereqs() {
       no-check)
         git -C "$SR_REPO" config --unset sdd.check
         refused "$case" "sdd.check"
+        ;;
+      # Opted in to DeepSeek, pi runs Spec Kit's own implement command through
+      # Spec Kit's pi integration; without it, pi would have no such command.
+      no-pi-integration)
+        git -C "$SR_REPO" config sdd.implement deepseek
+        refused "$case" "specify integration install pi"
         ;;
     esac
   done

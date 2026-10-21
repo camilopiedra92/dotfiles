@@ -451,7 +451,19 @@ SH
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" && fail "implement: mounted the verify cache"
   # The brief comes from the bundle, frozen at start like everything else
   # that governs the run — never read live from dotfiles.
-  grep -qF "BRIEF FROZEN IN THE BUNDLE" "$sa/agents.jsonl" || fail "implement: the brief is not the bundle's"
+  # It goes to the system prompt; the user prompt is Spec Kit's command alone,
+  # so the procedure lives in one place (the skill) and the run's context in
+  # another (the brief).
+  /usr/bin/python3 -I -c '
+import json, sys
+argv = [json.loads(l) for l in open(sys.argv[1])][-1]["argv"]
+bad = []
+if "--append-system-prompt" not in argv or "BRIEF FROZEN IN THE BUNDLE" not in argv[argv.index("--append-system-prompt") + 1]:
+    bad.append("implement: the bundle brief is not appended to the system prompt")
+if argv[argv.index("-p") + 1] != "/speckit-implement specs/001-probe":
+    bad.append("implement: the prompt is not the Spec Kit command alone: %r" % argv[argv.index("-p") + 1][:80])
+sys.exit("\n".join(bad) or 0)
+' "$sa/agents.jsonl" || status=1
   clean_after implement
 
   # 13. Implement on DeepSeek, opted in at start and now: pi gets the worker's
@@ -485,6 +497,12 @@ m = json.load(open(sys.argv[2]))["providers"]["deepseek"]
 tok = agent["env"].get("SDD_PASS_TOKEN")
 name, argv, base, key = agent["agent"], agent["argv"], m["baseUrl"], m["apiKey"]
 bad = []
+# pi runs the Spec Kit implement command, in the pi spelling, alone; the
+# brief goes to its system prompt.
+if argv[-1] != "/speckit.implement specs/001-probe":
+    bad.append("deepseek: pi was not given /speckit.implement alone: %r" % argv[-1][:80])
+if "--append-system-prompt" not in argv or "Brief" not in argv[argv.index("--append-system-prompt") + 1]:
+    bad.append("deepseek: the brief is not appended to the system prompt of pi")
 if name != "pi" or "deepseek/deepseek-flash" not in argv:
     bad.append(f"deepseek: pi not run on deepseek/deepseek-flash: {name} {argv}")
 if m["models"][0]["name"] != "FROZEN-IN-BUNDLE":
@@ -507,7 +525,8 @@ sys.exit("\n".join(bad) or 0)
   # 14. The protected set on a case-insensitive filesystem: any spelling APFS
   # folds onto a protected name is that name (a long s, U+017F, folds to s).
   local spelling
-  for spelling in .Claude/settings.json src/Claude.md claude.local.md .MCP.json agents.md .GITATTRIBUTES $'.mcp.j\xc5\xbfon'; do
+  for spelling in .Claude/settings.json src/Claude.md claude.local.md .MCP.json agents.md .GITATTRIBUTES $'.mcp.j\xc5\xbfon' \
+    .pi/prompts/speckit.implement.md .Pi/settings.json; do
     fresh || return 1
     sonnet_route
     result "implemented"

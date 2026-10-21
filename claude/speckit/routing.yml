@@ -91,9 +91,12 @@ phases:
     agent: pi
     model: deepseek-flash
     effort: high
-    # The brief (claude/speckit/brief.md, frozen in the bundle) follows the prompt for both
-    # implementers, so both get the same instructions (US2 AS6).
-    prompt: /speckit-implement
+    # Spec Kit's own implement command through its native pi integration
+    # (.pi/prompts/speckit.implement.md; pi spells it with a dot), as Claude
+    # runs it through its skill: both implementers follow the same Spec Kit
+    # procedure, and the run's brief (claude/speckit/brief.md, frozen in the
+    # bundle) follows the prompt for both (US2 AS6).
+    prompt: /speckit.implement
     writes: ["**"]
     timeout: 1800
     max_timeout: 3600

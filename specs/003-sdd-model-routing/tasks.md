@@ -144,7 +144,7 @@ one phase per user story.
 **Independent test**: quickstart.md 10.
 
 - [ ] T049 [US3] Test first: extend `checks/90-spec-kit.sh`'s `sdd_init` check against a stand-in `specify` — a fresh repository gets `specify workflow add <dotfiles>/claude/speckit/sdd-routed.yml` in the same commit; one with `.specify/` gets the add or update command printed and nothing changed; the printed opt-in line names DeepSeek's terms; run it red against today's `bin/sdd-init.sh`
-- [ ] T050 [US3] Change `bin/sdd-init.sh` to install the workflow and print the commands for an existing repository; T049 green
+- [ ] T050 [US3] (and Spec Kit's pi integration, `specify integration install pi`, beside Claude's, research R27) Change `bin/sdd-init.sh` to install the workflow and print the commands for an existing repository; T049 green
 - [ ] T051 [US3] Close US3: `./check.sh` green; T049 seen red with the change reverted by hand; a fresh-context review
 
 ---

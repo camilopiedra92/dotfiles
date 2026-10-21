@@ -72,6 +72,9 @@ it, before any step runs:
 - the routing table, its profiles and the outcome schemas where this repository
   installs them;
 - `git config --local sdd.check` is set.
+- opted in to DeepSeek (`sdd.implement` is `deepseek`), Spec Kit's pi
+  integration is committed (`.pi/prompts/speckit.implement.md` tracked):
+  `specify integration install pi`, then commit `.pi/` (research R27).
 
 The DeepSeek path's own prerequisites (the opt-in, the Keychain item
 `deepseek-api`) are checked by `sdd-step implement`, at the phase that needs

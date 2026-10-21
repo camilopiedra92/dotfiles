@@ -386,15 +386,15 @@ what landed in the commit, and what was printed.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
-- **FR-017**: The implementing agent's brief MUST name: the tasks to do —
-  every task in `tasks.md` not marked done, converge's appended ones included
-  —, the spec, the plan and every other file `/speckit-plan` wrote in the
-  feature directory (research, data model, contracts, quickstart), the
-  constitution, the owner's test-first rules (tests
-  from the acceptance scenarios first, seen to fail, then the simplest code;
-  no change to a check's configuration; nothing outside the tasks), and, on a
-  fix round, the latest verify outcome. Both implementing agents get the same
-  brief.
+- **FR-017**: Both implementing agents MUST run Spec Kit's own implement
+  command for the feature, each through Spec Kit's native integration for it
+  (Claude's skill, pi's prompt), so the procedure — the tasks, the spec, the
+  plan and every file it wrote, the constitution with the owner's rules — is
+  Spec Kit's, in one place. The run's brief, appended to each agent's system
+  prompt, says only what the contained run changes: where the agent is, that
+  the run marks tasks and writes outcome files, what stops the pass, and, on
+  a fix round, the latest verify outcome. Both get the same brief
+  (research R27).
 - **FR-018**: Each implementation pass, by either agent, MUST end within a
   time limit, 30 minutes of wall-clock time unless a routing layer sets another
 within the phase's ceiling of 60 minutes (a value beyond it is refused, since

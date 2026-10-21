@@ -102,7 +102,7 @@ exactly one new directory under `specs/`):
 | `checklist` | claude | claude-opus-5-5 | medium | author | `<f>/checklists/**` | — |
 | `analyze` | claude | claude-opus-5-5 | medium | reader | — | — |
 | `tasks` | claude | claude-sonnet-5-5 | medium | author | `<f>/tasks.md` | — |
-| `implement-deepseek` | pi | deepseek-flash | high | — | everything but the protected set (contracts/pass.md) | — |
+| `implement-deepseek` (prompt `/speckit.implement`, pi's spelling of Spec Kit's command) | pi | deepseek-flash | high | — | everything but the protected set (contracts/pass.md) | — |
 | `implement-sonnet` | claude | claude-sonnet-5-5 | medium | implementer | everything but the protected set | — |
 | `review` | claude | claude-opus-5-5 | medium | reader | — (reads `/input/diff.patch`) | review |
 | `converge` | claude | claude-opus-5-5 | medium | author | `<f>/tasks.md` | converge |

@@ -210,6 +210,14 @@ def prerequisites(tools, repo):
             raise Stop(f"dotfiles lacks claude/speckit/{need}: update ~/dotfiles")
     if not local_config(repo, "sdd.check"):
         raise Stop("no check command: git config --local sdd.check '<the command that checks this repository>'")
+    # Opted in to DeepSeek, pi runs Spec Kit's own implement command, which
+    # Spec Kit's pi integration provides; the export holds only what HEAD
+    # tracks, so the integration must be committed.
+    if local_config(repo, "sdd.implement") == "deepseek" and subprocess.run(
+            [GIT, "-C", repo, "ls-files", "--error-unmatch", "--", ".pi/prompts/speckit.implement.md"],
+            env=HOST_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+        raise Stop("opted in to DeepSeek, but Spec Kit's pi integration is not committed: "
+                   "specify integration install pi, then commit .pi/")
 
 
 # ── Routing layers (contracts/routing.md, FR-027) ────────────────────────────

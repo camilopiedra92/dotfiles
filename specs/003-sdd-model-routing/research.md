@@ -794,10 +794,30 @@ author profile allows `mkdir -p`, `cp`, `printf`, `ls`, `cd /work` and
 writes under `specs/` and `.specify/`; the container and the judge's writes
 list remain the boundary.
 
+**Decision** (2026-10-21, the owner's review of the brief): both
+implementers run Spec Kit's own implement command through Spec Kit's native
+integration for their agent — Claude's skill `/speckit-implement`, and pi's
+prompt `/speckit.implement` from `specify integration install pi`, committed
+in `.pi/prompts/` — so the procedure is Spec Kit's, in one place, for both.
+The run's brief is cut to what the contained run changes (where the agent is,
+that the run marks tasks and writes outcome files, what stops the pass, the
+fix round) and goes to each agent's system prompt with
+`--append-system-prompt`, which Claude Code and pi both take (seen in the
+worker); the user prompt is the command alone. `.pi/` joins the protected set,
+as `.claude/` is: both instruct a later agent. `sdd-run` refuses a run opted in
+to DeepSeek whose pi integration is not committed.
+
 **Alternatives**: the brief and pi's models inside the image — every edit
 would rebuild it and they would not be frozen per run; git in the image — a
 push client with no use; build-essential — only projects with native
-extensions lacking wheels need it; a trigger to revisit.
+extensions lacking wheels need it; a trigger to revisit. A Spec Kit preset
+for the brief — a preset changes the implement command for every use in the
+repository, interactive sessions included, while the brief's statements hold
+only inside the contained run; making them conditional would be a hack. The
+brief in the user prompt — it mixes the run's context into the task and
+restated Spec Kit's procedure; the system prompt is where a harness puts the
+environment. pi reading Claude's skill file — a second copy of the procedure
+in another agent's format, when Spec Kit ships pi's own.
 
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 

@@ -53,7 +53,7 @@ GIT_OFF = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c",
 # Compared folded (fold() below), since APFS is case-insensitive and folds
 # more than case: .Claude/ is .claude/ there, and so is a long s (review of
 # Phase 2, proved).
-PROTECTED_DIRS = {".git", ".claude", ".specify", ".sdd"}
+PROTECTED_DIRS = {".git", ".claude", ".pi", ".specify", ".sdd"}
 PROTECTED_FILES = {"claude.md", "claude.local.md", "agents.md", ".mcp.json"}
 AUTOMATION = re.compile(r"^(\.github/|\.husky/|\.vscode/tasks\.json$|\.zed/tasks\.json$)")
 # Verify's own limit, in seconds. It has no routing row (no model runs it);
@@ -415,7 +415,11 @@ class Pass:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-def agent_command(row, prompt, schema):
+def agent_command(row, prompt, schema, system=None):
+    """The agent's command line. `prompt` is the task — Spec Kit's command and
+    its arguments — and `system`, appended to the agent's system prompt, the
+    run's context and rules (the brief): the procedure stays Spec Kit's, in
+    one place, and the contained run says only what it changes."""
     if row["agent"] == "claude":
         cmd = ["claude", "-p", prompt, "--model", row["model"], "--effort", row["effort"],
                "--permission-mode", "dontAsk", "--permission-prompts", "none",
@@ -423,9 +427,14 @@ def agent_command(row, prompt, schema):
                "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--output-format", "json"]
         if schema:
             cmd += ["--json-schema", json.dumps(schema)]
+        if system:
+            cmd += ["--append-system-prompt", system]
         return cmd
-    return ["pi", "-p", "--mode", "json", "--no-session", "--model", f"deepseek/{row['model']}",
-            "--thinking", row["effort"], prompt]
+    cmd = ["pi", "-p", "--mode", "json", "--no-session", "--model", f"deepseek/{row['model']}",
+           "--thinking", row["effort"]]
+    if system:
+        cmd += ["--append-system-prompt", system]
+    return cmd + [prompt]
 
 
 def agent_schema(step):
@@ -520,12 +529,14 @@ def run_agent(run, phase, implement=None):
     try:
         p.prepare(feature)
         prompt = f"{row['prompt']} {spec_input(run) if specify else feature}"
+        system = None
         if implement:
             # The brief frozen in the bundle at start, as everything else
-            # that governs the run (contracts/routing.md).
-            prompt += "\n\n" + open(os.path.join(run.dir, "brief.md")).read()
+            # that governs the run (contracts/routing.md), to the system prompt.
+            with open(os.path.join(run.dir, "brief.md")) as f:
+                system = f.read()
             if fix_round(run, feature):
-                prompt += f"\nFix round: the latest verify outcome is {feature}/.sdd/verify.json.\n"
+                prompt += f"\n\nFix round: the latest verify outcome is {feature}/.sdd/verify.json."
         schema = agent_schema(row["schema"]) if row.get("schema") in SCHEMA_STEPS else None
         mounts = [f"{p.inputs}:/bundle:ro"]
         if row["agent"] == "claude":
@@ -560,7 +571,7 @@ def run_agent(run, phase, implement=None):
         p.admit(hosts)
         run.usage({"event": "start", "phase": phase, "model": row["model"], "effort": row["effort"]})
         started = time.time()
-        code, out, err = p.container(agent_command(row, prompt, schema), env, mounts, row["timeout"])
+        code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         parsed = parse_result(row["agent"], out)
         text, structured, usage = parsed[0], parsed[1], parsed[2]
         served = parsed[3] if len(parsed) > 3 else row["model"]

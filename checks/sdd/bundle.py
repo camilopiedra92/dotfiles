@@ -42,7 +42,7 @@ rows = {
     "analyze": row("claude", "claude-opus-5-5", "reader", [], result_to="analysis.md", prompt="/speckit-analyze"),
     "review": row("claude", "claude-opus-5-5", "reader", [], schema="review", prompt="/speckit-review"),
     "implement-sonnet": row("claude", "claude-sonnet-5-5", "implementer", EVERYTHING, prompt="/speckit-implement"),
-    "implement-deepseek": row("pi", "deepseek-flash", None, EVERYTHING, prompt="/speckit-implement"),
+    "implement-deepseek": row("pi", "deepseek-flash", None, EVERYTHING, prompt="/speckit.implement"),
 }
 if len(sys.argv) > 3:
     with open(sys.argv[3]) as f:

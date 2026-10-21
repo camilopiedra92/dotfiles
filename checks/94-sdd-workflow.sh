@@ -51,6 +51,11 @@ for s in walk(wf["steps"]):
 missing = set(rows) - seen
 if missing:
     bad.append("no step runs the rows %s" % sorted(missing))
+# Each implementer runs Spec Kit's own implement command, in its agent's
+# spelling: Claude's skill, pi's prompt from Spec Kit's pi integration.
+for phase, want in (("implement-sonnet", "/speckit-implement"), ("implement-deepseek", "/speckit.implement")):
+    if rows[phase]["prompt"].split()[0] != want:
+        bad.append("%s runs %r, not Spec Kit's %s" % (phase, rows[phase]["prompt"], want))
 for word in ("claude-", "deepseek-", "--model", "--effort", "dontAsk", "allow"):
     if word in text:
         bad.append("the workflow names %r; models, effort and permissions belong to the routing table" % word)

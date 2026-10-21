@@ -136,7 +136,7 @@ and no configuration an agent could have written runs during a run.
    the changes from `git diff --no-index --raw -z` over the same two trees.
 6. **Judge**, failing closed — a judge that cannot run fails the pass:
    - no created, changed or deleted path is in the protected set — `.git`
-     and `.git*` files but `.gitkeep`, `.claude`, `.specify`, `.sdd` and
+     and `.git*` files but `.gitkeep`, `.claude`, `.pi`, `.specify`, `.sdd` and
      everything under them, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
      `.mcp.json`, at any depth, compared NFKC-casefolded — a superset of
      what APFS treats as the same name (a fuzz over every code point found
