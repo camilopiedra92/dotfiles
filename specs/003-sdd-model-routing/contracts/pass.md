@@ -82,9 +82,9 @@ and no configuration an agent could have written runs during a run.
    that API plus the registries for an implement row; the registries alone
    for verify. Then the agent, or the check command, runs as the non-root user
    `node`, with a placeholder where a credential would be; Claude with
-   `--setting-sources ""` so a tracked `.claude/settings.json` in the export
-   adds nothing to its profile (pending T003; the container and the writes
-   list bound it either way). For the specify row no feature
+   `--setting-sources project`, which loads the export's skills and CLAUDE.md
+   (research R24); the export's tracked `.claude/settings.json` applies inside
+   the container, bounded by it and by the writes list. For the specify row no feature
    directory exists yet: Spec Kit's `create-new-feature.sh` numbers one in the
    export, and the judge accepts exactly one new directory under `specs/`
    (contracts/routing.md); for the other rows `SPECIFY_FEATURE_DIRECTORY` names

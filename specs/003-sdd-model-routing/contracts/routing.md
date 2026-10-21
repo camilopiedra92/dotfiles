@@ -109,7 +109,7 @@ the worker container a Claude row runs:
 claude -p "<row.prompt> <feature paths>" \
   --model <row.model> --effort <row.effort> \
   --permission-mode dontAsk --permission-prompts none \
-  --setting-sources "" --settings /bundle/profile.json \
+  --setting-sources project --settings /bundle/profile.json \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
   --output-format json [--json-schema <schema>]
 ```
@@ -119,7 +119,8 @@ and `CLAUDE_CODE_OAUTH_TOKEN` set to a placeholder the proxy replaces with the
 owner's token (`claude setup-token`, Keychain item `claude-oauth`), which
 never enters the container (contracts/pass.md); the container's home holds no settings, no MCP
 server and no CLAUDE.md of the owner's, so a step loads only the export's
-tracked files and its profile (FR-026). A pi row runs `pi -p --mode json
+tracked files — its skills and CLAUDE.md, through `--setting-sources project`
+(research R24) — and its profile (FR-026). A pi row runs `pi -p --mode json
 --no-session --model deepseek/<row.model> --thinking <row.effort>`, its provider's `baseUrl` the
 proxy and its key a placeholder, the same way. Then, on the host:
 

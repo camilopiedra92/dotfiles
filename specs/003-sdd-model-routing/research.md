@@ -125,6 +125,38 @@ fails the step naming the refused tool either way.
 spike of 2026-10-18 an Auto mode accepted `config-guard`'s ask on `ruff.toml`
 (sdd-decisions). One allow list for every step — wider than any one step
 needs (least privilege); possible only while flags were per run (R2).
+## R24 — T003: Claude Code in the worker, through a token-injecting gateway
+
+**Observed** (T003, 2026-10-21, Claude Code 2.1.306 in a `node:24-bookworm-slim`
+container on Apple `container` 1.6.0, its firewall allowing only a gateway
+container on a network made for the probe): with `ANTHROPIC_BASE_URL` at the
+gateway and `CLAUDE_CODE_OAUTH_TOKEN=placeholder`, the gateway replacing the
+`Authorization` header with the owner's `claude-oauth` token read from its
+own stdin, `claude -p` answered (`POST /v1/messages -> 200`, `is_error`
+false, model `claude-sonnet-5-5`); the agent's container could not reach
+`api.anthropic.com` directly and held no real token in its environment.
+Against a `git archive` export of this repository with no `.git`:
+
+- `--setting-sources ""` loaded neither the project's skills nor its
+  CLAUDE.md (the agent listed no `speckit-*` skill and no constitution);
+  `--setting-sources project` loaded all ten `speckit-*` skills and the
+  constitution through CLAUDE.md's import. **Decision**: `--setting-sources
+  project`. The export's tracked `.claude/settings.json` then applies inside
+  the container; it can widen what an agent may do there, which the container,
+  the gateway and the patch's `writes` list bound.
+- `--json-schema` returned the requested `structured_output`.
+- A refused tool left the exit status 0 and listed the tool in
+  `permission_denials`, so the dispatcher reads that field.
+- A profile that `deny`s Edit and Write removes those tools from the model's
+  tool list, changing the cached prefix. Two profiles differing only in their
+  `allow` lists kept the prefix: an Opus call with the `reader` profile right
+  after one with `author` read its whole prefix from the cache (18,502 read, 0
+  written). **Decision**: profiles allow, never deny; under `dontAsk` an
+  unallowed tool is refused at call time anyway.
+- A minimal step's context was about 18.5K tokens, against 43K on the host
+  with the owner's MCP servers (R16). The JSON result carries no effort level,
+  so the usage log records the level given, not one reported.
+
 ## R5 — The worker's runtime: a container with a deny-by-default firewall
 
 **Decision**: pi runs in a Linux container built on Anthropic's reference
