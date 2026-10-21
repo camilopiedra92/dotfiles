@@ -242,7 +242,15 @@ Spec Kit ≥ 1.2.1 and runs on 1.2.2.
 
 **Decision**: every Claude step sets `capture: true` and an explicit
 `timeout` (a captured `command` step otherwise stops at 600 seconds, too
-short for plan or converge: 3600 for judgment phases, set per step).
+short for plan or converge): 3600 for the judgment phases, 1800 for tasks.
+Shell steps have a limit of their own — 300 seconds unless set
+(`workflows/step/shell/__init__.py`, `config.get("timeout", 300)`, read on
+1.2.2) — enforced by killing the shell, which would orphan a running
+`container` or `claude`. So `implement` sets `timeout:` to its own limit plus
+300 seconds, `verify` to 3600, and `sdd-step implement` enforces its limit
+first, stopping its agent and cleaning up before Spec Kit's limit can fire.
+Any leftover from a kill the script could not see is removed by `cleanup`
+(R6).
 Captured steps are dispatched without `--output-format json`, so `sdd-run`
 adds it to `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`; observed on 1.2.2 with a
 stand-in `claude`: `-p /speckit-specify probe --permission-mode dontAsk
@@ -258,8 +266,13 @@ resumed ones included, and the provider's tokens from the worker's outcomes.
 
 ## R12 — Interrupted runs and stale copies
 
-**Interrupted** (FR-022): `sdd-run` writes the run id and its own process id
-to `$(git rev-parse --git-dir)/sdd/<run_id>.json` at start and resume —
+**Run id**: `sdd-run` generates it and passes it to the engine as
+`SPECKIT_WORKFLOW_RUN_ID` (read on 1.2.2: `engine.py` uses it when set,
+else `uuid4()[:8]`), so the lock can be named before the run begins.
+
+**Interrupted** (FR-022): `sdd-run` writes the run id, its own process id
+and that process's start time (`ps -o lstart= -p <pid>`) to
+`$(git rev-parse --git-dir)/sdd/<run_id>.json` at start and resume —
 inside git's own directory, per worktree, never committed. A `phase-done`
 shell step after each approved checkpoint, and after tasks, appends the phase
 to `<feature>/.sdd/phases.json`; `--from` starts at the first phase not in it. On resume, a run in state
@@ -277,6 +290,13 @@ editing Spec Kit's state files.
 **Stale copy**: the workflow's `version` field is compared by `sdd-run` with
 this repository's file; a mismatch stops the run, naming the `specify workflow
 add` command that replaces the copy (US1 AS7).
+
+## R15 — The engine's version is checked, not assumed
+
+The workflow's `requires.speckit_version` is advisory (`engine.py`, read on
+1.2.2: "the advisory pre-conditions documented for workflows"), so
+`sdd-run` checks `specify version` ≥ 1.2.1 itself before any step and stops
+naming the `uv-tools.txt` pin and `./install.sh` (FR-024).
 
 ## R14 — Effort per model
 

@@ -291,11 +291,17 @@ what landed in the commit, and what was printed.
   run from the existing feature directory at the first unfinished phase;
   finished phases' files MUST NOT be rewritten by that new run. A phase is
   finished when its checkpoint was approved, or, for tasks, when its output
-  was written; each is recorded in an outcome file as it happens.
+  was written; each is recorded in an outcome file as it happens. Whether a
+  run's process still exists is judged by its process id together with that
+  process's start time, so a reused process id is not mistaken for it.
+- **FR-024**: A run MUST stop before any step on a Spec Kit older than the
+  version the routing requires, naming the manifest update that brings it.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
   the repository's check command, and nothing wider than the headless
-  allow list plus that command; its file writes MUST be limited to its
-  disposable checkout, and a write outside it fails the pass.
+  allow list plus that command; its Edit and Write tool calls MUST be
+  limited to its disposable checkout, and one outside it fails the pass.
+  What the check command itself writes outside the checkout (caches, temporary
+  files) is not judged: the same command runs unattended in verify.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
@@ -309,8 +315,10 @@ what landed in the commit, and what was printed.
   fix round, the latest verify outcome. Both implementing agents get the same
   brief.
 - **FR-018**: Each implementation pass, by either agent, MUST end within a
-  time limit, 30 minutes unless the owner sets another, enforced by the run
-  itself; the run MUST report each pass's usage — the provider's tokens and
+  time limit, 30 minutes of wall-clock time unless the owner sets another,
+  enforced by the run itself before any outer limit can cut it off, so the
+  pass always stops its agent and cleans up; a pass that spans the machine's
+  sleep may reach its limit on waking, which fails it with nothing applied; the run MUST report each pass's usage — the provider's tokens and
   price for the external agent, the reported Claude usage for the lighter
   model.
 - **FR-019**: A deleted or weakened test MUST be a blocking finding of the
@@ -349,10 +357,14 @@ what landed in the commit, and what was printed.
   repository is set up by `sdd-init` as of dotfiles commit `180490c`
   (constitution-authoring v1.2.1, story-workers v0.2.0), and each arm's
   workflow is added from the dotfiles commit recorded with the result. In the
-  baseline, `build`'s three convergence passes still run, each with one
-  Spec Kit implement step on the most capable model in place of the
-  implement-and-verify loop, followed by verify, review and converge, with no
-  separate marking. The one model step not on the most capable model is
+  baseline, `build` runs as in the routed arm — until converge reports
+  converged, at most three passes — each pass with one Spec Kit implement
+  step on the most capable model in place of the implement-and-verify loop,
+  followed by verify, review and converge; a failing verify goes on to
+  review, there is no `fix-stuck` checkpoint and no separate marking. The
+  baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
+  repository, added to the fixture from the same dotfiles commit as the
+  routed one. The one model step not on the most capable model is
   story-workers' own worker inside that implement command, on the lighter
   model at `medium` as its decision 0001 sets it; it is part of the
   baseline as `sdd-init` installs it today. Spec Kit 1.2.2; the Claude Code

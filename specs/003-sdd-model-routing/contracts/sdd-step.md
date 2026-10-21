@@ -15,7 +15,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
 | `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
-| `cleanup [<run_id>]` | removes the checkouts, containers and volumes labelled with that run, or with any run no longer `running` | what it removed | 0 |
+| `cleanup [<run_id>]` | removes the checkouts, containers and volumes labelled with that run, or with any run that is not `running`, or whose run lock names a process that no longer exists (process id and start time, FR-022) | what it removed | 0 |
 
 ## `implement`, step by step
 
@@ -29,10 +29,13 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    named and labelled with the run id — tracked files only.
 3. **Image** (deepseek): `sdd-pi-worker:<hash of containers/pi-worker/>`,
    built when absent.
-4. **Agent**. Sonnet: `claude -p --model claude-sonnet-5-5` with the same
-   brief, its working directory the checkout, under the routing settings of
+4. **Agent**. Sonnet: `claude -p --model claude-sonnet-5-5 --permission-mode
+   dontAsk --output-format json --settings <per-pass settings>` — the flags
+   `sdd-run` gives Spec Kit's dispatch do not reach a direct call — with the
+   same brief, its working directory the checkout, under the routing settings of
    research R4 plus `Bash(<sdd.check>)`, with `Edit` and `Write` limited to
-   the checkout (FR-023), stopped after the time limit; its JSON result kept for step 7. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
+   the checkout (FR-023), stopped after the time limit, which fires before
+   the step's own `timeout` (research R11); its JSON result kept for step 7. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
    `/work`, the volume `sdd-cache-<run_id>` for the tool cache, network limited
    to the hosts in `containers/pi-worker/egress.txt` (research R5, pending); the credential written to stdin and read once by the entrypoint;
    pi given the brief of FR-017 (`containers/pi-worker/brief.md` plus the

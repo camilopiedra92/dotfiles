@@ -48,7 +48,10 @@ Every gate binds one of them with `verdict_input` (R3).
 
 ## Dispatch
 
-Every Claude step sets `capture: true` and `timeout: 3600` (research R11);
+Every Claude step sets `capture: true` and a `timeout`: 3600 for judgment
+phases, 1800 for `tasks`. The `shell` steps set theirs too, since Spec Kit's
+default is 300 seconds: `implement` its own limit plus 300, `verify` 3600,
+the rest keep the default (research R11);
 `sdd-run` adds `--output-format json` to the run's extra arguments, so each
 step's captured `stdout` is Claude's JSON result.
 
