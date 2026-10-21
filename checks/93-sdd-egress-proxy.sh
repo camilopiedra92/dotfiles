@@ -400,6 +400,32 @@ ep_retire() {
 }
 check "a pass whose admission is deleted reaches nothing" ep_retire
 
+# Seen with real Claude Code, 2026-10-21: a client refused a CONNECT resets
+# the connection, and the server's default error handler printed a traceback
+# for each. A reset is the client's business: one log line, no traceback.
+ep_reset_quiet() {
+  [ -n "${EP_API:-}" ] || {
+    echo "no port to reach: the proxy did not start"
+    return 1
+  }
+  python3 -I - "$EP_API" << 'PY' || return 1
+import socket, struct, sys
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])))
+s.sendall(b"CONNECT example.invalid:443 HTTP/1.1\r\nHost: example.invalid:443\r\nProxy-Authorization: Bearer unknownTOKEN0123456789\r\n\r\n")
+s.recv(4096)
+# SO_LINGER 0: close sends a reset instead of a FIN, as the agent's client did.
+s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+s.close()
+PY
+  sleep 0.5
+  ! grep -q "Traceback" "$EP_TMP/main.log" || {
+    echo "a client's reset printed a traceback in the proxy's log:"
+    grep -B2 -A3 "Traceback" "$EP_TMP/main.log" | head -12
+    return 1
+  }
+}
+check "a client resetting its connection leaves one line in the log, not a traceback" ep_reset_quiet
+
 # A run that never opted in hands the proxy no DeepSeek key, and then no pass
 # reaches DeepSeek whatever its admission says. Started with a heartbeat
 # window of two seconds, which the next case uses.

@@ -98,6 +98,10 @@ env=(
   LOGNAME=node
   PATH=/usr/local/bin:/usr/bin:/bin
   LANG=C.UTF-8
+  # Claude Code otherwise opens its own connections to api.anthropic.com
+  # (telemetry, error reports), outside ANTHROPIC_BASE_URL; the proxy refuses
+  # them, so they are only noise (seen in the first real pass, 2026-10-21).
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
   # Registries are reached by CONNECT through the proxy, the placeholder as
   # the proxy user, which is how the proxy knows the pass; the proxy itself
   # is reached directly, as the API gateway it also is.

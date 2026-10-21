@@ -282,7 +282,8 @@ sdd_ep_runs_as_node() {
     return 1
   }
   for want in ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=$SDD_EP_TOKEN \
-    HTTPS_PROXY="http://$SDD_EP_TOKEN@192.168.70.2:8080" HOME="$tmp/home" USER=node; do
+    HTTPS_PROXY="http://$SDD_EP_TOKEN@192.168.70.2:8080" HOME="$tmp/home" USER=node \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1; do
     grep -qx -- "$want" <<< "$args" || {
       echo "the command's environment lacks $want; setpriv got:"
       printf '%s\n' "$args"

@@ -270,13 +270,25 @@ def models(state):
     return out
 
 
+class Server(http.server.ThreadingHTTPServer):
+    # A client that resets its connection (Claude Code does, after a refused
+    # CONNECT; seen 2026-10-21) is not the proxy's error: one line, where the
+    # default handler printed a traceback per reset.
+    def handle_error(self, request, client_address):
+        err = sys.exc_info()[1]
+        if isinstance(err, (ConnectionResetError, BrokenPipeError)):
+            log("connection from %s closed by the client" % client_address[0])
+        else:
+            log("error serving %s: %s" % (client_address[0], type(err).__name__))
+
+
 def main():
     # One line, read once: the credentials live in this process's memory and
     # nowhere else.
     config = json.loads(sys.stdin.readline())
     state = State(config)
     cls = type("ApiHandler", (Handler,), {"state": state})
-    server = http.server.ThreadingHTTPServer(hostport(config["listen"]), cls)
+    server = Server(hostport(config["listen"]), cls)
     server.daemon_threads = True
     del config
     threading.Thread(target=server.serve_forever, daemon=True).start()
