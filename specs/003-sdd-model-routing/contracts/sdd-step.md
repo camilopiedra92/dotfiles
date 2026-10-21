@@ -14,7 +14,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | `verify` | runs `git config sdd.check`, writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
-| `save-analysis` | reads the analyze step's captured result from `.specify/workflows/runs/$SPECKIT_WORKFLOW_RUN_ID/state.json` and writes its text to `<feature>/analysis.md` | — | 0; non-zero when the step has no captured result |
+| `save-analysis` | reads the analyze step's captured result from `.specify/workflows/runs/$SPECKIT_WORKFLOW_RUN_ID/state.json` and writes the JSON result's `result` text (plain report, not the JSON envelope) to `<feature>/analysis.md` | — | 0; non-zero when the step has no captured result |
 | `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
 | `cleanup [<run_id>]` | removes the checkouts, containers and volumes labelled with that run, or with any run that is not `running`, or whose run lock names a process that no longer exists (process id and start time, FR-022) | what it removed | 0 |
 
@@ -24,7 +24,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    machine (SC-004); `sdd.implementTimeout`, when set, is 1–1800 seconds.
    For deepseek (as `route.json` says): still opted in — a repository opted
    out since `route` ran sends nothing and the pass runs on sonnet instead,
-   saying so (FR-010); `container` on `PATH` and its
+   saying so, after sonnet's prerequisites, and records `agent: sonnet` in
+   `implement.json` (FR-010); `container` on `PATH` and its
    service answering; the Keychain item `deepseek-api` present and not blank.
    For sonnet: `claude` on `PATH`.
 2. **Checkout**: the feature directory (`.sdd/` included) committed first,
