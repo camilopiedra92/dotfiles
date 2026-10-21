@@ -793,6 +793,16 @@ it; only `GET` and `HEAD` are forwarded, on `github.com` only
 `/<owner>/<repo>/releases/download/…` and `/<owner>/<repo>/archive/…`; npm's
 audit is turned off in the worker, so no read needs another method.
 
+**Observed** (T062, 2026-10-21, the built proxy and the pinned worker
+`sdd-worker:a1a9cc8aef8b`, a real run): a Claude pass as before (two `POST
+/v1/messages`, 200); a verify pass whose check command installed `left-pad`
+with npm, `six` with uv and `jq` with mise, all through the inspected
+registries; in the same pass a `PUT` to `registry.npmjs.org`, a `POST` to
+`github.com/…/git-receive-pack` and a `GET` of a GitHub page that is not a
+release download were refused with 403 and logged; `npm publish` of a name
+nobody owns reached its `PUT` and failed `E403`, refused by the proxy. A client
+closing TLS without its close-notify left one log line (`SSLEOFError`).
+
 **Alternatives**: mitmproxy or Squid's ssl-bump — a new dependency where the
 standard library and the image's `openssl` suffice; an allowlist by SNI alone
 — it cannot see the method, so publishing stays open; installing dependencies
