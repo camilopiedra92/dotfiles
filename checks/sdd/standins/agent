@@ -6,13 +6,35 @@
 # fixture/edits/ copied over the working directory, paths in fixture/delete
 # removed, fixture/script run — and prints fixture/result.json as the agent's
 # JSON result.
+#
+# A whole workflow calls several agents in turn, so a fixture may also be
+# kept per prompt: fixture/by/<key>.<n>/ for the n-th call whose prompt's
+# first word is <key> (speckit-plan, review, ...), else fixture/by/<key>/,
+# else fixture/ itself.
 set -uo pipefail
 dir=$SDD_STANDIN_DIR
 fx=$dir/fixture
+key=$(/usr/bin/python3 -I -c '
+import re, sys
+args = sys.argv[1:]
+prompt = args[args.index("-p") + 1] if "-p" in args and args[args.index("-p") + 1:args.index("-p") + 2] != ["--mode"] else args[-1]
+word = re.match(r"\W*([A-Za-z0-9-]+)", prompt)
+print(word.group(1).lower() if word else "none")
+' "$@")
+n=$(($(cat "$dir/count.$key" 2> /dev/null || echo 0) + 1))
+echo "$n" > "$dir/count.$key"
+if [ -d "$fx/by/$key.$n" ]; then
+  fx=$fx/by/$key.$n
+elif [ -d "$fx/by/$key" ]; then
+  fx=$fx/by/$key
+fi
 stdin=$(cat 2> /dev/null || true)
 /usr/bin/python3 -I -c '
 import json, os, sys
-print(json.dumps({"agent": os.path.basename(sys.argv[2]), "argv": sys.argv[3:], "env": dict(os.environ), "stdin": sys.argv[1]}))
+mounts = dict(m.split(":")[1:2] + [m.split(":")[0]] for m in os.environ.get("SDD_STANDIN_MOUNTS", "").split(";") if m)
+profile = os.path.join(mounts.get("/bundle", "/nonexistent"), "profile.json")
+print(json.dumps({"agent": os.path.basename(sys.argv[2]), "argv": sys.argv[3:], "env": dict(os.environ), "stdin": sys.argv[1],
+                  "profile": open(profile).read() if os.path.exists(profile) else None}))
 ' "$stdin" "$0" "$@" >> "$dir/agents.jsonl"
 [ -f "$fx/sleep" ] && sleep "$(cat "$fx/sleep")"
 [ -d "$fx/edits" ] && cp -R "$fx/edits/." .

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep", "Edit", "Write",
+      "Bash(<check>)",
+      "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git rev-parse:*)", "Bash(git branch --show-current)"
+    ]
+  }
+}

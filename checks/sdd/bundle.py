@@ -1,6 +1,10 @@
 """Writes the run bundle and repository the contained-pass checks run against.
 
-Usage: bundle.py <scratch dir> <dotfiles root>
+Usage: bundle.py <scratch dir> <dotfiles root> [<rows.json>]
+
+With <rows.json> — routing.yml's phases as JSON — the bundle carries those
+rows, every value from the defaults layer, and the real profiles; without
+it, the synthetic rows below.
 
 The bundle is what `sdd-run start` would leave in $SDD_RUN_DIR: the frozen
 routing table, profiles, the config-guard copy, the check command, the opt-in,
@@ -40,6 +44,9 @@ rows = {
     "implement-sonnet": row("claude", "claude-sonnet-5-5", "implementer", EVERYTHING, prompt="/speckit-implement"),
     "implement-deepseek": row("pi", "deepseek-flash", None, EVERYTHING, prompt="/speckit-implement"),
 }
+if len(sys.argv) > 3:
+    with open(sys.argv[3]) as f:
+        rows = json.load(f)["phases"]
 routing = {
     "schema": "urn:dotfiles:sdd:routing:1", "step": "routing", "at": "2026-10-21T14:00:00Z",
     "versions": {"speckit": "1.2.2", "claude_code": "2.1.306", "container": "1.6.0", "pi": "1.3.0"},
@@ -63,6 +70,10 @@ for name, doc in files.items():
     with open(os.path.join(run, name), "w") as f:
         json.dump(doc, f, indent=1)
 for profile in ("author", "reader", "implementer"):
+    if len(sys.argv) > 3:
+        shutil.copy(os.path.join(dotfiles, "claude", "speckit", "profiles", profile + ".json"),
+                    os.path.join(run, "profiles", profile + ".json"))
+        continue
     with open(os.path.join(run, "profiles", profile + ".json"), "w") as f:
         json.dump({"permissions": {"allow": ["Read"]}, "_profile": profile}, f)
 shutil.copy(os.path.join(dotfiles, "claude", "config-guard.sh"), os.path.join(run, "hooks", "config-guard.sh"))

@@ -178,6 +178,10 @@ class Pass:
 
     # 1. Export
     def prepare(self, feature):
+        # The image is built by the workflow's first step, outside every
+        # pass's limit; a pass never builds it (FR-028).
+        if not os.path.exists(os.path.join(self.run.dir, "worker.json")):
+            raise PassFailed("no worker image is recorded for this run; the workflow's prepare-worker step builds it first")
         # The authority the egress proxy inspects registry traffic with: the
         # worker trusts it, or no registry is reachable (FR-031). Checked
         # before anything is committed or started.
@@ -499,15 +503,26 @@ def run_agent(run, phase, implement=None):
     applied, so no failure after the commit can lose either (review of
     Phase 2, second round)."""
     row = run.rows[phase]
-    feature = feature_dir(run.repo)
+    # specify makes the feature directory; every later phase works in it.
+    specify = phase == "specify"
+    feature = None if specify else feature_dir(run.repo)
     p = Pass(run, "implement" if implement else "agent", phase)
     try:
         p.prepare(feature)
-        prompt = f"{row['prompt']} {feature}"
+        prompt = f"{row['prompt']} {spec_input(run) if specify else feature}"
+        if implement:
+            prompt += "\n\n" + open(os.path.join(DOTFILES, "containers", "worker", "brief.md")).read()
+            if fix_round(run, feature):
+                prompt += f"\nFix round: the latest verify outcome is {feature}/.sdd/verify.json.\n"
         schema = agent_schema(row["schema"]) if row.get("schema") in SCHEMA_STEPS else None
         mounts = [f"{p.inputs}:/bundle:ro"]
         if row["agent"] == "claude":
-            shutil.copy(os.path.join(run.dir, "profiles", row["profile"] + ".json"), os.path.join(p.inputs, "profile.json"))
+            # The implementer may run the check command frozen in the bundle,
+            # which its profile names as <check>.
+            profile = open(os.path.join(run.dir, "profiles", row["profile"] + ".json")).read()
+            command = load(os.path.join(run.dir, "check.json"))["command"]
+            with open(os.path.join(p.inputs, "profile.json"), "w") as f:
+                f.write(profile.replace("<check>", json.dumps(command)[1:-1]))
             env = {"ANTHROPIC_BASE_URL": p.proxy_url(), "CLAUDE_CODE_OAUTH_TOKEN": p.token}
         else:
             # pi's provider, from the worker's template, pointed at the proxy
@@ -545,7 +560,11 @@ def run_agent(run, phase, implement=None):
             raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
         changes = p.changes()
         patch = p.patch() if changes else b""
-        flagged = p.judge(changes, row["writes"], feature, implement)
+        writes = row["writes"]
+        if specify:
+            feature = new_feature(p, changes)
+            writes = [w.replace("specs/<new>", feature) for w in writes]
+        flagged = p.judge(changes, writes, feature, implement)
         p.scan(changes, [text.encode(), json.dumps(structured).encode()], row["agent"])
         place_outcome = None
         if structured is not None and row.get("schema"):
@@ -568,6 +587,159 @@ def run_agent(run, phase, implement=None):
                 "seconds": round(time.time() - started, 1), "row": row}
     finally:
         p.cleanup()
+
+
+def spec_input(run):
+    """The run's spec text, from the engine's own record of its inputs —
+    never through a workflow step's command line (FR-016)."""
+    path = os.path.join(run.repo, ".specify", "workflows", "runs", run.id, "inputs.json")
+    try:
+        spec = load(path)["inputs"]["spec"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise PassFailed(f"no spec input in {path}")
+    if not isinstance(spec, str) or not spec.strip():
+        raise PassFailed("the run's spec input is empty")
+    return spec
+
+
+def new_feature(p, changes):
+    """The one feature directory a specify pass created, which
+    .specify/feature.json must name exactly (contracts/routing.md)."""
+    made = sorted({"/".join(c[2].split("/")[:2]) for c in changes if c[2].startswith("specs/")
+                   and not os.path.exists(os.path.join(p.baseline, *c[2].split("/")[:2]))})
+    if len(made) != 1 or not re.fullmatch(r"specs/[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*", made[0]):
+        raise PassFailed(f"specify must create exactly one specs/<nnn>-<slug> directory; it created {made or 'none'}")
+    try:
+        named = load(os.path.join(p.export, ".specify", "feature.json"))
+    except (OSError, ValueError):
+        named = None
+    if named != {"feature_directory": made[0]}:
+        raise PassFailed(f".specify/feature.json must name {made[0]} and nothing else")
+    return made[0]
+
+
+def fix_round(run, feature):
+    """Whether this implement pass follows a failed verify of this run."""
+    try:
+        return load(os.path.join(run.repo, feature, ".sdd", "verify.json"))["exit"] != 0
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def outcome_token(run, feature, step):
+    """The token `sdd-step outcome` prints, from a validated outcome file."""
+    path = os.path.join(run.repo, feature, ".sdd", f"{step}.json")
+    if not os.path.exists(path):
+        raise PassFailed(f"{path} is missing")
+    schema = os.path.join(DOTFILES, "claude", "speckit", "schemas", f"{step}.schema.json")
+    r = subprocess.run([run.tool("check-jsonschema"), "--schemafile", schema, path], env=HOST_ENV,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=run.dir)
+    if r.returncode != 0:
+        raise PassFailed(f"{path} does not match {step}.schema.json")
+    doc = load(path)
+    above_low = any(f["severity"] != "LOW" for f in doc.get("findings", []))
+    if step == "verify":
+        return "pass" if doc["exit"] == 0 else "fail"
+    if step == "review":
+        return "blocking" if above_low else "clear"
+    return "converged" if doc["outcome"] == "converged" and not above_low else "open"
+
+
+# The passes a loop runs before it stops for the owner (FR-014, FR-015).
+PASSES = 3
+
+
+def stuck(run, kind):
+    """Whether another fix or convergence pass runs: "clear" when verify
+    passed or converge converged; "again" for the second and third pass;
+    "retry", once, when the owner answered a stop with `sdd-run resume <id>
+    retry` (a one-shot file it writes); otherwise the step fails, which
+    stops the run for the owner. Not a gate: a gate's approving verdict is
+    never reset and would answer every later stop (research R3, T004)."""
+    if kind not in ("fix", "converge"):
+        raise PassFailed("usage: sdd-step stuck <fix|converge>")
+    feature = feature_dir(run.repo)
+    token = outcome_token(run, feature, "verify" if kind == "fix" else "converge")
+    counters = os.path.join(run.dir, "counters")
+    os.makedirs(counters, exist_ok=True)
+    counter = os.path.join(counters, kind)
+    if token in ("pass", "converged"):
+        with open(counter, "w") as f:
+            f.write("0")
+        sys.stdout.write("clear")
+        return
+    n = int(open(counter).read() or 0) + 1 if os.path.exists(counter) else 1
+    retry = os.path.join(run.dir, "verdicts", "retry")
+    if n < PASSES:
+        answer = "again"
+    elif os.path.exists(retry):
+        os.remove(retry)
+        n, answer = PASSES - 1, "retry"
+    else:
+        answer = None
+    with open(counter, "w") as f:
+        f.write(str(n))
+    if answer:
+        sys.stdout.write(answer)
+        return
+    what = "verify still fails" if kind == "fix" else "converge still finds work above LOW"
+    raise PassFailed(f"{what} after {PASSES} passes. Run one more with: sdd-run resume {run.id} retry; "
+                     f"or end the run with: sdd-run abort {run.id}")
+
+
+TERMS = "https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html"
+PRIVACY = "https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html"
+
+
+def route(run):
+    """Which agent implements, from the opt-in frozen at start: an opt-in made
+    later sends nothing anywhere (FR-010)."""
+    feature = feature_dir(run.repo)
+    agent = "deepseek" if load(os.path.join(run.dir, "optin.json")).get("implement") == "deepseek" else "sonnet"
+    write_outcome(run, feature, "route", {"agent": agent})
+    print(agent)
+    if agent == "sonnet":
+        print("Implementing on Claude Sonnet. To implement on DeepSeek V4 Flash instead, opt this repository in "
+              f"before a run starts: git config --local sdd.implement deepseek. Your code then goes to DeepSeek "
+              f"(deepseek.com): read its terms of use ({TERMS}) and privacy policy ({PRIVACY}) first "
+              "(both read 2026-10-21).")
+
+
+def mark(run):
+    """Marks done in tasks.md the tasks review lists, only on a passing verify
+    and a review with nothing above LOW (FR-006), as one commit."""
+    feature = feature_dir(run.repo)
+    if outcome_token(run, feature, "verify") != "pass":
+        raise PassFailed("verify did not pass; nothing marked")
+    if outcome_token(run, feature, "review") != "clear":
+        raise PassFailed("review has findings above LOW; nothing marked")
+    done = set(load(os.path.join(run.repo, feature, ".sdd", "review.json"))["done"])
+    path = os.path.join(run.repo, feature, "tasks.md")
+    lines = open(path).read().split("\n")
+    marked = []
+    for i, line in enumerate(lines):
+        m = re.match(r"^(\s*- )\[ \]( (T[0-9]{3})\b.*)$", line)
+        if m and m.group(3) in done:
+            lines[i] = m.group(1) + "[X]" + m.group(2)
+            marked.append(m.group(3))
+    if marked:
+        with open(path, "w") as f:
+            f.write("\n".join(lines))
+        rel = os.path.join(feature, "tasks.md")
+        run.git("add", "--", rel)
+        run.git("commit", "-q", "-m", f"mark: {os.path.basename(feature)} ({', '.join(marked)})", "--", rel)
+    print("marked: " + (", ".join(marked) or "none"))
+
+
+def phase_done(run, phase):
+    """Records a finished phase in .sdd/phases.json, which `sdd-run start
+    --from` reads (FR-022)."""
+    if phase not in ("specify", "plan", "tasks", "build"):
+        raise PassFailed("usage: sdd-step phase-done <specify|plan|tasks|build>")
+    feature = feature_dir(run.repo)
+    path = os.path.join(run.repo, feature, ".sdd", "phases.json")
+    done = load(path)["done"] if os.path.exists(path) else []
+    write_outcome(run, feature, "phases", {"done": done + [{"phase": phase, "at": now()}]})
 
 
 def keep_flags(run, flagged):
@@ -879,6 +1051,14 @@ def main():
             implement(run)
         elif what == "verify":
             verify(run)
+        elif what == "route":
+            route(run)
+        elif what == "stuck":
+            stuck(run, sys.argv[2] if len(sys.argv) > 3 else "")
+        elif what == "mark":
+            mark(run)
+        elif what == "phase-done":
+            phase_done(run, sys.argv[2] if len(sys.argv) > 3 else "")
         elif what == "prepare-worker":
             prepare_worker(run)
         elif what == "egress-proxy":

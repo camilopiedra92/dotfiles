@@ -28,6 +28,16 @@ text reaches the dispatcher through the run's `inputs.json`, never through a
 
 ## Steps, in order
 
+Step ids use `_`, since the engine's expressions read `-` as a minus; the
+table's other ids are written the same way in the file (`clarify_ask`,
+`review_spec`, ...). Observed with Spec Kit 1.2.2 (2026-10-21): inside a loop
+the first pass keeps a step's bare id and later ones are named
+`<loop>:<step>:<n>`; a loop's condition reads its latest pass; a failed step's
+message is in the run's `state.json` (`step_results[<step>].output.stderr`),
+not in the engine's own output, so `sdd-run` prints it to the owner. The
+tokens `sdd-step` prints carry no newline, so a condition compares them
+exactly.
+
 Agent steps are `shell` steps running `"$SDD_STEP" agent <phase>` — `SDD_STEP`
 is the absolute path `sdd-run` exports, so no step finds a tool through a
 `PATH`; the routing
@@ -49,19 +59,15 @@ and limit.
 | 10 | `review-plan` | gate | owner | — | `plan_verdict`, shows `analysis.md`, reject aborts; then `sdd-step phase-done plan` |
 | 11 | `tasks` | agent | `tasks` | `tasks.md` | then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
-| 13 | `convergence` | `do-while`, `max_iterations: 50` (a safety bound; each pass past the third needs an owner's one-shot `retry`) | — | — | until `sdd-step stuck converge` prints `clear`; body 13.0–13.5 |
-| 13.0 | `build` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome converge` prints `converged` (FR-014) |
-| 13.1 | `fix-loop` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome verify` prints `pass` (FR-015) |
-| 13.1.1 | `implement` | shell `sdd-step implement` | `implement-deepseek` or `implement-sonnet`, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, export, judgment and time limit (US2 AS6) |
+| 13 | `convergence` | `do-while`, `max_iterations: 50` (a safety bound) | — | — | while `converge_stuck` prints other than `clear`; body 13.1–13.4 |
+| 13.1 | `fix_loop` | `do-while`, `max_iterations: 50` (a safety bound) | — | — | while `fix_stuck` prints other than `clear`; body 13.1.1–13.1.3 |
+| 13.1.1 | `implement` | shell `sdd-step implement` | `implement-deepseek` or `implement-sonnet`, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, export, judgment and time limit (US2 AS6); after a failed verify the prompt adds `Fix round:` and `.sdd/verify.json` |
 | 13.1.2 | `verify` | shell `sdd-step verify` | — (no model, FR-020) | `.sdd/verify.json` | in the worker container, on a fresh export of `HEAD`, admitted by the proxy to the registries only |
-| 13.2 | `retry-loop` | `do-while`, `max_iterations: 50` (safety bound) | — | — | while `fix-stuck` prints `retry`; body 13.2.1–13.2.3 |
-| 13.2.1 | `fix-stuck` | shell `sdd-step stuck fix` | — | — | prints `clear` when verify passed; prints `retry` after consuming a one-shot owner's `retry` from the bundle; otherwise fails the step — stopping the run for the owner — naming `sdd-run resume <id> retry` and `sdd-run abort <id>` |
-| 13.2.2 | `implement` | shell `sdd-step implement`, in an `if` on 13.2.1 = `retry` | as 13.1.1 | as 13.1.1 | exactly one more round per `retry` |
-| 13.2.3 | `verify` | shell `sdd-step verify`, in the same `if` | — | `.sdd/verify.json` | |
-| 13.3 | `review` | agent | `review` | `.sdd/review.json` | fresh agent over the diff since the run's base, mounted as `/input/diff.patch` (contracts/pass.md), `reader` profile; deleted or weakened tests are blocking (FR-019) |
-| 13.4 | `converge` | agent | `converge` | `tasks.md`, `.sdd/converge.json` | findings by severity as structured output |
-| 13.5 | `converge-stuck` | shell `sdd-step stuck converge` | — | — | prints `clear` when converge converged; prints `retry` after consuming a one-shot owner's `retry`, which runs one more convergence pass; otherwise fails the step naming `sdd-run resume <id> retry` and `sdd-run abort <id>` |
-| 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json`, the check changes (FR-029) and the automation changes (FR-030) the implement passes recorded; approve runs 16 |
+| 13.1.3 | `fix_stuck` | shell `sdd-step stuck fix` | — | — | `clear` when verify passed; `again` for the second and third pass; `retry`, once, after the owner's `sdd-run resume <id> retry`; otherwise fails the step — stopping the run for the owner — naming `sdd-run resume <id> retry` and `sdd-run abort <id>` |
+| 13.2 | `review` | agent | `review` | `.sdd/review.json` | fresh agent over the diff since the run's base, mounted as `/input/diff.patch` (contracts/pass.md), `reader` profile; deleted or weakened tests are blocking (FR-019) |
+| 13.3 | `converge` | agent | `converge` | `tasks.md`, `.sdd/converge.json` | findings by severity as structured output |
+| 13.4 | `converge_stuck` | shell `sdd-step stuck converge` | — | — | as `fix_stuck`, over converge's outcome: `clear` when it converged, `again`, `retry` once, or a stop |
+| 15 | `review_done` | gate | owner | — | `done_verdict`: shows `review.json`, the check changes (FR-029) and the automation changes (FR-030) the implement passes recorded; approve runs 16 |
 | 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006); then `sdd-step phase-done build` |
 
 Same-model steps are adjacent — 1–9 on Opus, 11 on Sonnet, 13.1.1 on the

@@ -102,7 +102,8 @@
         },
         "prompt": {
           "type": "string",
-          "pattern": "^/speckit-[a-z]+( |$)"
+          "minLength": 1,
+          "description": "a Spec Kit command and its fixed arguments, or the whole instruction where no command fits (review)"
         },
         "writes": {
           "type": "array",
