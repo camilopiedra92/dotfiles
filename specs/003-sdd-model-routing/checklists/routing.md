@@ -61,6 +61,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 ## Dependencies and Assumptions
 
 - [ ] CHK028 Is the dependency on Apple's `container` stated with the macOS version it needs and what happens on a machine without it? [Dependency, research R5]
+  - **Accepted open, 2026-10-21 (owner's delegation):** the runtime is undecided until T002 observes whether Apple `container` grants `NET_ADMIN` for the firewall, falling back to colima; T002 records the runtime, its macOS requirement and its first-start state in research R5, and this item is judged again then.
 - [x] CHK029 Is the assumption that pi follows a brief's test-first rules stated as an assumption to be measured, not a requirement met by construction? [Assumption, Spec §US2]
 - [x] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
 
