@@ -2,8 +2,7 @@
 
 Decisions for `003-sdd-model-routing`, each with what was observed and what
 lost. Probes ran on 2026-10-21 against Spec Kit 1.1.3 and were rerun the same
-day on 1.2.2 (dotfiles PR #154); this feature requires 1.2.1 or newer (R11,
-R15) and is built and checked on 1.2.2, in
+day on 1.2.2 (dotfiles PR #154); this feature requires 1.2.2, the version its checks run against (R15) and is built and checked on 1.2.2, in
 throwaway repositories under the session scratchpad, with a stand-in `claude`
 that records its arguments unless stated otherwise. "Pending" marks a claim
 the first implementation tasks still have to observe on this machine.
@@ -96,9 +95,11 @@ gate's options, so free answers do not fit.
 
 **Decision**: every Claude step runs with `--permission-mode dontAsk` and
 the `--settings` file its routing row names — a profile in
-`claude/speckit/profiles/`. `judgment` (specify to analyze, tasks, converge)
-allows the file tools, `.specify/scripts/bash/*` and read-only git; `review`
-allows reading and nothing that writes; `implement-sonnet` allows the file
+`claude/speckit/profiles/`. `judgment` (specify, clarify, plan, checklist, tasks, converge) allows the
+file tools, `.specify/scripts/bash/*` and read-only git; `readonly` (analyze,
+review) allows reading and nothing that writes; every step also runs with
+`--setting-sources user`, so the owner's hooks apply and the routed
+repository's own settings cannot widen a profile; `implement-sonnet` allows the file
 tools limited to its checkout and `Bash(<sdd.check>)`, composed per pass by
 `sdd-step implement`. A denied call is denied, not asked, so an unattended
 step never waits and never does what its profile does not allow.
@@ -186,6 +187,12 @@ session directory is outside `/work` and discarded with the container
 
 **Git stays on the host**: the worker gets no git; baseline, patch and commit
 are taken on the host.
+**Firewall and entrypoint scripts**: `init-firewall.sh` is adapted from
+Anthropic's reference (`anthropics/claude-code/.devcontainer/init-firewall.sh`,
+read 2026-10-21) — the allow list read from `egress.txt` instead of hard-coded
+domains — so it is owned and checked here (constitution III), not vendored;
+its source and date sit in a comment beside it (constitution VI).
+
 ## R7 — Guarded configuration, one source of truth
 
 **Decision**: each path the patch creates, changes or deletes is passed to
@@ -205,7 +212,7 @@ is not a list of file names.
 what the owner types: prerequisites, the run id, the
 workflow copy's version against this repository's, then `specify workflow
 run` or `resume`, and `usage`. `sdd-step` is what the workflow's `shell` steps
-call: `agent` (R2), `route`, `verify`, `implement`, `outcome`, `save-analysis`, `phase-done`, `mark` and `cleanup` (R10, R6), so every decision the
+call: `agent` (R2, which also writes a row's `result_to`, such as analyze's report), `route`, `verify`, `implement`, `outcome`, `phase-done`, `mark` and `cleanup` (R10, R6), so every decision the
 run takes is a deterministic command with checks of its own.
 
 ## R9 — Opt-in and check command are local git config
@@ -249,7 +256,7 @@ alternative, a hand-written stdlib check per outcome, makes the schema code
 instead of a contract another tool can read.
 
 **Structured output at generation**: the steps whose result is structured —
-review and converge — run with `--json-schema <their schema>`, which
+clarify-ask, review and converge — run with `--json-schema <their schema>`, which
 constrains the output as it is generated (code.claude.com, headless:
 `structured_output` in the result); the dispatcher writes that object to the
 outcome file, and `sdd-step outcome` still validates it, so a schema drift
@@ -301,7 +308,7 @@ refused exits, version matching, held-out tests). Measuring from tasks onward
 is exact rather than a shortcut: every earlier phase runs on Opus in both
 arms. Correction, the same day: the harness runs single-step arms only (one
 `claude -p /speckit-implement` per run), so it does not "already settle" a
-multi-step arm's gates and counting; SC-001 now fixes those, and T044
+multi-step arm's gates and counting; SC-001 now fixes those, and T045
 extends the harness to them. Three counted runs per arm on both fixtures,
 from Anthropic's "Demystifying evals for AI agents". The routed arm starts with `sdd-run start --from`, the fixture's state
 carrying `.sdd/phases.json` with specify and plan done.
@@ -343,8 +350,11 @@ add` command that replaces the copy (US1 AS7).
 
 The workflow's `requires.speckit_version` is advisory (`engine.py`, read on
 1.2.2: "the advisory pre-conditions documented for workflows"), so
-`sdd-run` checks `specify version` ≥ 1.2.1 itself before any step and stops
-naming the `uv-tools.txt` pin and `./install.sh` (FR-024).
+`sdd-run` checks `specify version` itself before any step and stops naming the
+`uv-tools.txt` pin and `./install.sh` (FR-024). The floor is 1.2.2, the
+version every check of FR-025 runs against: the ≥ 1.2.1 floor recorded
+earlier was for `command`-step capture, which the dispatcher of R2 no longer
+uses, and no older version has been checked.
 
 ## R14 — Effort per step
 
@@ -367,6 +377,10 @@ identical `-p` calls on the same model read the same cached prefix as an
 unchanged repeat (18,052 tokens either way), so effort per step does not
 break the prompt cache.
 ## R16 — Context per step: no MCP servers, the cache kept warm
+
+(Profiles differ in permission rules only, never in tools offered, so the
+tool definitions in the cached prefix match across a same-model group;
+whether a profile change still moves the prefix is observed by T003.)
 
 **Decision**: every Claude step runs with `--strict-mcp-config` and an empty
 MCP configuration, and with only the tools its profile names. The workflow
@@ -433,11 +447,11 @@ cannot hold values the workflow does not carry (research R2).
 
 ## R13 — Time and spend
 
-**Decision**: `sdd-step implement` ends a pass after 30 minutes
-(`sdd.implementTimeout` may lower it; a value above 1800 is refused, because
-the step's `timeout` in the workflow is a fixed number, 2100, and the inner
-limit must always fire first), stopping the container or the `claude`
-process; the provider's
+**Decision**: `sdd-step implement` ends a pass at the effective implement
+row's `timeout`, 1800 seconds by default; a routing layer may lower it, and a
+value above 1800 is refused, because the step's `timeout` in the workflow is a
+fixed 2100 and the inner limit must always fire first; it stops the container
+or the `claude` process; the provider's
 prepaid balance is the hard ceiling; each worker outcome records pi's reported
 tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has
 no `timeout`; the limit is the script's own, around `container stop`.

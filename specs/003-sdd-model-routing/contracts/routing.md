@@ -37,6 +37,13 @@ research R2). A row's fields:
 
 The rows on 2026-10-21:
 
+Timeouts: 3600 seconds for every judgment row and for review and converge,
+1800 for `tasks` and for both implement rows. The workflow's step `timeout:`
+is the default row's value plus 300, fixed in `sdd-routed.yml`; a layer may
+lower a row's `timeout` but not raise it above the workflow's minus 300, which
+`sdd-run` refuses (FR-018, research R11). The implement rows carry no schema:
+`sdd-step implement` alone writes `implement.json`.
+
 | Phase | agent | model | effort | profile | schema |
 |---|---|---|---|---|---|
 | `specify` | claude | claude-opus-5-5 | medium | judgment | — |
@@ -46,8 +53,8 @@ The rows on 2026-10-21:
 | `checklist` | claude | claude-opus-5-5 | medium | judgment | — |
 | `analyze` | claude | claude-opus-5-5 | medium | readonly | — |
 | `tasks` | claude | claude-sonnet-5-5 | medium | judgment | — |
-| `implement-deepseek` | pi | deepseek-flash | high | — (the container is the boundary) | implement |
-| `implement-sonnet` | claude | claude-sonnet-5-5 | medium | implement-sonnet | implement |
+| `implement-deepseek` | pi | deepseek-flash | high | — (the container is the boundary) | — |
+| `implement-sonnet` | claude | claude-sonnet-5-5 | medium | implement-sonnet (composed per pass) | — |
 | `review` | claude | claude-opus-5-5 | medium | readonly | review |
 | `converge` | claude | claude-opus-5-5 | medium | judgment | converge |
 
@@ -58,7 +65,8 @@ Runs, from the repository root:
 ```
 claude -p "<row.prompt> <feature paths>" \
   --model <row.model> --effort <row.effort> \
-  --permission-mode dontAsk --settings claude/speckit/profiles/<row.profile>.json \
+  --permission-mode dontAsk --setting-sources user \
+  --settings claude/speckit/profiles/<row.profile>.json \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
   --output-format json [--json-schema <schema>]
 ```
@@ -70,8 +78,16 @@ with `CLAUDE_CODE_EFFORT_LEVEL` unset, stopped after `row.timeout`. Then:
   profile is widened (spec, Edge Cases);
 - `structured_output` goes to `.sdd/<phase>.json` when the row has a schema;
 - the result's text goes to `row.result_to` when the row names one;
-- the step's model, effort, reported usage and reported effort are appended
-  to `.sdd/usage.jsonl` for `sdd-run usage` (FR-021, SC-001).
+- a start line before the call and an end line after it — phase, model,
+  effort given, reported usage and effort — are appended to
+  `.sdd/usage.jsonl`, the one source `sdd-run usage` reads; a start with no end
+  is an attempt that reported nothing (FR-021, SC-001). Its stdout is a
+  one-line summary; usage is not read from the run's state.
+
+`--setting-sources user` loads the owner's user settings — the
+config-guard and git-guard hooks — and not the routed repository's
+`.claude/settings*.json`, whose allow rules would otherwise widen the
+profile (FR-026, research R4).
 
 The `pi` row is run by `sdd-step implement` (contracts/sdd-step.md), with
 `--model deepseek/<row.model> --thinking <row.effort>`.
@@ -82,6 +98,9 @@ The `pi` row is run by `sdd-step implement` (contracts/sdd-step.md), with
 |---|---|
 | `judgment` | Read, Edit, Write, Glob, Grep; `Bash(.specify/scripts/bash/*)`; read-only git |
 | `readonly` | Read, Glob, Grep; read-only git |
-| `implement-sonnet` | Read, Glob, Grep; Edit and Write limited to the pass's checkout; `Bash(<sdd.check>)` — composed per pass by `sdd-step implement` (FR-023) |
+| `implement-sonnet` | Read, Glob, Grep; Edit and Write limited to the pass's checkout; `Bash(<sdd.check>)` — not a file in `profiles/`: composed per pass by `sdd-step implement` (FR-023) |
 
 Every profile is `dontAsk`: what it does not allow is denied, never asked.
+Profiles differ in permission rules only, never in the tools offered, so
+the tool definitions — part of the cached prefix — stay the same across a
+same-model group (research R16).

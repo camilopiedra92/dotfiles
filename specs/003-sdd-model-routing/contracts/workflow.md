@@ -59,8 +59,8 @@ group reads its prefix from the prompt cache (research R16).
 
 ## Timeouts
 
-Every agent step's `timeout:` is its routing row's `timeout` plus 300
-seconds, so the dispatcher's own limit always fires first and cleans up;
+Every agent step's `timeout:` is its default routing row's `timeout` plus
+300 seconds (a layer may only lower a row's limit, contracts/routing.md), so the dispatcher's own limit always fires first and cleans up;
 `verify` sets 3600; the other shell steps keep Spec Kit's 300-second default
 (research R11).
 

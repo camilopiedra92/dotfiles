@@ -11,14 +11,14 @@ repository's root.
 | `sdd-run start "<description>"` | `sdd-step cleanup`, the prerequisites below, unsets `CLAUDE_CODE_EFFORT_LEVEL` (research R14), merges and validates the routing layers (contracts/routing.md), applying `--set` overrides, generates the run id, writes the run lock (data-model) and `.sdd/routing.json`, sets `SPECKIT_WORKFLOW_RUN_ID`, then execs `specify workflow run sdd-routed -i spec=<description>` |
 | `sdd-run resume <run_id> [<verdict>]` | `sdd-step cleanup`, the same checks and environment, then `specify workflow resume <run_id>`, binding the verdict to the input of the gate the run is paused at; with no verdict, for a run paused outside a gate (Ctrl-C), it resumes the interrupted step |
 | `sdd-run routing [--set <phase>.<field>=<value> …]` | prints the effective routing table for this repository, each value with its layer (contracts/routing.md) |
-| `sdd-run usage <run_id>` | per Claude model, every attempt's reported cost; attempts that reported none, listed as unreported; the provider's tokens and their price; the totals |
+| `sdd-run usage <run_id>` | from `.sdd/usage.jsonl`: per model, every attempt's reported cost; attempts with a start and no end, or no usage, listed as unreported; the provider's tokens priced from `models.json`; the totals |
 
 ## Prerequisites checked by `start` and `resume`
 
 Each missing one stops with exit 1 and one line naming it and how to provide
 it, before any step runs:
 
-- `specify version` is 1.2.1 or newer (else: the `uv-tools.txt` pin and
+- `specify version` is 1.2.2 or newer (else: the `uv-tools.txt` pin and
   `./install.sh`, FR-024);
 - the current directory is the root of a git repository with `.specify/`;
 - `sdd-routed` is installed in it, at this repository's version (else: the
@@ -28,8 +28,8 @@ it, before any step runs:
   installs them;
 - `git config --local sdd.check` is set.
 
-The external path's prerequisites (opt-in, `container` and its service, the
-Keychain item) are checked by `sdd-step implement`, at the phase that needs
+The external path's prerequisites (opt-in, the container runtime, the Keychain
+item) are checked by `sdd-step implement`, at the phase that needs
 them (FR-011): a repository not opted in never needs them.
 
 ## Exit status

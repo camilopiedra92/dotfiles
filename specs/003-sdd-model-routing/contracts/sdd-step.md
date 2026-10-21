@@ -21,7 +21,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 ## `implement`, step by step
 
 1. **Prerequisites**, each stopping with exit 1 before any code leaves the
-   machine (SC-004); `sdd.implementTimeout`, when set, is 1–1800 seconds.
+   machine (SC-004); the effective implement row's `timeout` is 1–1800 seconds.
    For deepseek (as `route.json` says): still opted in — a repository opted
    out since `route` ran sends nothing and the pass runs on sonnet instead,
    saying so, after sonnet's prerequisites, and records `agent: sonnet` in
@@ -36,8 +36,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    built when absent.
 4. **Agent**, with the brief of FR-017 (`containers/pi-worker/brief.md` plus
    the feature's paths and, on a fix round, `.sdd/verify.json`), stopped after
-   the time limit (research R13), which fires before the step's own `timeout`
-   (research R11).
+   the time limit — the effective implement row's `timeout` — which fires
+   before the step's own `timeout` (research R11).
    - **Sonnet**: the `implement-sonnet` routing row, run as `sdd-step agent`
      runs a Claude row, with its working directory the checkout and the
      `implement-sonnet` profile composed for this pass (`Bash(<sdd.check>)`,

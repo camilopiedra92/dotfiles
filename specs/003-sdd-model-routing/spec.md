@@ -282,8 +282,8 @@ what landed in the commit, and what was printed.
 - **FR-016**: Every step whose result a branch or a later step reads MUST
   leave it in an outcome file; a step whose output is a Spec Kit artifact
   (spec, plan, checklists, tasks) hands over through that artifact, and the
-  analysis, which Spec Kit's analyze only reports, is saved to a file by a
-  deterministic step for the plan checkpoint to show. The run's branches MUST be decided by a deterministic reader that
+  analysis, which Spec Kit's analyze only reports, is written to a file by the
+  dispatcher from analyze's result for the plan checkpoint to show. The run's branches MUST be decided by a deterministic reader that
   validates each outcome file against its schema; a missing or invalid outcome file MUST fail the
   step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.
@@ -308,8 +308,8 @@ what landed in the commit, and what was printed.
 - **FR-024**: A run MUST stop before any step on a Spec Kit older than the
   version the routing requires, naming the manifest update that brings it.
 - **FR-025**: The Spec Kit behaviours the routing relies on beyond its
-  version — the run id it fixes, a shell step's output kept in the run's
-  state, a shell step's timeout, and gate verdicts bound to inputs — MUST each
+  version — the run id it fixes, a shell step's timeout, and gate verdicts
+  bound to inputs — MUST each
   be asserted by a check, so a
   Spec Kit update that drops one fails the gate before it lands instead of
   silently routing without it.
@@ -327,8 +327,8 @@ what landed in the commit, and what was printed.
   step can do nothing its phase does not need and same-model steps reuse the
   prompt cache.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
-  the repository's check command, and nothing wider than the headless
-  allow list plus that command; its Edit and Write tool calls MUST be
+  the repository's check command, and nothing wider than its
+  `implement-sonnet` profile; its Edit and Write tool calls MUST be
   limited to its disposable checkout, and one outside it fails the pass.
   What the check command itself writes outside the checkout (caches, temporary
   files) is not judged: the same command runs unattended in verify.
@@ -345,9 +345,9 @@ what landed in the commit, and what was printed.
   fix round, the latest verify outcome. Both implementing agents get the same
   brief.
 - **FR-018**: Each implementation pass, by either agent, MUST end within a
-  time limit, 30 minutes of wall-clock time unless the owner sets a shorter
-one (a longer one is refused, since the workflow's own limit for the step is
-fixed above 30 minutes),
+  time limit, 30 minutes of wall-clock time unless a routing layer sets a
+shorter one (a longer one is refused, since the workflow's own limit for the
+step is fixed above 30 minutes),
   enforced by the run itself before any outer limit can cut it off, so the
   pass always stops its agent and cleans up; a pass that spans the machine's
   sleep may reach its limit on waking, which fails it with nothing applied; the run MUST report each pass's usage — the provider's tokens and
@@ -386,8 +386,8 @@ fixed above 30 minutes),
     earlier phase runs on the most capable model in both arms, so starting at
     tasks leaves out nothing the routing changes and every difference in
     input between the arms.
-  - **The baseline**: the same steps with every Claude step on the most
-    capable model, and each convergence pass's implement-and-verify loop
+  - **The baseline**: the same steps, run with a routing layer that puts
+    every Claude step on the most capable model (FR-027), and each convergence pass's implement-and-verify loop
     replaced by one Spec Kit implement step on that model, with the
     story-workers preset as `sdd-init` installs it today (its workers on the
     lighter model, its decision 0001); verify runs once after it, and there
