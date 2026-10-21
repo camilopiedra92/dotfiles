@@ -402,3 +402,59 @@ sdd_ep_cache_and_work() {
   }
 }
 check "the worker entrypoint gives node the cache volume, points every package manager at it, and starts in /work" sdd_ep_cache_and_work
+
+# drift.sh reports each pin of the worker image that upstream has moved past
+# (constitution V): worker_pin_report compares the Containerfile with the
+# latest values worker_pins_latest fetched, and is run here on a fixture and
+# canned answers, so no network is needed. A pin it cannot read, or an
+# upstream that did not answer, is reported, never read as current.
+sdd_worker_pin_drift() {
+  local tmp fn out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fn=$tmp/fn.sh
+  sed -n '/^worker_pin_report() {$/,/^}$/p' drift.sh > "$fn"
+  grep -q 'worker_pin_report' "$fn" || {
+    echo "could not extract worker_pin_report from drift.sh"
+    return 1
+  }
+  cat > "$tmp/Containerfile" << 'CF'
+FROM docker.io/library/node:24-bookworm-slim@sha256:aaaa
+ARG CLAUDE_CODE_VERSION=2.1.306
+ARG PI_VERSION=1.3.0
+ARG MISE_VERSION=2026.10.7
+ARG UV_VERSION=0.13.0
+CF
+  report_with() { bash -c '. "$1" && worker_pin_report "$2" "$3"' _ "$fn" "$tmp/Containerfile" "$1"; }
+  out=$(report_with '{"node":"sha256:aaaa","claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}') || {
+    echo "current: failed: $out"
+    return 1
+  }
+  [ -z "$out" ] || {
+    echo "current: reported drift with every pin current: $out"
+    return 1
+  }
+  out=$(report_with '{"node":"sha256:bbbb","claude_code":"2.1.310","pi":"1.4.0","mise":"v2026.10.17","uv":"0.13.4"}')
+  local want
+  for want in "node:24-bookworm-slim: pinned to sha256:aaaa, the tag now points at sha256:bbbb" \
+    "Claude Code: pinned to 2.1.306, upstream now releases 2.1.310" "pi: pinned to 1.3.0, upstream now releases 1.4.0" \
+    "mise: pinned to 2026.10.7, upstream now releases 2026.10.17" "uv: pinned to 0.13.0, upstream now releases 0.13.4"; do
+    grep -qxF "$want" <<< "$out" || {
+      echo "moved: missing '$want' in:"
+      printf '%s\n' "$out"
+      return 1
+    }
+  done
+  out=$(report_with '{"node":{"error":"timed out"},"claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}')
+  grep -q "node:24-bookworm-slim: could not ask upstream (timed out)" <<< "$out" || {
+    echo "unanswered: an upstream that did not answer was not reported: $out"
+    return 1
+  }
+  sed -i.bak '/^ARG PI_VERSION/d' "$tmp/Containerfile"
+  out=$(report_with '{"node":"sha256:aaaa","claude_code":"2.1.306","pi":"1.3.0","mise":"v2026.10.7","uv":"0.13.0"}')
+  grep -q "pi: no pin found in the Containerfile" <<< "$out" || {
+    echo "missing pin: a pin it could not read was not reported: $out"
+    return 1
+  }
+}
+check "drift.sh reports each worker image pin upstream has moved past, and any it cannot check" sdd_worker_pin_drift

@@ -659,6 +659,93 @@ report "no pinned uv tool is behind upstream" \
   "bump the tag in uv-tools.txt, then ./install.sh" \
   "$(stale_uv_pins)"
 
+# The worker image of the routed Spec Kit workflow pins its base by digest and
+# each tool by version (containers/worker/Containerfile); like the uv pins
+# above, each was the latest the day it was written and stops being so with
+# nothing here changing. worker_pins_latest asks upstream, worker_pin_report
+# compares; split so the comparison can be checked without the network.
+worker_pins_latest() {
+  python3 - << 'PY'
+import json
+import urllib.request
+
+
+def fetch(url, headers=None, method="GET"):
+    request = urllib.request.Request(url, headers=headers or {}, method=method)
+    return urllib.request.urlopen(request, timeout=20)
+
+
+def answer(get):
+    try:
+        return get()
+    except Exception as err:
+        return {"error": str(err)}
+
+
+def node_digest():
+    scope = "repository:library/node:pull"
+    token = json.load(fetch("https://auth.docker.io/token?service=registry.docker.io&scope=" + scope))["token"]
+    # The multi-arch index, the digest the Containerfile pins.
+    accept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json"
+    response = fetch("https://registry-1.docker.io/v2/library/node/manifests/24-bookworm-slim",
+                     {"Authorization": "Bearer " + token, "Accept": accept}, "HEAD")
+    return response.headers["Docker-Content-Digest"]
+
+
+def npm(package):
+    return json.load(fetch("https://registry.npmjs.org/%s/latest" % package))["version"]
+
+
+def github(repo):
+    url = "https://api.github.com/repos/%s/releases/latest" % repo
+    return json.load(fetch(url, {"Accept": "application/vnd.github+json"}))["tag_name"]
+
+
+print(json.dumps({
+    "node": answer(node_digest),
+    "claude_code": answer(lambda: npm("@anthropic-ai/claude-code")),
+    "pi": answer(lambda: npm("@earendil-works/pi-coding-agent")),
+    "mise": answer(lambda: github("jdx/mise")),
+    "uv": answer(lambda: github("astral-sh/uv")),
+}))
+PY
+}
+
+# Usage: worker_pin_report <Containerfile> <latest json>
+worker_pin_report() {
+  python3 - "$1" "$2" << 'PY'
+import json
+import re
+import sys
+
+text = open(sys.argv[1], encoding="utf-8").read()
+latest = json.loads(sys.argv[2])
+pins = [
+    ("node:24-bookworm-slim", "node", r"^FROM \S*node:24-bookworm-slim@(sha256:[0-9a-f]+)"),
+    ("Claude Code", "claude_code", r"^ARG CLAUDE_CODE_VERSION=(\S+)"),
+    ("pi", "pi", r"^ARG PI_VERSION=(\S+)"),
+    ("mise", "mise", r"^ARG MISE_VERSION=(\S+)"),
+    ("uv", "uv", r"^ARG UV_VERSION=(\S+)"),
+]
+for name, key, pattern in pins:
+    match = re.search(pattern, text, re.M)
+    if not match:
+        print("%s: no pin found in the Containerfile" % name)
+        continue
+    pinned, now = match.group(1), latest.get(key)
+    if isinstance(now, dict) or not now:
+        print("%s: could not ask upstream (%s)" % (name, (now or {}).get("error", "no answer")))
+    elif key == "node":
+        if now != pinned:
+            print("%s: pinned to %s, the tag now points at %s" % (name, pinned, now))
+    elif now.lstrip("v") != pinned.lstrip("v"):
+        print("%s: pinned to %s, upstream now releases %s" % (name, pinned, now.lstrip("v")))
+PY
+}
+report "no worker image pin is behind upstream" \
+  "move the pin in containers/worker/Containerfile (a digest or a version with its checksum), then sdd-step prepare-worker" \
+  "$(worker_pin_report containers/worker/Containerfile "$(worker_pins_latest)")"
+
 # SPECKIT_PYTHON_EXECUTABLE in zsh/.zshenv is upstream's own answer to
 # github/spec-kit#4443 (shipped in #4445): its scripts run on python3 and need
 # PyYAML once a project has a preset. #4674 adds a fallback through

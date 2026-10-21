@@ -4,18 +4,20 @@
 # Apple Silicon only, as the rest of this repository: the downloaded artifacts
 # below are the arm64 ones, checked against hashes recorded here.
 
-# node:24-bookworm-slim, the multi-arch index digest read 2026-10-21.
-FROM docker.io/library/node:24-bookworm-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4
+# node:24-bookworm-slim, the multi-arch index digest read 2026-10-21 (the tag
+# moved that day; drift.sh's report caught the first pin).
+FROM docker.io/library/node:24-bookworm-slim@sha256:8cabefbd444809cf0e319b5831c65da1ea202200ca552a5e75fd7938a6f86658
 
-# Versions read 2026-10-21: Claude Code is this machine's (`claude --version`);
-# pi is the package research R6 names; mise and uv are this machine's, their
-# hashes confirmed against the SHASUMS each release publishes.
+# Versions read 2026-10-21, each upstream's latest then: Claude Code (also
+# this machine's), pi (the package research R6 names), mise and uv, their
+# hashes confirmed against the checksums each release publishes. drift.sh
+# reports any of them, and the base's digest, once upstream moves on.
 ARG CLAUDE_CODE_VERSION=2.1.306
 ARG PI_VERSION=1.3.0
-ARG MISE_VERSION=2026.10.7
-ARG MISE_SHA256=67bfc43bcc28de3a461b29fcf13a94a06019e4a1d3be37e4ff2c1347a576449b
-ARG UV_VERSION=0.13.0
-ARG UV_SHA256=3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3
+ARG MISE_VERSION=2026.10.17
+ARG MISE_SHA256=cac510e51793ad45e65fe92305bdbe4309c9c60b5907badbc7eba111738ab08f
+ARG UV_VERSION=0.13.4
+ARG UV_SHA256=1ae72b4718729e2ccc4f1ae2c6d1e531ca8467800e0546e9130b3886023a60ab
 
 # iptables for the firewall; python3 for the egress proxy, which runs on this
 # image (research R23); ca-certificates and curl for the downloads below and
