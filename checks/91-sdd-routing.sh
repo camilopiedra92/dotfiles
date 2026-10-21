@@ -188,8 +188,26 @@ sdd_pass() {
   # so only a host step of the pass can leave their marks.
   tgit() { git -C "$repo" -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
   commits() { tgit rev-list --count HEAD; }
+  # Copies the admissions present while the agent runs, so a case can see
+  # what the proxy would have admitted this pass to.
+  watch_admissions() {
+    mkdir -p "$tmp/case/seen"
+    printf 'cp "%s"/admissions/*.json "%s/seen/"\n' "$run" "$tmp/case" >> "$sa/fixture/script"
+  }
+  admitted() { # want...: the admissions seen are exactly one, admitting these
+    /usr/bin/python3 -I - "$tmp/case/seen" "$@" << 'PY'
+import glob, json, sys
+seen = glob.glob(sys.argv[1] + "/*.json")
+if len(seen) != 1:
+    sys.exit(f"{len(seen)} admissions while the agent ran, wanted one")
+got = json.load(open(seen[0]))["admit"]
+if sorted(got) != sorted(sys.argv[2:]):
+    sys.exit(f"admitted {got}, wanted {sys.argv[2:]}")
+PY
+  }
   clean_after() { # case: no exports left, no pwned marks
     [ -z "$(ls -A "$run/passes" 2> /dev/null)" ] || fail "$1: left $(ls "$run/passes") in the bundle"
+    [ -z "$(ls -A "$run/admissions" 2> /dev/null)" ] || fail "$1: left an admission behind"
     local mark
     for mark in "$tmp"/case/pwned-*; do
       [ -e "$mark" ] && fail "$1: a host step ran $(basename "$mark" | sed 's/^pwned-//') from PATH or repository configuration"
@@ -203,6 +221,7 @@ sdd_pass() {
   fresh || return 1
   result "planned"
   edit "$f/plan.md" "# Plan"
+  watch_admissions
   local before
   before=$(commits)
   out=$(pass agent plan) || fail "allowed: failed: $out"
@@ -240,6 +259,14 @@ if bad:
     print("\n".join(bad))
 sys.exit(1 if bad else 0)
 PY
+  out=$(admitted anthropic 2>&1) || fail "allowed: $out"
+  /usr/bin/python3 -I -c '
+import json, re, sys
+env = [json.loads(l) for l in open(sys.argv[1])][-1]["env"]
+tok = env.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("SDD_PASS_TOKEN") == tok
+         and env.get("ANTHROPIC_BASE_URL") == "http://192.0.2.10:8080" else f"allowed: placeholder or base URL wrong: {tok!r}")
+' "$sa/agents.jsonl" || status=1
   clean_after allowed
 
   # 2. A write outside the row's list stops the pass, naming the path; nothing applied.
@@ -370,8 +397,8 @@ PY
   # 11. Verify: the frozen check command in the container with the verify
   # cache, no patch and no commit; its result in verify.json.
   fresh || return 1
-  printf 'echo changed > src/app.py\n' > "$sa/fixture/script"
-  printf '#!/bin/sh\necho checking; echo changed > src/app.py; exit 3\n' > "$repo/check-app.sh"
+  printf '#!/bin/sh\necho checking; cp "%s"/admissions/*.json "%s/seen/"; echo changed > src/app.py; exit 3\n' "$run" "$tmp/case" > "$repo/check-app.sh"
+  mkdir -p "$tmp/case/seen"
   tgit commit -qam "failing check"
   before=$(commits)
   out=$(pass verify) || fail "verify: exited non-zero: $out"
@@ -379,6 +406,7 @@ PY
   [ "$(commits)" -eq "$before" ] && [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "verify: changed the repository"
   (cd "$repo" && SDD_RUN_DIR=$run "$step" outcome verify 2> /dev/null) | grep -qx fail || fail "verify: verify.json missing or wrong"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" || fail "verify: not on the verify cache volume"
+  out=$(admitted registries 2>&1) || fail "verify: $out"
   clean_after verify
 
   # 12. Implement runs on the implement cache, never the verify one.
@@ -387,11 +415,54 @@ PY
   printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
   result "implemented"
   edit src/app.py "print(2)"
+  watch_admissions
   out=$(pass implement) || fail "implement: failed: $out"
+  out=$(admitted anthropic registries 2>&1) || fail "implement: $out"
   [ "$(cat "$repo/src/app.py")" = "print(2)" ] || fail "implement: not applied"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-implement-run1" || fail "implement: not on the implement cache volume"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" && fail "implement: mounted the verify cache"
   clean_after implement
+
+  # 13. Implement on DeepSeek, opted in at start and now: pi gets the worker's
+  # models.json pointed at the proxy with the placeholder as its key, and the
+  # pass is admitted to DeepSeek and the registries, not to Anthropic.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"deepseek"}\n' > "$repo/$f/.sdd/route.json"
+  tgit config sdd.implement deepseek
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' > "$sa/fixture/result.json"
+  edit src/app.py "print(3)"
+  watch_admissions
+  # Inside the agent, the stand-in's mounts name where /bundle is.
+  {
+    printf 'seen=%s/seen-models.json\n' "$tmp/case"
+    cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+  case $m in *:/bundle:ro) cp "${m%%:*}/models.json" "$seen" ;; esac
+done
+SH
+  } >> "$sa/fixture/script"
+  out=$(pass implement) || fail "deepseek: failed: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(3)" ] || fail "deepseek: not applied"
+  out=$(admitted deepseek registries 2>&1) || fail "deepseek: $out"
+  /usr/bin/python3 -I -c '
+import json, sys
+agent = [json.loads(l) for l in open(sys.argv[1])][-1]
+m = json.load(open(sys.argv[2]))["providers"]["deepseek"]
+tok = agent["env"].get("SDD_PASS_TOKEN")
+name, argv, base, key = agent["agent"], agent["argv"], m["baseUrl"], m["apiKey"]
+bad = []
+if name != "pi" or "deepseek/deepseek-flash" not in argv:
+    bad.append(f"deepseek: pi not run on deepseek/deepseek-flash: {name} {argv}")
+if base != "http://192.0.2.10:8080" or key != tok:
+    bad.append(f"deepseek: models.json not pointed at the proxy with the placeholder: {base}")
+if "CLAUDE_CODE_OAUTH_TOKEN" in agent["env"]:
+    bad.append("deepseek: a Claude placeholder reached the pi pass")
+sys.exit("\n".join(bad) or 0)
+' "$sa/agents.jsonl" "$tmp/case/seen-models.json" || status=1
+  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d["agent"]=="deepseek" and d["usage"]=={"input":10,"cached":5,"output":3} else f"deepseek: implement.json {d}")' \
+    "$repo/$f/.sdd/implement.json" || status=1
+  clean_after deepseek
 
   return "$status"
 }

@@ -183,6 +183,9 @@ STUB
 
 # Runs the entrypoint with a clean environment plus the assignments given
 # before `--`, and the command after it.
+# A pass's placeholder in the shape sdd-pass.py makes; every run of the
+# entrypoint gets it unless a case overrides SDD_PASS_TOKEN.
+SDD_EP_TOKEN=sdd-pass-checkTOKEN0123456789abcdef
 sdd_ep_run() {
   local tmp=$1
   shift
@@ -195,7 +198,7 @@ sdd_ep_run() {
   : > "$tmp/log"
   : > "$tmp/args"
   env -i PATH="$tmp/bin:/usr/bin:/bin" LOG="$tmp/log" ARGS="$tmp/args" FW_EXIT="${FW_EXIT:-0}" \
-    SDD_MOUNT_ROOT="$tmp/root" "${vars[@]}" \
+    SDD_MOUNT_ROOT="$tmp/root" SDD_PASS_TOKEN="$SDD_EP_TOKEN" "${vars[@]}" \
     bash "$tmp/lib/entrypoint.sh" "$@" > "$tmp/out" 2>&1
 }
 
@@ -246,7 +249,7 @@ sdd_ep_runs_as_node() {
   trap 'rm -rf "$tmp"' RETURN
   sdd_ep_setup "$tmp"
   sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 \
-    ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=sdd-placeholder \
+    ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=$SDD_EP_TOKEN \
     ANTHROPIC_API_KEY=$secret DEEPSEEK_API_KEY=$secret GITHUB_TOKEN=$secret \
     -- claude -p "say hi" || {
     echo "failed with a valid environment: $(cat "$tmp/out")"
@@ -278,8 +281,8 @@ sdd_ep_runs_as_node() {
     echo "a credential was printed"
     return 1
   }
-  for want in ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=sdd-placeholder \
-    HTTPS_PROXY=http://192.168.70.2:8080 HOME="$tmp/home" USER=node; do
+  for want in ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=$SDD_EP_TOKEN \
+    HTTPS_PROXY="http://$SDD_EP_TOKEN@192.168.70.2:8080" HOME="$tmp/home" USER=node; do
     grep -qx -- "$want" <<< "$args" || {
       echo "the command's environment lacks $want; setpriv got:"
       printf '%s\n' "$args"
@@ -290,7 +293,7 @@ sdd_ep_runs_as_node() {
     echo "cache variables were set with no cache mounted"
     return 1
   }
-  ! grep -qE '^(LOG|ARGS|FW_EXIT|SDD_PROXY|SDD_MOUNT_ROOT)=' <<< "$args" || {
+  ! grep -qE '^(LOG|ARGS|FW_EXIT|SDD_PROXY|SDD_MOUNT_ROOT|SDD_PASS_TOKEN)=' <<< "$args" || {
     echo "a variable outside the allow list reached the command"
     return 1
   }
@@ -303,7 +306,8 @@ sdd_ep_refuses() {
   trap 'rm -rf "$tmp"' RETURN
   sdd_ep_setup "$tmp"
   for case in CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-planted ANTHROPIC_BASE_URL=https://api.anthropic.com \
-    ANTHROPIC_BASE_URL=http://192.168.70.3:8080; do
+    ANTHROPIC_BASE_URL=http://192.168.70.3:8080 SDD_PASS_TOKEN=sk-ant-oat01-planted SDD_PASS_TOKEN= \
+    CLAUDE_CODE_OAUTH_TOKEN=sdd-pass-anotherPASS0123456789; do
     if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 "$case" -- true; then
       echo "accepted $case"
       return 1
@@ -318,7 +322,7 @@ sdd_ep_refuses() {
     }
   done
 }
-check "the worker entrypoint refuses a token other than the placeholder and a base URL other than the proxy" sdd_ep_refuses
+check "the worker entrypoint refuses a token other than the pass's placeholder and a base URL other than the proxy" sdd_ep_refuses
 
 # pi's models.json arrives filled at /bundle/models.json (contracts/pass.md);
 # the entrypoint copies it to node's home only when every provider points at
@@ -329,7 +333,7 @@ sdd_ep_pi_models() {
   trap 'rm -rf "$tmp"' RETURN
   sdd_ep_setup "$tmp"
   models=$tmp/root/bundle/models.json
-  good='{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8080/deepseek","apiKey":"sdd-placeholder","models":[]}}}'
+  good='{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8080/deepseek","apiKey":"'"$SDD_EP_TOKEN"'","models":[]}}}'
   printf '%s\n' "$good" > "$models"
   sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true || {
     echo "failed with a models.json at the proxy: $(cat "$tmp/out")"
@@ -340,10 +344,10 @@ sdd_ep_pi_models() {
     return 1
   }
   for bad in \
-    '{"providers":{"deepseek":{"baseUrl":"https://api.deepseek.com","apiKey":"sdd-placeholder"}}}' \
-    '{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8081","apiKey":"sdd-placeholder"}}}' \
+    '{"providers":{"deepseek":{"baseUrl":"https://api.deepseek.com","apiKey":"'"$SDD_EP_TOKEN"'"}}}' \
+    '{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8081","apiKey":"'"$SDD_EP_TOKEN"'"}}}' \
     '{"providers":{"deepseek":{"baseUrl":"http://192.168.70.2:8080","apiKey":"sk-planted-key"}}}' \
-    '{"providers":{"a":{"baseUrl":"http://192.168.70.2:8080","apiKey":"sdd-placeholder"},"b":{"baseUrl":"http://10.0.0.1:80","apiKey":"sdd-placeholder"}}}' \
+    '{"providers":{"a":{"baseUrl":"http://192.168.70.2:8080","apiKey":"'"$SDD_EP_TOKEN"'"},"b":{"baseUrl":"http://10.0.0.1:80","apiKey":"'"$SDD_EP_TOKEN"'"}}}' \
     '{"providers":{}}' 'not json'; do
     printf '%s\n' "$bad" > "$models"
     echo template > "$tmp/home/.pi/agent/models.json"

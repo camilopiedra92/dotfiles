@@ -6,11 +6,14 @@
 #
 # Runs as root, with NET_ADMIN and NET_RAW for the firewall only. Reads:
 #   SDD_PROXY                ip:port of the run's egress proxy (required)
+#   SDD_PASS_TOKEN           the pass's placeholder (required): random, made
+#                            for this pass, and the key by which the proxy
+#                            finds what the pass is admitted to
 #   ANTHROPIC_BASE_URL       for a Claude pass; must be the proxy
-#   CLAUDE_CODE_OAUTH_TOKEN  for a Claude pass; must be the placeholder
+#   CLAUDE_CODE_OAUTH_TOKEN  for a Claude pass; must be the pass's placeholder
 # and, from the pass's read-only mounts:
 #   /bundle/models.json      for a pi pass: pi's provider, every baseUrl the
-#                            proxy and every apiKey the placeholder
+#                            proxy and every apiKey the pass's placeholder
 #   /cache                   the pass kind's cache volume, when mounted
 # No credential ever enters this container: the proxy replaces the
 # placeholder (research R23). A real-looking token here means the host side
@@ -18,7 +21,6 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-placeholder=sdd-placeholder
 
 fail() {
   echo "entrypoint: $*" >&2
@@ -31,6 +33,12 @@ proxy_ip=${BASH_REMATCH[1]}
 proxy_port=${BASH_REMATCH[3]}
 proxy_url="http://$proxy_ip:$proxy_port"
 
+# The shape sdd-pass.py makes. A real Anthropic or DeepSeek credential has
+# another (sk-...), so one passed here by mistake stops the pass.
+[[ ${SDD_PASS_TOKEN:-} =~ ^sdd-pass-[A-Za-z0-9_-]{16,119}$ ]] ||
+  fail "SDD_PASS_TOKEN must be the pass's placeholder, sdd-pass-<random>"
+placeholder=$SDD_PASS_TOKEN
+
 # A base URL must be the proxy itself, optionally with a plain path: anything
 # else would be a route out that the firewall refuses anyway, or a typo that
 # would surface later as an opaque connection error. The path's characters are
@@ -38,7 +46,7 @@ proxy_url="http://$proxy_ip:$proxy_port"
 at_proxy() { [[ $1 =~ ^http://$proxy_ip:$proxy_port(/[A-Za-z0-9._/-]*)?$ ]]; }
 
 if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ "$CLAUDE_CODE_OAUTH_TOKEN" != "$placeholder" ]; then
-  fail "CLAUDE_CODE_OAUTH_TOKEN is not the placeholder; no credential may enter the worker"
+  fail "CLAUDE_CODE_OAUTH_TOKEN is not the pass's placeholder; no credential may enter the worker"
 fi
 if [ -n "${ANTHROPIC_BASE_URL:-}" ] && ! at_proxy "$ANTHROPIC_BASE_URL"; then
   fail "ANTHROPIC_BASE_URL must point at the egress proxy ($proxy_url)"
@@ -70,7 +78,7 @@ except Exception:
     ok = False
 sys.exit(0 if ok else 1)
 PY
-    fail "/bundle/models.json must give every provider the proxy as baseUrl and the placeholder as apiKey"
+    fail "/bundle/models.json must give every provider the proxy as baseUrl and the pass's placeholder as apiKey"
 fi
 
 "$here/init-firewall.sh" "$proxy_ip" "$proxy_port"
@@ -90,12 +98,13 @@ env=(
   LOGNAME=node
   PATH=/usr/local/bin:/usr/bin:/bin
   LANG=C.UTF-8
-  # Registries are reached by CONNECT through the proxy; the proxy itself is
-  # reached directly, as the API gateway it also is.
-  HTTPS_PROXY="$proxy_url"
-  https_proxy="$proxy_url"
-  HTTP_PROXY="$proxy_url"
-  http_proxy="$proxy_url"
+  # Registries are reached by CONNECT through the proxy, the placeholder as
+  # the proxy user, which is how the proxy knows the pass; the proxy itself
+  # is reached directly, as the API gateway it also is.
+  HTTPS_PROXY="http://$placeholder@$proxy_ip:$proxy_port"
+  https_proxy="http://$placeholder@$proxy_ip:$proxy_port"
+  HTTP_PROXY="http://$placeholder@$proxy_ip:$proxy_port"
+  http_proxy="http://$placeholder@$proxy_ip:$proxy_port"
   NO_PROXY="$proxy_ip"
   no_proxy="$proxy_ip"
 )

@@ -25,6 +25,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
+DOTFILES = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 GIT = "/usr/bin/git"
 TAR = "/usr/bin/tar"
 HOST_ENV = {
@@ -147,7 +148,10 @@ class Pass:
         self.baseline = os.path.join(self.dir, "baseline")
         self.inputs = os.path.join(self.dir, "inputs")
         self.name = f"sdd-{run.id}-{self.id}"
-        self.token = "sdd-pass-" + secrets.token_hex(16)
+        # The pass's placeholder: what its agent sends where a credential would
+        # go, and the key the egress proxy finds its admission by. The worker's
+        # entrypoint accepts only this shape (containers/worker/entrypoint.sh).
+        self.token = "sdd-pass-" + secrets.token_urlsafe(32)
         self.admission = os.path.join(run.dir, "admissions", self.token + ".json")
 
     # 1. Export
@@ -173,7 +177,7 @@ class Pass:
         image = load(os.path.join(self.run.dir, "worker.json"))["image"]
         cmd = [rt, "run", "--rm", "--name", self.name, "--label", f"sdd.run={self.run.id}",
                "--network", f"sdd-{self.run.id}", "--cap-add", "CAP_NET_ADMIN", "--cap-add", "CAP_NET_RAW",
-               "-e", f"SDD_PROXY={proxy['address']}:{proxy['port']}"]
+               "-e", f"SDD_PROXY={proxy['address']}:{proxy['port']}", "-e", f"SDD_PASS_TOKEN={self.token}"]
         for k, v in env.items():
             cmd += ["-e", f"{k}={v}"]
         cmd += ["-v", f"{self.export}:/work"]
@@ -198,7 +202,7 @@ class Pass:
 
     def admit(self, hosts):
         with open(self.admission, "w") as f:
-            json.dump({"admit": hosts, "pass": self.id}, f)
+            json.dump({"admit": hosts}, f)
 
     def cache(self, kind):
         name = f"sdd-cache-{kind}-{self.run.id}"
@@ -327,8 +331,7 @@ def agent_command(row, prompt, schema):
 
 def agent_schema(step):
     """The outcome schema without the fields the host adds."""
-    s = load(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-                          "claude", "speckit", "schemas", f"{step}.schema.json"))
+    s = load(os.path.join(DOTFILES, "claude", "speckit", "schemas", f"{step}.schema.json"))
     for k in ("schema", "step", "at"):
         s["properties"].pop(k, None)
     s["required"] = [r for r in s["required"] if r not in ("schema", "step", "at")]
@@ -373,8 +376,7 @@ def write_outcome(run, feature, step, fields):
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(doc, f, indent=1)
-    schema = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "claude", "speckit",
-                          "schemas", f"{step}.schema.json")
+    schema = os.path.join(DOTFILES, "claude", "speckit", "schemas", f"{step}.schema.json")
     r = subprocess.run([run.tool("check-jsonschema"), "--schemafile", schema, tmp], env=HOST_ENV,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=run.dir)
     if r.returncode != 0:
@@ -396,7 +398,15 @@ def run_agent(run, phase, implement=False):
             shutil.copy(os.path.join(run.dir, "profiles", row["profile"] + ".json"), os.path.join(p.inputs, "profile.json"))
             env = {"ANTHROPIC_BASE_URL": p.proxy_url(), "CLAUDE_CODE_OAUTH_TOKEN": p.token}
         else:
-            env = {"SDD_DEEPSEEK_BASE_URL": p.proxy_url(), "SDD_PASS_TOKEN": p.token}
+            # pi's provider, from the worker's template, pointed at the proxy
+            # with the placeholder as its key; the entrypoint refuses any other.
+            models = load(os.path.join(DOTFILES, "containers", "worker", "models.json"))
+            for provider in models["providers"].values():
+                provider["baseUrl"] = p.proxy_url()
+                provider["apiKey"] = p.token
+            with open(os.path.join(p.inputs, "models.json"), "w") as f:
+                json.dump(models, f, indent=1)
+            env = {}
         hosts = ["anthropic" if row["agent"] == "claude" else "deepseek"]
         if implement:
             shutil.copy(os.path.join(run.dir, "check.json"), os.path.join(p.inputs, "check.json"))
@@ -480,7 +490,7 @@ def verify(run):
     try:
         p.prepare(feature)
         p.admit(["registries"])
-        code, out, err = p.container(["sh", "-c", command], {"SDD_PASS_TOKEN": p.token}, [p.cache("verify")], 3300)
+        code, out, err = p.container(["sh", "-c", command], {}, [p.cache("verify")], 3300)
     finally:
         p.cleanup()
     flags = os.path.join(run.dir, "flags.json")
