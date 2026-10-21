@@ -9,13 +9,16 @@ exports it to every step, and writes into it before any step runs:
 
 | File | What |
 |---|---|
-| `lock.json` | run id, `sdd-run`'s process id and its start time (FR-022) |
+| `lock.json` | run id, `sdd-run`'s process id, its start time as `ps -o lstart=` prints it (FR-022), and `base`, the commit the run started from (the review's diff) |
 | `optin.json` | the repository's opt-in as read at start (`sdd.implement`) |
 | `check.json` | the repository's check command as read at start (`sdd.check`) |
 | `routing.json` | the merged effective table, each value with its layer |
 | `profiles/*.json` | copies of the profiles |
 | `hooks/` | a copy of `config-guard.sh`, run by the judge (contracts/pass.md) |
-| `tools.json` | the absolute paths of the host tools the run calls, resolved once at start |
+| `tools.json` | the absolute paths of `container`, `check-jsonschema` and `security`, resolved once at start |
+| `worker.json` | the worker image's tag, written by `prepare-worker` |
+| `proxy.json` | the egress proxy's address and port, written by `egress-proxy` while it runs |
+| `admissions/` | one `<token>.json` per running pass, and the `heartbeat` file `sdd-run` touches |
 | `usage.jsonl` | appended by every agent attempt |
 
 Every step reads its routing, profile, hooks and opt-in only from the bundle,

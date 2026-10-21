@@ -6,7 +6,10 @@ model of research R20 by construction rather than by naming files. Every host st
 this contract's and every `sdd-step` and `sdd-run` subcommand's — starts in
 the run bundle's directory with `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and calls
 its tools by the absolute paths `sdd-run start` resolved once, from the
-bundle's directory with the owner's `PATH`, and froze in `tools.json`, so no file in any worktree or export (a
+bundle's directory with the owner's `PATH`, and froze in `tools.json` —
+real binaries, never a version manager's shim, which reads its configuration
+from the directory it runs in (T005) — with git, Python and tar at their
+fixed system paths, so no file in any worktree or export (a
 `mise.toml`, an `.envrc`, a `.tool-versions`, whatever a future tool reads)
 ever configures a host tool: an agent's
 output is data until judged, it runs only inside the container, it never
@@ -37,16 +40,33 @@ so no credential outlives the run's process. It:
   Anthropic forwards the OAuth capability in `anthropic-beta`);
 - tunnels `CONNECT` to the package registries for implement and verify
   passes, and refuses every other destination, logging each refusal;
-- admits each pass only to the hosts its pass type allows (Steps, 3), keyed
-  by the pass's own token on the proxy, so a judgment pass cannot reach the
-  registries and a Claude pass cannot reach DeepSeek.
+- admits each pass only to the hosts its pass type allows (Steps, 3). Each
+  pass has its own random placeholder, `sdd-pass-<token>`, which its agent
+  sends where a credential would go (`Authorization`/`x-api-key` to an API,
+  the proxy user on `CONNECT`); before the pass `sdd-pass.py` writes
+  `$SDD_RUN_DIR/admissions/<token>.json`, `{"admit": [...]}` of `anthropic`,
+  `deepseek`, `registries`, and deletes it after. The directory is mounted
+  read-only into the proxy's container, which looks each request's token up
+  there, so a judgment pass cannot reach the registries and a Claude pass
+  cannot reach DeepSeek;
+- exits by itself when `admissions/heartbeat`, which `sdd-run` touches, has
+  not changed for its `heartbeat_seconds` (a change, not a timestamp, since
+  the host's and the container's clocks may differ).
+
+Its start configuration is one JSON line on its stdin — `listen`,
+`admissions`, `heartbeat_seconds`, `providers` (each `upstream` and
+`credential`, DeepSeek's only when the run is opted in), `registries` — and
+its first stdout line is `{"api_port", "models"}`, from which
+`sdd-step egress-proxy` writes `proxy.json` (address and port) and the
+`/models` name behind each DeepSeek id into `routing.json`.
 
 Each agent container's firewall allows the proxy's address and port and
 nothing else, DNS included: names are resolved by the proxy. No agent, container or check
-command ever holds a credential (FR-009). **Pending**: that Claude Code's
-`-p` runs on the subscription through such a gateway with a placeholder token,
-and that pi does through its `baseUrl` (T003, T006); if Claude Code cannot,
-the work stops for the owner.
+command ever holds a credential (FR-009). The worker's entrypoint refuses a
+placeholder of any other shape, a Claude token or pi key that is not the
+pass's placeholder, and a base URL that is not the proxy. **Observed**
+(2026-10-21): T003 and T006 with a gateway, and the first real pass through
+this proxy (research R21).
 
 ## Host git
 
@@ -93,7 +113,9 @@ and no configuration an agent could have written runs during a run.
    is stopped and the pass fails with nothing applied.
 5. **Patch**: `git diff --no-index --binary --no-prefix` between the baseline
    and the agent's export (Host git), the working directory in the bundle; its
-   paths are relative to the export root, as `git apply -p0` reads them.
+   paths carry the `baseline/` and `export/` directory names, which
+   `git apply -p1` strips (observed 2026-10-21: `-p0` fails). The judge reads
+   the changes from `git diff --no-index --raw -z` over the same two trees.
 6. **Judge**, failing closed — a judge that cannot run fails the pass:
    - every created, changed or deleted path matches the row's `writes`
      (contracts/routing.md); for the implement rows, `writes` is everything
@@ -116,7 +138,7 @@ and no configuration an agent could have written runs during a run.
      through a pipe and never written; a match stops the pass, naming the
      credential, not showing it (FR-009).
    A path or entry the judge refuses is named; nothing is applied.
-7. **Apply**: `git apply -p0 --index` of the judged patch on the feature's
+7. **Apply**: `git apply -p1 --index` of the judged patch on the feature's
    worktree, which no agent ever wrote, and one commit, `<phase>: <feature>
    (<model>)` (Host git).
 8. **Results**: the agent's JSON result is read from the container's stdout:

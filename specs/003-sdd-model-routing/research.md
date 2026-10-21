@@ -675,6 +675,22 @@ subscription token, so it is not used.
 file tools or host tools run afterwards; an API key for the Claude steps —
 billed per token outside the subscription this feature exists to save.
 
+**Observed** (2026-10-21, the first real pass, after Phase 2): in a scratch
+repository, `prepare-worker`, `egress-proxy` with the owner's `claude-oauth`
+from the Keychain, and `sdd-step agent plan` on a Sonnet row whose prompt
+asked for one file: Claude Code 2.1.306 ran in the firewalled worker as
+`node`, reached Anthropic only through the proxy (`POST /v1/messages ->
+anthropic 200`, twice), wrote the file; the judge passed it and it landed as
+one commit, `plan: 001-smoke (claude-sonnet-5-5)`, in 5.5 seconds for
+$0.066. The credential was in no log. Claude Code also opened its own
+`CONNECT api.anthropic.com:443` (non-essential traffic) outside
+`ANTHROPIC_BASE_URL`; the proxy refused each, and Python's default handler
+printed a traceback per client reset. The worker now sets
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and the proxy logs a reset as one
+line; a second run showed only the two API calls. After `egress-proxy` is
+stopped, the proxy container and the run's network are gone within the
+runtime's stop grace period (seen at 3 s still present, at 11 s gone).
+
 ## R22 — No MCP server in any pass, and when that would change
 
 **Decision**: no pass loads an MCP server (FR-026). The owner's servers carry
