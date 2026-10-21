@@ -163,10 +163,21 @@ elif cmd == "absolute":  # absolute PORT TOKEN URL
 PY
 
 # Waits for a file a background process writes once it is listening.
-ep_wait_for() {
-  for _ in $(seq 1 100); do
+# Waits for a file a background process writes once it is listening, until
+# that process is ready, has died (2), or two minutes have passed (1). Not a
+# fixed sleep: on CI's macOS runners six Python servers starting at once took
+# more than the ten seconds a first version allowed, with nothing wrong
+# (seen 2026-10-21: no error from the stand-in, Python 3.15, OpenSSL 4.0).
+ep_wait_for() { # <file> <pid>
+  local waited=0
+  while [ "$waited" -lt 1200 ]; do
     [ -s "$1" ] && return 0
+    kill -0 "$2" 2> /dev/null || {
+      [ -s "$1" ] && return 0
+      return 2
+    }
     sleep 0.1
+    waited=$((waited + 1))
   done
   return 1
 }
@@ -186,7 +197,7 @@ ep_start_proxy() { # ep_start_proxy <label> <providers json> <heartbeat seconds>
       exec python3 -I "$EP_ROOT/bin/sdd-egress-proxy.py" > "$EP_TMP/$label.ready" 2> "$EP_TMP/$label.log") &
   EP_PID=$!
   EP_PIDS+=("$EP_PID")
-  ep_wait_for "$EP_TMP/$label.ready" || {
+  ep_wait_for "$EP_TMP/$label.ready" "$EP_PID" || {
     echo "$label: the proxy printed no ready line; its log:"
     cat "$EP_TMP/$label.log"
     return 1
@@ -265,6 +276,7 @@ CNF
     python3 -I "$EP_TMP/helpers/upstream.py" "$name" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" \
       "$EP_TMP/$name.port" "$EP_TMP/$name.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
     EP_PIDS+=($!)
+    echo $! > "$EP_TMP/$name.pid"
   done
   # A certificate the proxy does not trust, for a registry it must not
   # forward to: the upstream side of the inspection is verified TLS.
@@ -275,20 +287,28 @@ CNF
   }
   python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/registry.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/registry.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
+  echo $! > "$EP_TMP/registry.pid"
   # A registry with github.com's path rule.
   python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/github.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/github.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
+  echo $! > "$EP_TMP/github.pid"
   python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/rogue.port" "$EP_TMP/rogue-cert.pem" "$EP_TMP/rogue-key.pem" "$EP_TMP/rogue.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
+  echo $! > "$EP_TMP/rogue.pid"
   # A registry listening but on no list: a refusal must come from the
   # proxy's list, not from nothing being there.
   python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/unlisted.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/unlisted.jsonl" > /dev/null 2>> "$EP_TMP/standins.err" &
   EP_PIDS+=($!)
+  echo $! > "$EP_TMP/unlisted.pid"
   for name in anthropic deepseek registry github rogue unlisted; do
-    ep_wait_for "$EP_TMP/$name.port" || {
+    local why=0
+    ep_wait_for "$EP_TMP/$name.port" "$(cat "$EP_TMP/$name.pid")" || why=$?
+    [ "$why" -eq 0 ] || {
       # What it said, and with which interpreter, so a failure on another
       # machine (CI) explains itself.
-      echo "the $name stand-in did not start ($(command -v python3), $(python3 -I -c 'import ssl, sys; print(sys.version.split()[0], ssl.OPENSSL_VERSION)')):"
+      [ "$why" -eq 2 ] && echo "the $name stand-in exited before listening" ||
+        echo "the $name stand-in did not listen within two minutes"
+      echo "($(command -v python3), $(python3 -I -c 'import ssl, sys; print(sys.version.split()[0], ssl.OPENSSL_VERSION)')):"
       cat "$EP_TMP/standins.err"
       return 1
     }
