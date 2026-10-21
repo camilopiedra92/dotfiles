@@ -2,7 +2,9 @@
 
 File: `claude/speckit/sdd-routed.yml`, Spec Kit workflow schema 1.0, installed
 per repository with `specify workflow add`. Model steps use `integration:
-claude`; the model column is their `model:`. `<f>` is the feature directory;
+claude`; the model column is their `model:`, a full model id —
+`claude-opus-5-5` (opus below) or `claude-sonnet-5-5` (sonnet below) — never an
+alias that upstream repoints (spec, Assumptions). `<f>` is the feature directory;
 outcome files live in `<f>/.sdd/` and are read only through `sdd-step outcome`
 (research R10).
 
@@ -31,15 +33,15 @@ Every gate binds one of them with `verdict_input` (R3).
 | 9 | `analyze` | command `speckit.analyze` | opus | `.sdd/analyze.md` | |
 | 10 | `review-plan` | gate | owner | — | `plan_verdict`, reject aborts |
 | 11 | `tasks` | command `speckit.tasks` | sonnet | `tasks.md` | |
-| 12 | `route` | shell `sdd-step route` | — | — | prints `deepseek`/`sonnet` |
+| 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
 | 13 | `build` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome converge` prints `converged` (FR-014) |
 | 13.1 | `fix-loop` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome verify` prints `pass` (FR-015) |
-| 13.1.1 | `implement` | `if` on 12 | deepseek: shell `sdd-step implement`; sonnet: prompt step with the same brief (FR-017) | patch applied and committed, `.sdd/implement.json` | the Sonnet path's prompt makes it write no task marks and the same outcome file |
+| 13.1.1 | `implement` | shell `sdd-step implement` | deepseek in the container, or sonnet on the host, as `route` decided | patch applied and committed, `.sdd/implement.json` | both agents get the same brief, checkout, judgment and time limit (US2 AS6) |
 | 13.1.2 | `verify` | shell `sdd-step verify` | none (FR-020) | `.sdd/verify.json` | |
-| 13.2 | `fix-stuck` | gate in `if` verify = fail | owner | — | `fix_verdict`: `retry` runs `fix-loop` once more, `abort` stops |
+| 13.2 | `fix-stuck` | gate in `if` verify = fail | owner | — | `fix_verdict`: `retry` runs exactly one more 13.1.1–13.1.2 round and comes back here if it fails; `abort` stops |
 | 13.3 | `review` | prompt step | opus | `.sdd/review.json` | fresh agent over the diff since the run's base; deleted or weakened tests are blocking (FR-019) |
 | 13.4 | `converge` | command `speckit.converge` | opus | `tasks.md`, `.sdd/converge.json` | args: write the outcome file with findings by severity |
-| 14 | `converge-stuck` | gate in `if` converge = open | owner | — | `converge_verdict` |
+| 14 | `converge-stuck` | gate in `if` converge = open | owner | — | `converge_verdict`: `retry` runs one more 13 pass and comes back here if still open; `abort` stops |
 | 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json`; approve runs 16 |
 | 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006) |
 

@@ -105,6 +105,7 @@ containers/pi-worker/
 ├── Containerfile                # new
 ├── entrypoint.sh                # new: reads the credential from stdin
 ├── models.json                  # new: DeepSeek provider entry for pi
+├── egress.txt                   # new: the hosts the worker may reach
 └── brief.md                     # new: the implementing agent's rules (FR-017)
 checks/91-sdd-routing.sh         # new
 docs/sdd-routing.md              # new: how to run it, and the eval's result

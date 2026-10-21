@@ -7,9 +7,9 @@ repository's root.
 
 | Command | Does |
 |---|---|
-| `sdd-run start "<description>"` | checks the prerequisites below, sets `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS` (research R4), then execs `specify workflow run sdd-routed -i spec=<description>` |
-| `sdd-run resume <run_id> [<verdict>]` | the same checks and environment, then `specify workflow resume <run_id>`, binding the verdict to the input of the gate the run is paused at |
-| `sdd-run usage <run_id>` | per Claude model, every attempt's reported cost; the provider's tokens and their price; the totals |
+| `sdd-run start "<description>"` | `sdd-step cleanup`, the prerequisites below, sets `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS` (research R4), then execs `specify workflow run sdd-routed -i spec=<description>` |
+| `sdd-run resume <run_id> [<verdict>]` | `sdd-step cleanup`, the same checks and environment, then `specify workflow resume <run_id>`, binding the verdict to the input of the gate the run is paused at |
+| `sdd-run usage <run_id>` | per Claude model, every attempt's reported cost; attempts that reported none, listed as unreported; the provider's tokens and their price; the totals |
 
 ## Prerequisites checked by `start` and `resume`
 

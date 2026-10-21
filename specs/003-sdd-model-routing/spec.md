@@ -121,8 +121,8 @@ committed.
    **Then** the agent receives the brief defined in FR-017 and works in a
    disposable checkout of the run's current commit.
 2. **Given** the agent tries to read or write outside its checkout, or to reach
-   a network address other than the provider's API, **Then** the attempt
-   fails and nothing outside the checkout changes.
+   a network address not in the egress allow list (FR-007), **Then** the
+   attempt fails and nothing outside the checkout changes.
 3. **Given** the agent's patch changes, creates or deletes a lint, format,
    type-check or test configuration file, **Then** the run fails naming the
    file, applies nothing, and the tasks stay unmarked.
@@ -134,11 +134,15 @@ committed.
    or the repository has not opted in, **Then** no code is sent and the step
    says what is missing and how to provide it.
 6. **Given** a repository that has not opted in, **Then** implementation runs
-   on the lighter Claude model under the same brief, patch judgment, verify,
-   review and loop limits, and the run says so.
-7. **Given** the agent fails, times out or is cut off midway, **Then** the
-   feature's worktree is unchanged, the disposable checkout is removed, and
-   the run can be resumed once the cause is fixed.
+   on the lighter Claude model, on this machine rather than in the contained
+   runtime, but otherwise the same way: in a disposable checkout, under the
+   same brief, patch judgment, time limit, verify, review and loop limits; the
+   run says so.
+7. **Given** either implementing agent fails, times out or is cut off midway,
+   **Then** the feature's worktree is unchanged, the disposable checkout is
+   removed, and the run can be resumed once the cause is fixed; **Given** the
+   process running the pass was itself killed, **Then** the next start or
+   resume removes whatever checkout, container or volume it left behind.
 
 ---
 
@@ -202,7 +206,11 @@ what landed in the commit, and what was printed.
   write in their outcome files. "Blocking" means any finding above LOW.
 - **Disposable checkout**: a second working copy of the repository at the
   run's current commit, holding tracked files only, created for one
-  implementation pass and removed after it.
+  implementation pass and removed after it. The feature's files are committed
+  before it is made, so the checkout holds every earlier phase's output.
+- **Egress allow list**: the provider's API host and the package registries
+  named in one file in this repository beside the worker image; nothing else
+  is reachable from the contained runtime.
 
 ## Requirements *(mandatory)*
 
@@ -230,17 +238,17 @@ what landed in the commit, and what was printed.
 - **FR-007**: The external agent MUST work in a disposable checkout inside a
   contained runtime: it MUST NOT read or write anything of the host outside
   that checkout and its own tool cache, and MUST NOT reach any network address
-  but the provider's API and the package registries its toolchain installs
-  from.
+  outside the egress allow list.
 - **FR-008**: A patch from whichever agent implements that creates, changes or
   deletes a lint, format, type-check or test configuration file MUST fail the
   step, naming the file, with nothing applied. Which files count is decided by
   the repository's existing configuration guard, not by a second list.
 - **FR-009**: The external provider's credential MUST come from the Keychain and
   MUST NOT appear in a command-line argument, in the environment of any host
-  process, in a file in any repository or in the disposable checkout, in an
-  image or a container's stored configuration, in the run's state or logs, or
-  in the agent's session files.
+  process, in any file on the host (repositories, the disposable checkout and
+  temporary files included), in an image or a container's stored
+  configuration, in the container runtime's logs, in the run's state or logs,
+  or in the agent's session files.
 - **FR-010**: Code MUST be sent to the external provider only from a repository
   the owner has opted in; otherwise implementation MUST run on the lighter
   Claude model and the run MUST say so.
@@ -256,21 +264,25 @@ what landed in the commit, and what was printed.
   ship with a check in `checks/` seen red on its behaviour broken by hand
   (constitution III).
 - **FR-014**: Converge MUST stop after three passes with blocking findings
-  still open, pausing the run for the owner with those findings.
+  still open, pausing the run for the owner with those findings, whose options
+  are one more convergence pass or stopping. A pass counts as converged only
+  when converge reports nothing left to build and no blocking finding.
 - **FR-015**: After two failed fix rounds in one convergence pass, the run MUST
-  pause for the owner, whose options are one more round or stopping; the work
-  MUST NOT move to another agent unasked. Across a run this bounds
-  implementation to nine passes.
+  pause for the owner, whose options are exactly one more implement-and-verify
+  round or stopping; the work MUST NOT move to another agent unasked. Without
+  the owner's retries a run makes at most nine implementation passes; each
+  retry adds exactly one.
 - **FR-016**: Every step MUST leave its outcome in an outcome file, and the
   run's branches MUST be decided by a deterministic reader that validates each
   file against its schema; a missing or invalid outcome file MUST fail the
-  step, never read as a pass. No agent's output MUST be interpolated into a
+  step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
-- **FR-017**: The implementing agent's brief MUST name: the tasks to do, the
-  spec and the plan, the constitution, the owner's test-first rules (tests
+- **FR-017**: The implementing agent's brief MUST name: the tasks to do —
+  every task in `tasks.md` not marked done, converge's appended ones included
+  —, the spec, the plan and every file the plan links, the constitution, the owner's test-first rules (tests
   from the acceptance scenarios first, seen to fail, then the simplest code;
   no change to a check's configuration; nothing outside the tasks), and, on a
   fix round, the latest verify outcome. Both implementing agents get the same
@@ -297,15 +309,19 @@ what landed in the commit, and what was printed.
 
 ### Measurable Outcomes
 
-- **SC-001**: On the reference fixture, a routed run uses at least 40% less
-  Claude subscription usage than the baseline run. Usage counts every attempt
-  of every Claude step, failed and resumed ones included, at list price, as
-  each reports it. The reference fixture is the `checkout` fixture of the
-  story-workers preset's Eval 002 at the commit named in the eval's record,
-  with the same prepared clarify answers in both arms. The baseline is the
-  same workflow with every Claude step on the most capable model and
-  implementation by Spec Kit's own implement command as `sdd-init` installs it
-  today. One counted run per arm; recorded as it comes out. Whether the owner
+- **SC-001**: On the reference fixture, a routed run, opted in to the
+  external provider, uses at least 40% less Claude subscription usage than the
+  baseline run. Usage counts every attempt of every Claude step, failed and
+  resumed ones included, at list price, as each reports it; an attempt that
+  reports no usage (killed or timed out before its result) is listed as
+  unreported, and an arm with one is run again. The reference fixture is the
+  `checkout` fixture of the story-workers preset's Eval 002 at the commit
+  named in the eval's record, with the same prepared clarify answers in both
+  arms. The baseline is the same workflow with every Claude step on the most
+  capable model and implementation by Spec Kit's own implement command, in a
+  repository set up by `sdd-init` as of dotfiles commit `180490c`
+  (constitution-authoring v1.2.1, story-workers v0.2.0). One counted run per
+  arm; recorded as it comes out. Whether the owner
   moves to the smaller plan is decided afterwards, from a week of real usage.
 - **SC-002**: In the same comparison, the routed run passes as many of the
   fixture's held-out acceptance tests as the baseline, and its own check
@@ -313,8 +329,8 @@ what landed in the commit, and what was printed.
 - **SC-003**: The containment probe attempts, from inside the agent's runtime:
   reading the owner's SSH keys, the Keychain and another repository; writing
   to the feature's worktree outside the patch, to the home directory and to
-  another repository; and reaching a network address other than the
-  provider's. All of them fail, and nothing on the host changes.
+  another repository; and reaching a network address outside the egress
+  allow list. All of them fail, and nothing on the host changes.
 - **SC-004**: With the credential missing, the runtime unavailable or the
   repository not opted in, nothing is sent to the external provider, and the
   owner is told what is missing in the step's output.
@@ -332,7 +348,8 @@ what landed in the commit, and what was printed.
   through the pi coding agent. The names, and the versions the plan pins, are
   the owner's choice of 2026-10-21 and move only by a deliberate edit to this
   repository; a retired model or a moved pin surfaces as a failed step naming
-  it, not as a silent change.
+  it, not as a silent change. Claude models are therefore named by full model
+  id, not by an alias such as `opus` that upstream repoints.
 - The routed workflow is an addition: the interactive way of running Spec Kit
   phases in one Claude session stays as it is.
 - A routed run never calls Spec Kit's implement command, so the story-workers

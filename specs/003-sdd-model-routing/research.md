@@ -28,9 +28,11 @@ prompt cache; per-step processes avoid both.
 
 ## R2 — Each judgment phase is a headless Claude process on its model
 
-**Decision**: `command` steps with `integration: claude` and `model: opus`
-(specify, clarify, plan, checklist, analyze, converge) or `model: sonnet`
-(tasks); `prompt` steps on `opus` for review. Spec Kit runs `claude -p
+**Decision**: `command` steps with `integration: claude` and `model:
+claude-opus-5-5` (specify, clarify, plan, checklist, analyze, converge) or
+`claude-sonnet-5-5` (tasks); a `prompt` step on Opus for review. Full ids,
+not the `opus`/`sonnet` aliases, so a model changes only by an edit here;
+the ids are those this CLI reports today (session environment, 2026-10-21). Spec Kit runs `claude -p
 <prompt> --model <m> --output-format json` (`integrations/base.py`,
 `build_exec_args`). Verify runs no model (R10).
 
@@ -92,8 +94,12 @@ containers using lightweight virtual machines"), declared in the `Brewfile`.
 agent is behind a kernel boundary of its own rather than a namespace in a
 shared VM; a Homebrew formula, open source, no desktop app or daemon licence.
 
+**Egress**: the allow list is `containers/pi-worker/egress.txt` — DeepSeek's
+API host and the registries the image's toolchain installs from (npm, PyPI,
+mise's sources) — one file the spec's three mentions all point to.
+
 **Pending**: the macOS version it requires (`brew info` printed none), whether
-its networking can restrict egress to named hosts (FR-007), and a throwaway
+its networking can restrict egress to the hosts in that file (FR-007), and a throwaway
 container run on this machine. The first task settles all three; if egress
 cannot be restricted by the runtime, the decision is reopened before anything
 is built on it, not worked around.
@@ -106,14 +112,18 @@ in pi's process on the host, so the boundary is the agent's own code.
 
 ## R6 — A disposable checkout, mounted alone
 
-**Decision**: for each implementation pass, `sdd-step implement` creates a
-detached git worktree of the run's current commit in a temporary directory —
+**Decision**: for each implementation pass, `sdd-step implement` commits the
+feature directory, then creates a detached git worktree of that commit in a temporary directory —
 tracked files only, so no untracked `.env` or ignored secret reaches the agent
 — and mounts it alone at `/work`. Afterwards it takes the pass's changes as a
 patch (`git diff --binary` plus new files), judges it (R7), applies it to the
 feature's worktree, commits, and removes the checkout. A pass that fails,
 times out or crashes leaves the feature's worktree untouched, so resume finds
-it clean (US2 AS7).
+it clean (US2 AS7). The Sonnet path uses the same checkout, judgment and time limit,
+running `claude -p` on the host in it rather than in the VM: Claude is under
+the headless permissions of R4, and no code leaves for a new provider. Every
+checkout, container and volume is labelled with its run id, so `sdd-step
+cleanup` can remove what a killed pass left.
 
 **Tool cache**: a volume per run, `sdd-cache-<run_id>`, removed when the run
 completes, so concurrent runs share no writable state. Ceiling: each run
@@ -154,7 +164,7 @@ is not a list of file names.
 what the owner types: prerequisites, the permission arguments of R4, the
 workflow copy's version against this repository's, then `specify workflow
 run` or `resume`, and `usage`. `sdd-step` is what the workflow's `shell` steps
-call: `route`, `verify`, `implement` and `outcome` (R10), so every decision the
+call: `route`, `verify`, `implement`, `outcome`, `mark` and `cleanup` (R10, R6), so every decision the
 run takes is a deterministic command with checks of its own.
 
 ## R9 — Opt-in and check command are local git config
@@ -204,8 +214,11 @@ Reopen if Spec Kit adds per-step integration arguments for Claude.
 
 **Loops**: `build` (convergence, at most three passes, FR-014) holds
 `fix-loop` (one attempt and at most two fix rounds, FR-015), so a run makes at
-most nine implementation passes. `fix-stuck` offers `retry` (one more round)
-and `abort`.
+most nine implementation passes. `fix-stuck` offers `retry` (exactly one more
+implement-and-verify round) and `abort`; `converge-stuck` offers `retry` (one
+more convergence pass) and `abort`. Without retries a run makes at most nine
+implementation passes. Converge counts as converged only when its outcome is
+`converged` and it lists no finding above LOW.
 
 **Observed**: a `shell` step exiting non-zero fails the whole run, so loop
 conditions read `sdd-step outcome`'s printed token, and a non-zero exit is kept

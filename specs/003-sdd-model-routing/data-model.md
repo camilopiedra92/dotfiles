@@ -21,11 +21,12 @@ fields below; anything else is refused (`additionalProperties: false`).
 
 | File | Fields | Token `sdd-step outcome` prints |
 |---|---|---|
+| `route.json` | `agent`: `deepseek`/`sonnet` | — (read by `implement`) |
 | `clarify.json` | `questions`: integer 0–5 | `yes` when > 0, else `no` |
 | `implement.json` | `agent` (`deepseek`/`sonnet`), `commit` or null, `files`: list of paths, `tokens`: `{input, cached, output}` or null, `seconds` | — (read by `usage`) |
 | `verify.json` | `command`, `exit`: integer, `tail`: string | `pass` when `exit` is 0, else `fail` |
 | `review.json` | `findings`: list of `{severity: CRITICAL/HIGH/MEDIUM/LOW, text, path?}`, `done`: list of task ids | `blocking` when any finding is above LOW, else `clear` |
-| `converge.json` | `outcome`: `converged`/`tasks_appended`, `findings`: as in review | `converged` or `open` |
+| `converge.json` | `outcome`: `converged`/`tasks_appended`, `findings`: as in review | `converged` only when `outcome` is `converged` and no finding is above LOW, else `open` (FR-014) |
 
 ## Run states as the owner sees them
 
