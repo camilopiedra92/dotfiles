@@ -164,6 +164,9 @@ def upstream(host, port):
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     state = None  # set in serve()
+    # A client that stops sending is dropped instead of holding a thread for
+    # good; long enough for a slow upload of a large prompt.
+    timeout = 300
 
     def log_message(self, *args):
         pass  # the default logs every request line; ours say only what is safe
@@ -202,8 +205,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         headers["Authorization"] = "Bearer " + credential
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n) if n else None
+        c = upstream(host, port)
         try:
-            c = upstream(host, port)
+            self.relay(c, body, headers, token, name)
+        finally:
+            # Also when the agent hangs up mid-stream (review of Phase 2).
+            c.close()
+
+    def relay(self, c, body, headers, token, name):
+        try:
             c.request(self.command, self.path, body=body, headers=headers)
             r = c.getresponse()
         except (OSError, http.client.HTTPException) as e:
@@ -224,7 +234,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.flush()
         self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
-        c.close()
         log("%s %s %s -> %s %s" % (who(token), self.command, self.path.split("?")[0], name, r.status))
 
     do_GET = do_POST = forward

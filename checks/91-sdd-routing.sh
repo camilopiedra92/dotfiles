@@ -595,6 +595,51 @@ sys.exit("\n".join(bad) or 0)
 ' "$repo/$f/.sdd/verify.json" || status=1
   clean_after flags
 
+  # Second review round (2026-10-21).
+  # 24. implement.json is validated before anything is applied: an agent's
+  # usage the schema refuses leaves no commit.
+  fresh || return 1
+  sonnet_route
+  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[],"total_cost_usd":-1,"modelUsage":{}}\n' > "$sa/fixture/result.json"
+  edit src/app.py "print(5)"
+  if out=$(pass implement); then fail "implement outcome: succeeded"; fi
+  # The run's own "sdd: ... before implement" commit is expected; the pass's is not.
+  tgit log --format=%s | grep -q '^implement:' && fail "implement outcome: committed although implement.json was invalid"
+  [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "implement outcome: applied although implement.json was invalid"
+  clean_after "implement outcome"
+  # 25. A decomposed (NFD) name reaches the index precomposed, as the owner's
+  # git writes it on macOS.
+  fresh || return 1
+  sonnet_route
+  result "implemented"
+  edit "$(printf 'cafe\xcc\x81.md')" "x"
+  out=$(pass implement) || fail "nfd: failed: $out"
+  tgit -c core.quotePath=false ls-files | grep -qxF "$(printf 'caf\xc3\xa9.md')" || fail "nfd: the name was committed decomposed"
+  clean_after nfd
+  # 26. A tracked symlink can be deleted; a tracked file an ignore rule
+  # matches can be changed.
+  fresh || return 1
+  sonnet_route
+  ln -s app.py "$repo/src/link"
+  printf '*.log\n' > "$repo/.gitignore"
+  printf 'old\n' > "$repo/keep.log"
+  tgit add -f src/link .gitignore keep.log && tgit commit -qm "tracked link and log"
+  result "implemented"
+  printf 'src/link\n' > "$sa/fixture/delete"
+  edit keep.log "new"
+  out=$(pass implement) || fail "tracked symlink: refused: $out"
+  [ ! -e "$repo/src/link" ] && [ ! -L "$repo/src/link" ] || fail "tracked symlink: not deleted"
+  [ "$(cat "$repo/keep.log")" = new ] || fail "tracked ignored file: not changed"
+  clean_after "tracked symlink"
+  # 27. A name that reads as pathspec magic is only a name.
+  fresh || return 1
+  sonnet_route
+  result "implemented"
+  edit ":(exclude)src" "x"
+  out=$(pass implement) || fail "magic name: refused: $out"
+  [ -f "$repo/:(exclude)src" ] || fail "magic name: not applied"
+  clean_after "magic name"
+
   return "$status"
 }
 if command -v check-jsonschema > /dev/null 2>&1; then
@@ -640,19 +685,26 @@ sdd_lifecycle() {
     fail "prepare-worker: worker.json does not record $tag"
   out=$(sub prepare-worker) || fail "prepare-worker: second run failed: $out"
   [ "$(calls build | wc -l | tr -d ' ')" -eq 1 ] || fail "prepare-worker: built again although the image was present"
-  # Superseded worker images go, unless a live run still uses one; images
-  # that are not the worker's are not touched.
-  local held=$repo/.git/sdd/run3
-  mkdir -p "$held"
-  printf '{"run_id":"run3","pid":%s,"started":"%s","base":"x"}\n' "$$" "$(LC_ALL=C ps -o lstart= -p $$ | sed 's/^ *//')" > "$held/lock.json"
-  printf '{"image":"sdd-worker:bbbbbbbbbbbb"}\n' > "$held/worker.json"
-  printf '%s\n' sdd-worker:aaaaaaaaaaaa sdd-worker:bbbbbbbbbbbb debian:bookworm-slim >> "$sa/images.txt"
-  out=$(sub prepare-worker) || fail "prepare-worker: third run failed: $out"
-  grep -qx sdd-worker:aaaaaaaaaaaa "$sa/images.txt" && fail "prepare-worker: kept a superseded worker image"
-  grep -qx sdd-worker:bbbbbbbbbbbb "$sa/images.txt" || fail "prepare-worker: deleted the image a live run uses"
+  # Superseded worker images go, unless a run that has not finished still
+  # uses one — in this repository, or in another that registered its run in
+  # ~/.local/state/sdd/runs/ — paused runs included; images that are not the
+  # worker's are never touched.
+  local paused=$repo/.git/sdd/run3 done=$repo/.git/sdd/run4 other=$tmp/other/.git/sdd/run5
+  mkdir -p "$paused" "$done" "$other" "$tmp/home/.local/state/sdd/runs"
+  printf '{"image":"sdd-worker:bbbbbbbbbbbb"}\n' > "$paused/worker.json"
+  printf '{"image":"sdd-worker:aaaaaaaaaaaa"}\n' > "$done/worker.json"
+  printf '{"finished":"2026-10-21T15:00:00Z"}\n' > "$done/finished.json"
+  printf '{"image":"sdd-worker:cccccccccccc"}\n' > "$other/worker.json"
+  ln -s "$other" "$tmp/home/.local/state/sdd/runs/run5"
+  printf '%s\n' sdd-worker:aaaaaaaaaaaa sdd-worker:bbbbbbbbbbbb sdd-worker:cccccccccccc sdd-worker:dddddddddddd debian:bookworm-slim >> "$sa/images.txt"
+  out=$(cd "$repo" && HOME=$tmp/home SDD_RUN_DIR=$run "$step" prepare-worker 2>&1) || fail "prepare-worker: third run failed: $out"
+  grep -qx sdd-worker:aaaaaaaaaaaa "$sa/images.txt" && fail "prepare-worker: kept the image of a finished run"
+  grep -qx sdd-worker:dddddddddddd "$sa/images.txt" && fail "prepare-worker: kept an image no run uses"
+  grep -qx sdd-worker:bbbbbbbbbbbb "$sa/images.txt" || fail "prepare-worker: deleted the image a paused run uses"
+  grep -qx sdd-worker:cccccccccccc "$sa/images.txt" || fail "prepare-worker: deleted the image another repository's run uses"
   grep -qx debian:bookworm-slim "$sa/images.txt" || fail "prepare-worker: deleted an image that is not the worker's"
   grep -qx "$tag" "$sa/images.txt" || fail "prepare-worker: deleted the current worker image"
-  rm -rf "$held"
+  rm -rf "$paused" "$done"
 
   # egress-proxy, opted out: Claude's credential only.
   local opt pid

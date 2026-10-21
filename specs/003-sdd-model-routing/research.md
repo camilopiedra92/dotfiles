@@ -756,7 +756,10 @@ archive` applies the repository's own attribute filters, which only the
 owner configures (no agent writes `.git` or `.gitattributes`); the worker
 image's tag names its recipe (containers/worker/), not its bits — apt
 packages and npm's transitive dependencies are not pinned, so a rebuild after
-an image is deleted may differ, and drift.sh reports the pins that are.
+an image is deleted may differ, and drift.sh reports the pins that are; the
+proxy starts a thread per connection with no cap, since a run has one pass
+at a time (its client and upstream connections time out and are closed on
+every path).
 
 **Alternatives**: credentials on the container's stdin with an exact-value
 scan — encoded copies pass it; Claude Code's sandbox credential masking —

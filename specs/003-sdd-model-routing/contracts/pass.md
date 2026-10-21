@@ -126,15 +126,20 @@ and no configuration an agent could have written runs during a run.
    - no created, changed or deleted path is in the protected set — `.git`
      and `.git*` files but `.gitkeep`, `.claude`, `.specify`, `.sdd` and
      everything under them, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`,
-     `.mcp.json`, at any depth, compared NFKC-casefolded as APFS compares
-     them — whose members govern the run or instruct a later agent; this
+     `.mcp.json`, at any depth, compared NFKC-casefolded — a superset of
+     what APFS treats as the same name (a fuzz over every code point found
+     none it misses), so it may over-refuse and never under-refuses — whose members govern the run or instruct a later agent; this
      holds for every row, and a judgment row may name a protected file only
      exactly in its `writes` (specify's `.specify/feature.json`), never
      through a pattern;
    - every path matches the row's `writes` (contracts/routing.md); for the
      implement rows, `writes` is everything;
-   - no path lands, in the owner's worktree, through a symlink or in an
-     ignored path (`git apply` follows the one and writes into the other);
+   - no path lands, in the owner's worktree, through a symlink on its way,
+     on an untracked symlink, or in an ignored path (`git apply` follows the
+     one and writes into the other); a tracked symlink may be replaced or
+     deleted, and a tracked file an ignore rule matches changed, as git does.
+     The no-index diffs set `core.precomposeUnicode`, so a decomposed name
+     reaches the index as the owner's git would write it;
    - every entry is a regular file whose mode is 644 or 755: a symlink, a
      submodule or any other mode change stops the pass;
    - for the implement rows, each path goes to the bundle's copy of
@@ -153,8 +158,10 @@ and no configuration an agent could have written runs during a run.
      through a pipe and never written; a match stops the pass, naming the
      credential, not showing it (FR-009).
    A path or entry the judge refuses is named; nothing is applied.
-7. **Apply**: the outcome file is validated first, so an invalid one leaves
-   no commit; then `git apply -p1 --index` of the judged patch on the feature's
+7. **Apply**: the outcome file — `implement.json` included, its commit
+   filled in after — is validated first, and an implement pass's check and
+   automation changes kept, so an invalid outcome leaves no commit and no
+   later failure loses a flag; then `git apply -p1 --index` of the judged patch on the feature's
    worktree, which no agent ever wrote, and one commit of the patch's paths
    only, `<phase>: <feature> (<model>)` (Host git), so whatever the owner has
    staged stays staged. Every diff runs with `--no-ext-diff --no-textconv`,

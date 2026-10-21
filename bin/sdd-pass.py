@@ -42,6 +42,11 @@ HOST_ENV = {
     # Paths go to git as data: no pathspec magic in a name an agent chose.
     "GIT_LITERAL_PATHSPECS": "1",
 }
+# The no-index diffs cannot read the repository's own core.precomposeUnicode
+# (its discovery stops at the pass), so they set it as git on macOS does: a
+# decomposed name an agent writes reaches the index precomposed, as the
+# owner's own git would add it (review of Phase 2, second round).
+PRECOMPOSE = ["-c", "core.precomposeUnicode=true"]
 GIT_OFF = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false"]
 # Paths whose members govern the run or instruct a later agent; no implement
 # pass may touch them, at any depth (contracts/pass.md, Judge).
@@ -234,7 +239,7 @@ class Pass:
     def changes(self):
         """Every created, changed or deleted path, with its new mode, read from
         the same two trees the patch is made from."""
-        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--raw", "-z",
+        r = subprocess.run([GIT, *GIT_OFF, *PRECOMPOSE, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--raw", "-z",
                             "--no-renames", "--no-abbrev", "baseline", "export"], env=self.isolated_env(),
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
         if r.returncode not in (0, 1):
@@ -268,7 +273,7 @@ class Pass:
         return dict(HOST_ENV, GIT_CEILING_DIRECTORIES=os.path.dirname(self.dir))
 
     def patch(self):
-        r = subprocess.run([GIT, *GIT_OFF, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--binary",
+        r = subprocess.run([GIT, *GIT_OFF, *PRECOMPOSE, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--binary",
                             "--no-prefix", "--no-renames", "baseline", "export"], env=self.isolated_env(),
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
         if r.returncode not in (0, 1):
@@ -337,14 +342,23 @@ class Pass:
         directories (.venv/, node_modules/) as readily (review of Phase 2,
         proved)."""
         here = self.run.repo
-        for part in path.split("/"):
+        parts = path.split("/")
+        for part in parts[:-1]:
             here = os.path.join(here, part)
             if os.path.islink(here):
                 return "the worktree has a symlink on its way"
+        # The path itself may be a symlink only if the repository tracks it:
+        # git then replaces or deletes the link, and never writes through it.
+        if os.path.islink(os.path.join(self.run.repo, path)) and self.run.git(
+                "ls-files", "--error-unmatch", "--", path, check=False).returncode != 0:
+            return "an untracked symlink in the worktree"
         # check-ignore refuses literal pathspecs (exit 128), so it runs without
         # them; any answer but "ignored" (0) or "not ignored" (1) fails closed.
         env = {k: v for k, v in HOST_ENV.items() if k != "GIT_LITERAL_PATHSPECS"}
-        r = subprocess.run([GIT, "-C", self.run.repo, *GIT_OFF, "check-ignore", "-q", "--no-index", "--", path],
+        # Without --no-index, a tracked file an ignore rule matches is not
+        # ignored, as it is not to git; "./" keeps a name like ":(exclude)x"
+        # a name rather than pathspec magic.
+        r = subprocess.run([GIT, "-C", self.run.repo, *GIT_OFF, "check-ignore", "-q", "--", "./" + path],
                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.run.dir)
         if r.returncode == 0:
             return "an ignored path in the worktree"
@@ -455,14 +469,28 @@ def stage_outcome(run, feature, step, fields):
     if r.returncode != 0:
         os.remove(tmp)
         raise PassFailed(f"the {step} outcome does not match its schema: {r.stdout.decode(errors='replace')[-400:]}")
-    return lambda: shutil.move(tmp, path)
+    def place(**fields_known_later):
+        # Fields only the apply can give (implement's commit, a git object
+        # id); everything the agent supplied was validated above.
+        if fields_known_later:
+            doc.update(fields_known_later)
+            with open(tmp, "w") as f:
+                json.dump(doc, f, indent=1)
+        shutil.move(tmp, path)
+
+    return place
 
 
 def write_outcome(run, feature, step, fields):
     stage_outcome(run, feature, step, fields)()
 
 
-def run_agent(run, phase, implement=False):
+def run_agent(run, phase, implement=None):
+    """One agent pass. For an implement pass, `implement` holds the fields
+    of implement.json the caller knows (agent, pi_version): the record is
+    validated, and the check and automation flags kept, before anything is
+    applied, so no failure after the commit can lose either (review of
+    Phase 2, second round)."""
     row = run.rows[phase]
     feature = feature_dir(run.repo)
     p = Pass(run, "implement" if implement else "agent", phase)
@@ -515,12 +543,17 @@ def run_agent(run, phase, implement=False):
         place_outcome = None
         if structured is not None and row.get("schema"):
             place_outcome = stage_outcome(run, feature, row["schema"], structured)
+        if implement:
+            place_outcome = stage_outcome(run, feature, "implement", dict(
+                implement, model=served, commit=None, files=[c[2] for c in changes], usage=usage,
+                seconds=round(time.time() - started, 1)))
+            keep_flags(run, flagged)
         commit = None
         if changes:
             step = "implement" if implement else phase
             commit = p.apply(patch, [c[2] for c in changes], f"{step}: {os.path.basename(feature)} ({served})")
         if place_outcome:
-            place_outcome()
+            place_outcome(**({"commit": commit} if implement else {}))
         if row.get("result_to"):
             with open(os.path.join(run.repo, feature, row["result_to"]), "w") as f:
                 f.write(text)
@@ -528,6 +561,17 @@ def run_agent(run, phase, implement=False):
                 "seconds": round(time.time() - started, 1), "row": row}
     finally:
         p.cleanup()
+
+
+def keep_flags(run, flagged):
+    """Adds a pass's check and automation changes to those the next verify
+    reports (FR-029, FR-030)."""
+    flags = os.path.join(run.dir, "flags.json")
+    acc = load(flags) if os.path.exists(flags) else {"check_changes": [], "automation_changes": []}
+    for k in acc:
+        acc[k] = sorted(set(acc[k]) | set(flagged[k]))
+    with open(flags, "w") as f:
+        json.dump(acc, f)
 
 
 def implement(run):
@@ -549,17 +593,8 @@ def implement(run):
     if not 1 <= row["timeout"] <= row["max_timeout"]:
         raise PassFailed(f"{phase}: timeout {row['timeout']} is outside 1..{row['max_timeout']}")
     run.secret("deepseek-api" if agent == "deepseek" else "claude-oauth")
-    r = run_agent(run, phase, implement=True)
-    write_outcome(run, feature, "implement", {
-        "agent": agent, "model": r["served"],
-        "pi_version": load(os.path.join(run.dir, "routing.json"))["versions"].get("pi") if agent == "deepseek" else None,
-        "commit": r["commit"], "files": [c[2] for c in r["changes"]], "usage": r["usage"], "seconds": r["seconds"]})
-    flags = os.path.join(run.dir, "flags.json")
-    acc = load(flags) if os.path.exists(flags) else {"check_changes": [], "automation_changes": []}
-    for k in acc:
-        acc[k] = sorted(set(acc[k]) | set(r["flagged"][k]))
-    with open(flags, "w") as f:
-        json.dump(acc, f)
+    pi_version = load(os.path.join(run.dir, "routing.json"))["versions"].get("pi") if agent == "deepseek" else None
+    r = run_agent(run, phase, implement={"agent": agent, "pi_version": pi_version})
     print(f"{phase}: {len(r['changes'])} files changed" + (f", commit {r['commit'][:12]}" if r["commit"] else ", no change"))
 
 
@@ -610,16 +645,25 @@ def prepare_worker(run):
 
 
 def prune_workers(run, rt, current):
-    """Deletes the worker images a change of containers/worker/ superseded,
-    keeping the current one and any a live run of this repository still uses;
-    each build would otherwise stay on disk for good (review of Phase 2)."""
+    """Deletes the worker images a change of containers/worker/ superseded.
+    Kept: the current one, and the one every unfinished run uses — paused
+    runs included, whose process is gone but which resume on their image —
+    in this repository's .git/sdd/ and in every run `sdd-run start`
+    registered in ~/.local/state/sdd/runs/, so a run in another repository
+    keeps its image too (review of Phase 2, second round). A run is finished
+    once sdd-run writes finished.json into its bundle."""
+    registry = os.path.join(HOST_ENV["HOME"], ".local", "state", "sdd", "runs")
     root = os.path.dirname(run.dir)
+    bundles = [os.path.join(root, rid) for rid in os.listdir(root)]
+    if os.path.isdir(registry):
+        bundles += [os.path.realpath(os.path.join(registry, rid)) for rid in os.listdir(registry)]
     keep = {current}
-    for rid in os.listdir(root):
+    for bundle in bundles:
+        if os.path.exists(os.path.join(bundle, "finished.json")):
+            continue
         try:
-            if process_alive(load(os.path.join(root, rid, "lock.json"))):
-                keep.add(load(os.path.join(root, rid, "worker.json"))["image"])
-        except (OSError, ValueError, KeyError):
+            keep.add(load(os.path.join(bundle, "worker.json"))["image"])
+        except (OSError, ValueError, KeyError, TypeError):
             continue
     r = subprocess.run([rt, "image", "list", "--format", "json"], env=HOST_ENV, stdout=subprocess.PIPE,
                        stderr=subprocess.DEVNULL, cwd=run.dir)
