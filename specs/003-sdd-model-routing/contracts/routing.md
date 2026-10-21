@@ -21,10 +21,11 @@ exports it to every step, and writes into it before any step runs:
 | `admissions/` | one `<token>.json` per running pass, and the `heartbeat` file `sdd-run` touches |
 | `finished.json` | written by `sdd-run` when the run completes or is aborted; until then the run holds its worker image |
 
+| `usage.jsonl` | appended by every agent attempt |
+
 `sdd-run start` also links the bundle as `~/.local/state/sdd/runs/<run_id>`,
 so `prepare-worker` in any repository knows which worker images a run
 elsewhere still needs.
-| `usage.jsonl` | appended by every agent attempt |
 
 Every step reads its routing, profile, hooks and opt-in only from the bundle,
 never from the repository or dotfiles, and `resume` reuses the bundle as it
