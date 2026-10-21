@@ -28,6 +28,10 @@ text reaches the dispatcher through the run's `inputs.json`, never through a
 
 ## Steps, in order
 
+The worker image is not a step: `sdd-run start` runs `sdd-step prepare-worker`
+before the workflow, since the egress proxy runs on that image and must be
+up before the first agent step; `resume` refuses a run whose image is gone.
+
 Step ids use `_`, since the engine's expressions read `-` as a minus; the
 table's other ids are written the same way in the file (`clarify_ask`,
 `review_spec`, ...). Observed with Spec Kit 1.2.2 (2026-10-21): inside a loop
@@ -46,7 +50,6 @@ and limit.
 
 | # | id | Kind | Phase row | Writes | Notes |
 |---|---|---|---|---|---|
-| 0 | `prepare-worker` | shell `sdd-step prepare-worker`, `timeout: 1800` | — | the worker image | builds it once, before the first agent step, outside every pass's limit |
 | 1 | `specify` | agent | `specify` | `spec.md` | |
 | 2 | `clarify-ask` | agent | `clarify-ask` | `clarify-questions.md`, `.sdd/clarify.json` | unattended: questions to the file with a recommendation each; the count as structured output |
 | 3 | `has-questions` | shell `sdd-step outcome clarify` | — | — | prints `yes`/`no` |

@@ -56,6 +56,10 @@ GIT_OFF = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c",
 PROTECTED_DIRS = {".git", ".claude", ".specify", ".sdd"}
 PROTECTED_FILES = {"claude.md", "claude.local.md", "agents.md", ".mcp.json"}
 AUTOMATION = re.compile(r"^(\.github/|\.husky/|\.vscode/tasks\.json$|\.zed/tasks\.json$)")
+# Verify's own limit, in seconds. It has no routing row (no model runs it);
+# the workflow's verify step allows this plus 300, so this limit always fires
+# first and cleans up (research R11), which check 94 asserts.
+VERIFY_TIMEOUT = 3300
 CREDENTIALS = {"claude": "claude-oauth", "pi": "deepseek-api"}
 SCHEMA_STEPS = {"clarify", "review", "converge"}
 
@@ -784,7 +788,8 @@ def verify(run):
     try:
         p.prepare(feature)
         p.admit(["registries"])
-        code, out, err = p.container(["sh", "-c", command], {}, [f"{p.inputs}:/bundle:ro", p.cache("verify")], 3300)
+        code, out, err = p.container(["sh", "-c", command], {}, [f"{p.inputs}:/bundle:ro", p.cache("verify")],
+                                     VERIFY_TIMEOUT)
     finally:
         p.cleanup()
     flags = os.path.join(run.dir, "flags.json")

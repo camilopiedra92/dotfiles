@@ -27,7 +27,9 @@ SPECKIT_MIN = (1, 2, 2)
 WORKFLOW_ID = "sdd-routed"
 # The phases .sdd/phases.json records, in the order a run finishes them.
 PHASES = ["specify", "plan", "tasks", "build"]
-STUCK_STEPS = ("fix-stuck", "converge-stuck")
+# The workflow's two stops for the owner inside its loops (contracts/workflow.md).
+# Step ids use "_": the engine reads "-" in an id as a minus.
+STUCK_STEPS = ("fix_stuck", "converge_stuck")
 HEARTBEAT_SECONDS = 2  # the proxy exits after 60 without one
 GIT = "/usr/bin/git"
 HOST_ENV = {
@@ -443,6 +445,25 @@ def feature_dir(repo):
     return None
 
 
+def stuck(at):
+    """The stuck stop a step id names, or None. Spec Kit names a step's first
+    pass by its bare id and later passes `<loop>:<step>:<n>` (seen on 1.2.2,
+    check 96)."""
+    parts = (at or "").split(":")
+    name = parts[1] if len(parts) == 3 else parts[0]
+    return name if name in STUCK_STEPS else None
+
+
+def step_message(state, at):
+    """What the failed step itself said: the engine prints only "Shell
+    command exited with code 1", and keeps the step's stderr in its state."""
+    try:
+        err = state["step_results"][at]["output"]["stderr"]
+    except (KeyError, TypeError):
+        return ""
+    return "\n".join((err or "").strip().splitlines()[-5:])
+
+
 def report(tools, bundle, repo, code):
     """What the owner sees when Spec Kit exits, and the bundle's record."""
     rid = os.path.basename(bundle)
@@ -466,7 +487,10 @@ def report(tools, bundle, repo, code):
         else:
             print(f"sdd-run: run {rid} paused at {at}: sdd-run resume {rid}")
         return 0
-    if status == "failed" and at in STUCK_STEPS:
+    message = step_message(state, at) if status == "failed" else ""
+    if message:
+        print(message)
+    if status == "failed" and stuck(at):
         print(f"sdd-run: run {rid} stopped at {at}: sdd-run resume {rid} retry (one more round), "
               f"or sdd-run abort {rid}")
     elif status == "failed":
@@ -573,7 +597,7 @@ def resume(args):
                    f"sdd-run start --from {feature or '<feature dir>'} (phases that run again: {left})")
     inputs = []
     if verdict == "retry":
-        if at not in STUCK_STEPS:
+        if not stuck(at):
             raise Stop(f"run {rid} is not stopped at {' or '.join(STUCK_STEPS)}; retry answers only those")
         os.makedirs(os.path.join(bundle, "verdicts"), exist_ok=True)
         with open(os.path.join(bundle, "verdicts", "retry"), "w") as f:

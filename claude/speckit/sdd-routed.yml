@@ -51,12 +51,6 @@ inputs:
     enum: ["", "approve", "reject"]
 
 steps:
-  # Built before the first agent step, outside every pass's limit.
-  - id: prepare_worker
-    type: shell
-    run: '"$SDD_STEP" prepare-worker'
-    timeout: 1800
-
   - id: specify_phase
     type: if
     condition: "{{ inputs.resume_from == '' or inputs.resume_from == 'specify' }}"

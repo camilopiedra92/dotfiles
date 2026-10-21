@@ -18,7 +18,7 @@ wf_static() {
     check-jsonschema --schemafile claude/speckit/schemas/routing-table.schema.json claude/speckit/routing.yml 2>&1 | tail -5
     return 1
   }
-  "$WF_SPEC_PY" -I - claude/speckit/routing.yml claude/speckit/sdd-routed.yml << 'PY'
+  "$WF_SPEC_PY" -I - claude/speckit/routing.yml claude/speckit/sdd-routed.yml bin/sdd-pass.py << 'PY'
 import re, sys, yaml
 rows = yaml.safe_load(open(sys.argv[1]))["phases"]
 text = open(sys.argv[2]).read()
@@ -41,6 +41,13 @@ for s in walk(wf["steps"]):
         want = rows[phase]["max_timeout"] + 300
         if s.get("timeout") != want:
             bad.append("step %s: timeout %s, its row %s wants %s" % (s["id"], s.get("timeout"), phase, want))
+import ast
+tree = ast.parse(open(sys.argv[3]).read())
+verify_limit = next(n.value.value for n in tree.body if isinstance(n, ast.Assign)
+                    and getattr(n.targets[0], "id", "") == "VERIFY_TIMEOUT")
+for s in walk(wf["steps"]):
+    if re.search(r'"\$SDD_STEP" verify\b', s.get("run", "")) and s.get("timeout") != verify_limit + 300:
+        bad.append("step %s: timeout %s, verify's limit %s wants %s" % (s["id"], s.get("timeout"), verify_limit, verify_limit + 300))
 missing = set(rows) - seen
 if missing:
     bad.append("no step runs the rows %s" % sorted(missing))
@@ -89,8 +96,8 @@ wf_fresh() {
   printf '{"run_id":"run1","pid":%s,"started":"x","base":"%s"}\n' "$$" \
     "$(git -C "$WF_REPO" rev-parse HEAD)" > "$WF_RUN/lock.json"
   printf '{"implement":"sonnet"}\n' > "$WF_RUN/optin.json"
-  # prepare_worker, the workflow's first step, builds the image.
-  rm -f "$WF_RUN/worker.json"
+  # sdd-run prepares the image before the workflow starts, since the egress
+  # proxy runs on it; the bundle records its tag (bundle.py writes one).
   cp "$dot/containers/worker/inventory.txt" "$WF_SA/inventory.out"
   # Every agent succeeds by default, each with what its phase writes.
   wf_result speckit-specify "specified"
@@ -199,10 +206,6 @@ review = next(a for a in agents if key(a) == "review")
 p = review["argv"][review["argv"].index("-p") + 1]
 if "/input/diff.patch" not in p or "weakened test" not in p:
     bad.append("review's prompt does not read /input/diff.patch or make a weakened test blocking")
-first_build = next(i for i, c in enumerate(calls) if c[:2] == ["container", "build"])
-first_agent_run = next(i for i, c in enumerate(calls) if c[:2] == ["container", "run"] and "--entrypoint" not in c)
-if first_build > first_agent_run:
-    bad.append("the worker image was built after the first pass started")
 print("\n".join(bad))
 sys.exit(1 if bad else 0)
 PY
@@ -256,6 +259,7 @@ wf_specify_judge() {
   wf_fresh || return 1
   mkdir -p "$WF_REPO/.specify" "$WF_REPO/$WF_F"
   printf '{"feature_directory":"%s"}\n' "$WF_F" > "$WF_REPO/.specify/feature.json"
+  rm -f "$WF_RUN/worker.json"
   if out=$(cd "$WF_REPO" && SDD_RUN_DIR=$WF_RUN "$WF_DOT/bin/sdd-step.sh" agent plan 2>&1); then
     echo "a pass ran with no worker image recorded"
     return 1

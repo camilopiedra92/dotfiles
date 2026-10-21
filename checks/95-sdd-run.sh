@@ -293,7 +293,7 @@ SH
   tail -1 "$SR_SA/specify.jsonl" | grep -qF '"-i"' && fail "resume after Ctrl-C: a verdict was passed"
   tail -1 "$SR_SA/specify.jsonl" | grep -qF "\"resume\", \"$id\"" || fail "resume after Ctrl-C: Spec Kit was not resumed"
   # Stuck: retry writes the one-shot verdict, then resumes; abort finishes.
-  printf '{"status":"failed","current_step_id":"fix-stuck"}\n' > "$SR_SA/state.json"
+  printf '{"status":"failed","current_step_id":"fix_loop:fix_stuck:2"}\n' > "$SR_SA/state.json"
   out=$(sr start "fourth") || true
   id=$(sr_last_id)
   bundle=$(sr_common)/sdd/$id
