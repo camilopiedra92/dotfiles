@@ -94,7 +94,7 @@ work and goes to the owner (plan.md, "Phase order").
 ### Tests for User Story 2 (first)
 
 - [ ] T028 [P] [US2] Check the DeepSeek prerequisites (quickstart 9, SC-004): not opted in, no `container`, its service down, no Keychain item, a blank item — each stops `implement` with exit 1 naming it, and the stand-in `container` records no call
-- [ ] T029 [P] [US2] Check the container invocation (contracts/sdd-step.md step 4, FR-007): the stand-in `container` sees exactly one bind mount, the checkout at `/work`, plus the volume `sdd-cache-<run_id>`; the run-id label; the image tag from the hash of `containers/pi-worker/`; the egress list from `egress.txt`; the time limit enforced before the step's `timeout`
+- [ ] T029 [P] [US2] Check the container invocation (contracts/sdd-step.md step 4, FR-007): the stand-in `container` sees exactly one bind mount, the checkout at `/work`, plus the volume `sdd-cache-<run_id>`; the run-id label; the image tag from the hash of `containers/pi-worker/`; the egress list from `egress.txt`; the time limit enforced before the step's `timeout`; a canned response naming another model, or lacking usage, fails the pass
 - [ ] T030 [P] [US2] Check the credential never leaks (FR-009): with a sentinel key in the stand-in `security`, after a full pass the sentinel appears in no argument the stand-ins recorded, no environment of a host process they saw, no file under the scratch repository, `$TMPDIR`, the run state or logs — only on the stand-in container's stdin
 - [ ] T031 [US2] Run T028–T030 red against the Sonnet-only `sdd-step implement`; confirm each fails for its case's reason
 
@@ -125,7 +125,7 @@ work and goes to the owner (plan.md, "Phase order").
 ## Phase 6: Measurement and polish
 
 - [ ] T039 Write `claude/speckit/eval/checkout/description.txt` and `clarify-answers.md` (keyed by topic) from the fixture's spec, and `claude/speckit/eval/sdd-baseline.yml` per SC-001's baseline (same as `sdd-routed` with every Claude step on `claude-opus-5-5`, the fix loop replaced by `speckit.implement` on Opus, no `fix-stuck`, no `mark`), and a check that it differs from `sdd-routed.yml` only where SC-001 says
-- [ ] T040 Run SC-001 and SC-002 (quickstart.md 12) in the story-workers repository's `checkout` fixture: both arms, gate answers as SC-001 fixes them, `sdd-run usage` for each, the held-out tests; record the result as it came out in `docs/sdd-routing.md`, with Spec Kit, Claude Code, `container` and pi versions
+- [ ] T040 Run SC-001 and SC-002 (quickstart.md 12) in the story-workers repository's `checkout` fixture: both arms, inputs and gate answers as SC-001 fixes them (an arm reaching a stuck gate rerun once), `sdd-run usage` for each, the held-out tests; record the result as it came out in `docs/sdd-routing.md`, with Spec Kit, Claude Code, `container` and pi versions
 - [ ] T041 Move the decisions later work builds on out of research.md before the PR opens: `docs/decisions/0001-sdd-routing-workflow.md` (a workflow of our own on Spec Kit's engine; outcome files in JSON validated against schemas; verify without a model) in MADR's shape, linking research.md R1, R10; point `CLAUDE.md` at `docs/decisions/`
 - [ ] T042 `/speckit-converge` until a pass finds nothing above LOW; its tasks implemented last
 
