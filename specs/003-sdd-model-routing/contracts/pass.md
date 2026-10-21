@@ -42,8 +42,15 @@ so no credential outlives the run's process. It:
   `/v1/messages/count_tokens` to Anthropic, `POST /chat/completions` to
   DeepSeek — so a pass cannot reach the provider's other endpoints (keys,
   batches, files) with the owner's credential;
-- tunnels `CONNECT` to the package registries for implement and verify
-  passes, and refuses every other destination, logging each refusal;
+- answers `CONNECT` to a package registry, for implement and verify passes,
+  with a certificate signed by an authority it makes at its start — in a
+  directory of its own, deleted once every registry host's certificate is
+  signed and loaded, so the authority's key is in no file — and forwards the
+  requests inside to the real registry over verified TLS: `GET` and `HEAD`
+  only, with no body, and on a registry with a path rule only the paths it
+  matches (`github.com`: release and archive downloads); every other method,
+  path or registry is refused with 403 and logged, so no pass can publish,
+  push or upload (FR-031, research R25);
 - admits each pass only to the hosts its pass type allows (Steps, 3). Each
   pass has its own random placeholder, `sdd-pass-<token>`, which its agent
   sends where a credential would go (`Authorization`/`x-api-key` to an API,
@@ -59,10 +66,13 @@ so no credential outlives the run's process. It:
 
 Its start configuration is one JSON line on its stdin — `listen`,
 `admissions`, `heartbeat_seconds`, `providers` (each `upstream` and
-`credential`, DeepSeek's only when the run is opted in), `registries` — and
-its first stdout line is `{"api_port", "models"}`, from which
-`sdd-step egress-proxy` writes `proxy.json` (address and port) and the
-`/models` name behind each DeepSeek id into `routing.json`.
+`credential`, DeepSeek's only when the run is opted in), `registries`, and
+`paths` (a regular expression per registry entry; `github.com`'s comes from
+`sdd-pass.py`, which owns the policy as it owns the list) — and its first
+stdout line is `{"api_port", "models", "ca"}`, from which `sdd-step
+egress-proxy` writes `proxy.json` (address and port), `proxy-ca.pem` (the
+authority's certificate, removed with `proxy.json` when the proxy stops) and
+the `/models` name behind each DeepSeek id into `routing.json`.
 
 Each agent container's firewall allows the proxy's address and port and
 nothing else, DNS included: names are resolved by the proxy. No agent, container or check
@@ -90,8 +100,10 @@ and no configuration an agent could have written runs during a run.
    temporary directory labelled with the run id — tracked files only, no
    `.git`, no untracked or ignored file. A second export of the same commit is
    kept untouched as the baseline.
-2. **Inputs**: read-only mounts beside the export — `/bundle/profile.json` (the
-   row's profile), `/bundle/check.json` (verify and the implementer only) and,
+2. **Inputs**: read-only mounts beside the export — `/bundle/proxy-ca.pem`
+   (every pass, verify included: the authority the worker trusts for the
+   registries; a pass refuses to start without it), `/bundle/profile.json` (the
+   row's profile), `/bundle/check.json` (the implementer only) and,
    for the review row, `/input/diff.patch`: the diff from the run's base
    commit to `HEAD`, made on the host (Host git), which the export, having no
    history, cannot show (FR-019).
@@ -176,8 +188,8 @@ and no configuration an agent could have written runs during a run.
 
 ## Verify
 
-The same pass with no agent: the export of `HEAD`, `/bundle/check.json`, the
-verify cache volume, the container admitted by the proxy to the registries only, the check command run
+The same pass with no agent: the export of `HEAD`, `/bundle/proxy-ca.pem`,
+the verify cache volume, the container admitted by the proxy to the registries only, the check command run
 as `node`, no patch, no apply; its exit status, the tail of its output, and
 the check changes the implement passes recorded since the last verify go to
 `.sdd/verify.json` (FR-020, FR-028, FR-029).

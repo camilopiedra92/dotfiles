@@ -46,9 +46,10 @@ here = sys.argv[2]
 fake = {k: open(os.path.join(here, "secrets", v)).read() for k, v in (("anthropic", "claude-oauth"), ("deepseek", "deepseek-api"))}
 seen = {p: v.get("credential") == fake[p] for p, v in c["providers"].items()}
 json.dump({"providers": seen, "admissions": c.get("admissions"), "heartbeat_seconds": c.get("heartbeat_seconds"),
-           "registries": c.get("registries")}, open(os.path.join(here, "proxy-start.json"), "w"))
+           "registries": c.get("registries"), "paths": c.get("paths")}, open(os.path.join(here, "proxy-start.json"), "w"))
 models = {"deepseek": {"data": [{"id": "deepseek-flash", "name": "DeepSeek-Standin-Flash"}]}} if "deepseek" in c["providers"] else {}
-print(json.dumps({"api_port": 8080, "models": models}), flush=True)
+ca = "-----BEGIN CERTIFICATE-----\nstand-in run authority\n-----END CERTIFICATE-----\n"
+print(json.dumps({"api_port": 8080, "models": models, "ca": ca}), flush=True)
 ' "$line" "$here" || exit 125
         sleep 300 &
         child=$!

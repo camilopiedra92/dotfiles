@@ -178,7 +178,14 @@ class Pass:
 
     # 1. Export
     def prepare(self, feature):
+        # The authority the egress proxy inspects registry traffic with: the
+        # worker trusts it, or no registry is reachable (FR-031). Checked
+        # before anything is committed or started.
+        ca = os.path.join(self.run.dir, "proxy-ca.pem")
+        if not os.path.isfile(ca):
+            raise PassFailed("the bundle has no proxy-ca.pem: the run's egress proxy is not running")
         os.makedirs(self.inputs)
+        shutil.copy(ca, os.path.join(self.inputs, "proxy-ca.pem"))
         os.makedirs(os.path.join(self.run.dir, "admissions"), exist_ok=True)
         if feature:
             # Only the feature directory: whatever else the owner has staged
@@ -605,7 +612,7 @@ def verify(run):
     try:
         p.prepare(feature)
         p.admit(["registries"])
-        code, out, err = p.container(["sh", "-c", command], {}, [p.cache("verify")], 3300)
+        code, out, err = p.container(["sh", "-c", command], {}, [f"{p.inputs}:/bundle:ro", p.cache("verify")], 3300)
     finally:
         p.cleanup()
     flags = os.path.join(run.dir, "flags.json")
@@ -678,6 +685,12 @@ def prune_workers(run, rt, current):
                            stderr=subprocess.DEVNULL, cwd=run.dir)
 
 
+# Registries a pass may read only part of (FR-031, research R25): on
+# github.com, release assets and source archives -- what mise and pinned
+# downloads fetch -- and nothing else, no repository page, API or push.
+REGISTRY_PATHS = {"github.com": r"^/[^/]+/[^/]+/(releases/download|archive)/"}
+
+
 def egress_proxy(run):
     """Runs the run's egress proxy until it stops (contracts/pass.md): its own
     container on a network made for the run, the credentials written to its
@@ -708,7 +721,7 @@ def egress_proxy(run):
     with open(os.path.join(DOTFILES, "containers", "worker", "egress-registries.txt")) as f:
         registries = [l.split("#")[0].strip() for l in f if l.split("#")[0].strip()]
     start = json.dumps({"listen": "0.0.0.0:8080", "admissions": "/admissions", "heartbeat_seconds": 60,
-                        "providers": providers, "registries": registries})
+                        "providers": providers, "registries": registries, "paths": REGISTRY_PATHS})
     del providers
     proc = subprocess.Popen([rt, "run", "--rm", "-i", "--name", name, "--label", f"sdd.run={run.id}",
                              "--network", net, "-v", f"{admissions}:/admissions:ro", "-v", f"{code_dir}:/proxy:ro",
@@ -738,13 +751,17 @@ def egress_proxy(run):
                 routing["served"][row["model"]] = names[row["model"]]
         with open(routing_path, "w") as f:
             json.dump(routing, f, indent=1)
+        if not str(ready.get("ca", "")).startswith("-----BEGIN CERTIFICATE-----"):
+            raise PassFailed("the egress proxy printed no certificate authority")
+        with open(os.path.join(run.dir, "proxy-ca.pem"), "w") as f:
+            f.write(ready["ca"])
         with open(os.path.join(run.dir, "proxy.json"), "w") as f:
             json.dump({"address": address, "port": ready["api_port"]}, f)
         proc.wait()
     finally:
         stop()
         proc.wait()
-        for leftover in ("proxy.json",):
+        for leftover in ("proxy.json", "proxy-ca.pem"):
             try:
                 os.remove(os.path.join(run.dir, leftover))
             except OSError:

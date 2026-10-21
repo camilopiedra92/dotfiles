@@ -194,6 +194,18 @@ sdd_pass() {
     mkdir -p "$tmp/case/seen"
     printf 'cp "%s"/admissions/*.json "%s/seen/"\n' "$run" "$tmp/case" >> "$sa/fixture/script"
   }
+  # Copies what the pass mounted at /bundle/proxy-ca.pem, from inside the
+  # container stand-in, to seen-ca.pem.
+  watch_ca() {
+    {
+      printf 'seen=%s/seen-ca.pem\n' "$tmp/case"
+      cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+  case $m in *:/bundle:ro) cp "${m%%:*}/proxy-ca.pem" "$seen" ;; esac
+done
+SH
+    } >> "$sa/fixture/script"
+  }
   admitted() { # want...: the admissions seen are exactly one, admitting these
     /usr/bin/python3 -I - "$tmp/case/seen" "$@" << 'PY'
 import glob, json, sys
@@ -222,6 +234,7 @@ PY
   result "planned"
   edit "$f/plan.md" "# Plan"
   watch_admissions
+  watch_ca
   local before
   before=$(commits)
   out=$(pass agent plan) || fail "allowed: failed: $out"
@@ -260,6 +273,7 @@ if bad:
 sys.exit(1 if bad else 0)
 PY
   out=$(admitted anthropic 2>&1) || fail "allowed: $out"
+  cmp -s "$tmp/case/seen-ca.pem" "$run/proxy-ca.pem" || fail "allowed: /bundle/proxy-ca.pem is not the run's authority"
   /usr/bin/python3 -I -c '
 import json, re, sys
 env = [json.loads(l) for l in open(sys.argv[1])][-1]["env"]
@@ -397,7 +411,16 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
   # 11. Verify: the frozen check command in the container with the verify
   # cache, no patch and no commit; its result in verify.json.
   fresh || return 1
-  printf '#!/bin/sh\necho checking; cp "%s"/admissions/*.json "%s/seen/"; echo changed > src/app.py; exit 3\n' "$run" "$tmp/case" > "$repo/check-app.sh"
+  {
+    printf '#!/bin/sh\necho checking; cp "%s"/admissions/*.json "%s/seen/"\nseen=%s/seen-ca.pem\n' "$run" "$tmp/case" "$tmp/case"
+    cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+  case $m in *:/bundle:ro) cp "${m%%:*}/proxy-ca.pem" "$seen" ;; esac
+done
+echo changed > src/app.py
+exit 3
+SH
+  } > "$repo/check-app.sh"
   mkdir -p "$tmp/case/seen"
   tgit commit -qam "failing check"
   before=$(commits)
@@ -407,6 +430,7 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
   (cd "$repo" && SDD_RUN_DIR=$run "$step" outcome verify 2> /dev/null) | grep -qx fail || fail "verify: verify.json missing or wrong"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" || fail "verify: not on the verify cache volume"
   out=$(admitted registries 2>&1) || fail "verify: $out"
+  cmp -s "$tmp/case/seen-ca.pem" "$run/proxy-ca.pem" || fail "verify: /bundle/proxy-ca.pem is not the run's authority"
   clean_after verify
 
   # 12. Implement runs on the implement cache, never the verify one.
@@ -639,6 +663,16 @@ sys.exit("\n".join(bad) or 0)
   out=$(pass implement) || fail "magic name: refused: $out"
   [ -f "$repo/:(exclude)src" ] || fail "magic name: not applied"
   clean_after "magic name"
+  # 28. A pass without the run's authority does not start: the worker could
+  # not reach a registry through the proxy's inspection (FR-031).
+  fresh || return 1
+  rm "$run/proxy-ca.pem"
+  result "planned"
+  edit "$f/plan.md" "# Plan"
+  if out=$(pass agent plan); then fail "no authority: succeeded"; fi
+  printf '%s' "$out" | grep -qF "sdd-step: the bundle has no proxy-ca.pem" || fail "no authority: not refused with its reason: $out"
+  grep -qF '"run"' "$sa/calls.jsonl" 2> /dev/null && fail "no authority: a container was started"
+  clean_after "no authority"
 
   return "$status"
 }
@@ -671,7 +705,7 @@ sdd_lifecycle() {
   git -C "$repo" init -q -b main
   git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
   run=$(python3 -I checks/sdd/bundle.py "$tmp" "$dotfiles") || return 1
-  rm -f "$run/proxy.json" "$run/worker.json"
+  rm -f "$run/proxy.json" "$run/worker.json" "$run/proxy-ca.pem"
   printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"x"}\n' "$$" > "$run/lock.json"
   sub() { (cd "$repo" && SDD_RUN_DIR=$run "$step" "$@" 2>&1); }
   calls() { grep -F "\"$1\"" "$sa/calls.jsonl" 2> /dev/null; }
@@ -725,6 +759,7 @@ sdd_lifecycle() {
     }
     /usr/bin/python3 -I - "$run/proxy.json" "$sa/proxy-start.json" "$opt" "$run/routing.json" "$run/admissions" << 'PY' || status=1
 import json, sys
+import os
 proxy, start, opt, routing, admissions = sys.argv[1:]
 bad = []
 p = json.load(open(proxy))
@@ -736,6 +771,11 @@ if s["providers"] != want:
     bad.append(f"the proxy got credentials {s['providers']}, wanted {want} (True: the Keychain's value)")
 if s["admissions"] != "/admissions":
     bad.append(f"admissions read from {s['admissions']}")
+if s.get("paths") != {"github.com": "^/[^/]+/[^/]+/(releases/download|archive)/"}:
+    bad.append(f"the proxy was not given github.com's download-only path rule: {s.get('paths')}")
+ca = open(os.path.join(os.path.dirname(proxy), "proxy-ca.pem")).read() if os.path.exists(os.path.join(os.path.dirname(proxy), "proxy-ca.pem")) else None
+if ca != "-----BEGIN CERTIFICATE-----\nstand-in run authority\n-----END CERTIFICATE-----\n":
+    bad.append(f"proxy-ca.pem is not the authority the proxy printed: {ca!r}")
 served = json.load(open(routing))["served"]
 if opt == "deepseek" and served.get("deepseek-flash") != "DeepSeek-Standin-Flash":
     bad.append(f"routing.json served is {served}, not the name /models gave")
@@ -756,6 +796,7 @@ PY
     "$sa/container" stop sdd-run1-proxy
     wait "$pid" || fail "egress-proxy $opt: exited non-zero when the proxy stopped: $(cat "$tmp/proxy.out")"
     grep -qx sdd-run1 "$sa/networks.txt" 2> /dev/null && fail "egress-proxy $opt: the network outlived the proxy"
+    [ ! -e "$run/proxy-ca.pem" ] || fail "egress-proxy $opt: proxy-ca.pem outlived the proxy"
   done
 
   # cleanup: everything labelled with a dead run goes; a live run's stays.

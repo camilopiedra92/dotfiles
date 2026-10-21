@@ -13,8 +13,11 @@
 # Everything runs on loopback: stand-in provider APIs serving HTTPS with a
 # certificate made here, which the proxy trusts through SSL_CERT_FILE -- the
 # variable OpenSSL itself reads, so the proxy carries no trust option of its
-# own for tests -- and a stand-in registry, a plain TCP server a CONNECT
-# tunnel reaches. Passes are admitted as the run admits them: a file per
+# own for tests -- and stand-in registries serving HTTPS the same way, which
+# the proxy reaches over verified TLS once it has terminated a pass's
+# CONNECT with the certificate its own authority signed (FR-031, R25): the
+# client in these cases trusts that authority alone, so a 200 through a
+# CONNECT proves the proxy, not the registry, answered the handshake. Passes are admitted as the run admits them: a file per
 # token in the admissions directory, which the proxy only reads. The
 # credentials are fake and distinctive, so a grep over every file the run
 # wrote finds any copy. The proxy runs with HOME, TMPDIR and its working
@@ -65,15 +68,32 @@ open(portfile, "w").write(str(s.server_address[1]))
 s.serve_forever()
 PY
 
-# A stand-in registry: whatever reaches it through a tunnel is greeted with a
-# fixed line, so the client knows the tunnel arrived.
+# A stand-in registry over HTTPS: answers every method with "registry-ok",
+# so a refusal can only come from the proxy, and records each request it
+# gets as a line of JSON.
 cat > "$EP_TMP/helpers/registry.py" << 'PY'
-import socketserver, sys
-portfile = sys.argv[1]
-class H(socketserver.BaseRequestHandler):
-    def handle(self):
-        self.request.sendall(b"registry-ok\n")
-s = socketserver.ThreadingTCPServer(("127.0.0.1", 0), H)
+import http.server, json, ssl, sys
+portfile, cert, key, record = sys.argv[1:5]
+class H(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def _serve(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if n:
+            self.rfile.read(n)
+        with open(record, "a") as f:
+            f.write(json.dumps({"method": self.command, "path": self.path, "host": self.headers.get("Host")}) + "\n")
+        out = b"registry-ok"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(out)
+    do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = do_PATCH = _serve
+    def log_message(self, *a): pass
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain(cert, key)
+s.socket = ctx.wrap_socket(s.socket, server_side=True)
 open(portfile, "w").write(str(s.server_address[1]))
 s.serve_forever()
 PY
@@ -96,26 +116,37 @@ if cmd in ("api", "api-key"):  # api PORT TOKEN METHOD PATH
     elif token:
         h["x-api-key"] = token
     http_call(method, path, h, "{}" if method == "POST" else None)
-elif cmd == "connect":  # connect PORT TOKEN HOST:PORT
-    token, target = sys.argv[3:5]
+elif cmd == "connect":  # connect PORT TOKEN HOST:PORT CAFILE [METHOD PATH]
+    # CONNECT, then TLS trusting CAFILE alone -- the authority the proxy
+    # printed -- then one request: "<status> <body>", or the CONNECT's own
+    # status when it is refused, or "tls <error>" when the handshake fails.
+    import ssl
+    token, target, cafile = sys.argv[3:6]
+    method, path = sys.argv[6], sys.argv[7]
     s = socket.create_connection(("127.0.0.1", port), timeout=10)
     auth = base64.b64encode((token + ":x").encode()).decode()
     s.sendall(("CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: Basic %s\r\n\r\n" % (target, target, auth)).encode())
     data = b""
     while b"\r\n\r\n" not in data:
-        chunk = s.recv(4096)
+        chunk = s.recv(1)
         if not chunk:
             break
         data += chunk
-    head, _, rest = data.partition(b"\r\n\r\n")
-    status = head.split(b" ")[1].decode() if head else "none"
-    if status == "200":
-        while b"\n" not in rest:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            rest += chunk
-    print(status, rest.decode(errors="replace").strip())
+    status = data.split(b" ")[1].decode() if data else "none"
+    if status != "200":
+        print(status)
+        sys.exit(0)
+    host = target.rpartition(":")[0]
+    try:
+        t = ssl.create_default_context(cafile=cafile).wrap_socket(s, server_hostname=host)
+    except (ssl.SSLError, OSError) as e:
+        print("tls", type(e).__name__)
+        sys.exit(0)
+    c = http.client.HTTPConnection(host, timeout=10)
+    c.sock = t
+    c.request(method, path, body=b"x" if method in ("POST", "PUT", "PATCH") else None)
+    r = c.getresponse()
+    print(r.status, r.read().decode(errors="replace").strip())
 elif cmd == "absolute":  # absolute PORT TOKEN URL
     token, url = sys.argv[3:5]
     http_call("GET", url, {"Proxy-Authorization": "Basic " + base64.b64encode((token + ":x").encode()).decode()})
@@ -137,8 +168,10 @@ ep_wait_for() {
 ep_start_proxy() { # ep_start_proxy <label> <providers json> <heartbeat seconds>
   local label=$1 dir="$EP_TMP/run/$1"
   mkdir -p "$dir" "$EP_TMP/$label.admit"
-  printf '{"listen": "127.0.0.1:0", "admissions": "%s", "heartbeat_seconds": %s, "providers": %s, "registries": ["localhost:%s"]}\n' \
-    "$EP_TMP/$label.admit" "$3" "$2" "$EP_REGISTRY" |
+  # The GitHub stand-in carries github.com's path rule (R25), configured as
+  # sdd-step egress-proxy configures it for github.com.
+  printf '{"listen": "127.0.0.1:0", "admissions": "%s", "heartbeat_seconds": %s, "providers": %s, "registries": ["localhost:%s", "localhost:%s", "localhost:%s"], "paths": {"localhost:%s": "^/[^/]+/[^/]+/(releases/download|archive)/"}}\n' \
+    "$EP_TMP/$label.admit" "$3" "$2" "$EP_REGISTRY" "$EP_GITHUB" "$EP_ROGUE" "$EP_GITHUB" |
     (cd "$dir" && HOME="$EP_TMP/home" TMPDIR="$EP_TMP/tmp" SSL_CERT_FILE="$EP_TMP/cert.pem" \
       exec python3 -I "$EP_ROOT/bin/sdd-egress-proxy.py" > "$EP_TMP/$label.ready" 2> "$EP_TMP/$label.log") &
   EP_PID=$!
@@ -152,6 +185,9 @@ ep_start_proxy() { # ep_start_proxy <label> <providers json> <heartbeat seconds>
     echo "$label: the ready line is not {\"api_port\": …, \"models\": …}: $(cat "$EP_TMP/$label.ready")"
     return 1
   fi
+  # The authority the proxy made at its start, as the run writes it to the
+  # bundle; empty when the ready line carries none.
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("ca", ""), end="")' "$EP_TMP/$label.ready" > "$EP_TMP/$label.ca"
 }
 
 # Every answer is kept, so the last case's grep covers the responses too.
@@ -161,6 +197,12 @@ ep_client() {
     return 1
   }
   python3 -I "$EP_TMP/helpers/client.py" "$@" | tee -a "$EP_TMP/responses.log"
+}
+
+# A pass's request to a registry through the main proxy, trusting the
+# authority it printed: ep_connect <token> <port> [<method> <path>].
+ep_connect() {
+  ep_client connect "$EP_API" "$1" "localhost:$2" "$EP_TMP/main.ca" "${3:-GET}" "${4:-/}"
 }
 
 # Admits a pass on the main proxy as the run does, and prints its token.
@@ -205,13 +247,25 @@ CNF
       "$EP_TMP/$name.port" "$EP_TMP/$name.jsonl" > /dev/null 2>&1 &
     EP_PIDS+=($!)
   done
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/registry.port" > /dev/null 2>&1 &
+  # A certificate the proxy does not trust, for a registry it must not
+  # forward to: the upstream side of the inspection is verified TLS.
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$EP_TMP/cert.cnf" \
+    -keyout "$EP_TMP/rogue-key.pem" -out "$EP_TMP/rogue-cert.pem" > /dev/null 2>&1 || {
+    echo "could not make the rogue registry's certificate"
+    return 1
+  }
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/registry.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/registry.jsonl" > /dev/null 2>&1 &
   EP_PIDS+=($!)
-  # A second registry, listening but on no list: a refusal must come from the
+  # A registry with github.com's path rule.
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/github.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/github.jsonl" > /dev/null 2>&1 &
+  EP_PIDS+=($!)
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/rogue.port" "$EP_TMP/rogue-cert.pem" "$EP_TMP/rogue-key.pem" "$EP_TMP/rogue.jsonl" > /dev/null 2>&1 &
+  EP_PIDS+=($!)
+  # A registry listening but on no list: a refusal must come from the
   # proxy's list, not from nothing being there.
-  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/unlisted.port" > /dev/null 2>&1 &
+  python3 -I "$EP_TMP/helpers/registry.py" "$EP_TMP/unlisted.port" "$EP_TMP/cert.pem" "$EP_TMP/key.pem" "$EP_TMP/unlisted.jsonl" > /dev/null 2>&1 &
   EP_PIDS+=($!)
-  for name in anthropic deepseek registry unlisted; do
+  for name in anthropic deepseek registry github rogue unlisted; do
     ep_wait_for "$EP_TMP/$name.port" || {
       echo "the $name stand-in did not start"
       return 1
@@ -219,6 +273,8 @@ CNF
   done
   EP_REGISTRY=$(cat "$EP_TMP/registry.port")
   EP_UNLISTED=$(cat "$EP_TMP/unlisted.port")
+  EP_GITHUB=$(cat "$EP_TMP/github.port")
+  EP_ROGUE=$(cat "$EP_TMP/rogue.port")
   EP_ANTHROPIC="{\"upstream\": \"https://localhost:$(cat "$EP_TMP/anthropic.port")\", \"credential\": \"$EP_CRED_ANTHROPIC\"}"
   EP_PROVIDERS="{\"anthropic\": $EP_ANTHROPIC, \"deepseek\": {\"upstream\": \"https://localhost:$(cat "$EP_TMP/deepseek.port")\", \"credential\": \"$EP_CRED_DEEPSEEK\", \"models\": \"/models\"}}"
 }
@@ -289,7 +345,7 @@ ep_judgment_confined() {
   local judge before out
   judge=$(ep_admit '["anthropic"]')
   before=$(ep_records deepseek)
-  out=$(ep_client connect "$EP_API" "$judge" "localhost:$EP_REGISTRY")
+  out=$(ep_connect "$judge" "$EP_REGISTRY")
   case "$out" in "403 "* | 403) ;; *)
     echo "a judgment pass was not refused the registry: $out"
     return 1
@@ -332,7 +388,7 @@ check "a judgment pass reaches its own provider only: not the registries, not th
 ep_verify_registries() {
   local verify impl both before out
   verify=$(ep_admit '["registries"]')
-  out=$(ep_client connect "$EP_API" "$verify" "localhost:$EP_REGISTRY")
+  out=$(ep_connect "$verify" "$EP_REGISTRY")
   [ "$out" = "200 registry-ok" ] || {
     echo "verify did not reach the registry through a tunnel: $out"
     return 1
@@ -352,7 +408,7 @@ ep_verify_registries() {
     return 1
   }
   impl=$(ep_admit '["anthropic", "registries"]')
-  out=$(ep_client connect "$EP_API" "$impl" "localhost:$EP_REGISTRY")
+  out=$(ep_connect "$impl" "$EP_REGISTRY")
   [ "$out" = "200 registry-ok" ] || {
     echo "an implement pass did not reach the registry: $out"
     return 1
@@ -363,7 +419,7 @@ check "verify reaches the registries and no provider; an implement pass reaches 
 ep_other_hosts() {
   local impl out
   impl=$(ep_admit '["deepseek", "registries"]')
-  out=$(ep_client connect "$EP_API" "$impl" "localhost:$EP_UNLISTED")
+  out=$(ep_connect "$impl" "$EP_UNLISTED")
   case "$out" in "403 "* | 403) ;; *)
     echo "CONNECT to a host on no list was not refused: $out"
     return 1
@@ -386,6 +442,97 @@ ep_other_hosts() {
   }
 }
 check "CONNECT, or a plain proxy request, to any host on no list is refused and logged" ep_other_hosts
+
+# The registries are read-only (FR-031, R25): the proxy answers each pass's
+# CONNECT with a certificate its own authority signed -- made at its start,
+# its key in no file once it has started and in no output -- and forwards
+# only GET and HEAD, over verified TLS, to the real registry; on github.com
+# only release and archive downloads. Every other request is refused with
+# 403, never reaches the registry, and leaves a line in the log.
+ep_registry_readonly() {
+  local impl verify method out path
+  [ -s "$EP_TMP/main.ca" ] || {
+    echo "the ready line carries no certificate authority"
+    return 1
+  }
+  openssl x509 -in "$EP_TMP/main.ca" -noout -text 2> /dev/null | grep -q "CA:TRUE" || {
+    echo "the ready line's certificate is not a certificate authority"
+    return 1
+  }
+  impl=$(ep_admit '["deepseek", "registries"]')
+  verify=$(ep_admit '["registries"]')
+  for method in GET HEAD; do
+    out=$(ep_connect "$impl" "$EP_REGISTRY" "$method" /left-pad)
+    case "$out" in "200"*) ;; *)
+      echo "$method through the inspected tunnel answered: $out"
+      return 1
+      ;;
+    esac
+  done
+  out=$(ep_connect "$verify" "$EP_REGISTRY" GET /six)
+  [ "$out" = "200 registry-ok" ] || {
+    echo "verify's GET through the inspected tunnel answered: $out"
+    return 1
+  }
+  for method in PUT POST DELETE PATCH OPTIONS; do
+    out=$(ep_connect "$impl" "$EP_REGISTRY" "$method" /left-pad)
+    case "$out" in "403 "*) ;; *)
+      echo "$method to a registry was not refused with 403: $out"
+      return 1
+      ;;
+    esac
+    grep -q "refused $method https://localhost:$EP_REGISTRY/left-pad" "$EP_TMP/main.log" || {
+      echo "the refused $method is not in the proxy's log"
+      return 1
+    }
+  done
+  grep -qvE '"method": "(GET|HEAD)"' "$EP_TMP/registry.jsonl" && {
+    echo "a write reached the registry: $(grep -vE '"method": "(GET|HEAD)"' "$EP_TMP/registry.jsonl" | head -1)"
+    return 1
+  }
+  for path in /o/r/releases/download/v1/tool.tgz /o/r/archive/v1.tar.gz; do
+    out=$(ep_connect "$impl" "$EP_GITHUB" GET "$path")
+    [ "$out" = "200 registry-ok" ] || {
+      echo "a GitHub download, $path, answered: $out"
+      return 1
+    }
+  done
+  for path in /o/r /o/r/info/refs?service=git-receive-pack /o/r/issues /o/r/releases; do
+    out=$(ep_connect "$impl" "$EP_GITHUB" GET "$path")
+    case "$out" in "403 "*) ;; *)
+      echo "GET $path on GitHub was not refused: $out"
+      return 1
+      ;;
+    esac
+  done
+  out=$(ep_connect "$impl" "$EP_GITHUB" POST /o/r/git-receive-pack)
+  case "$out" in "403 "*) ;; *)
+    echo "a push to GitHub was not refused: $out"
+    return 1
+    ;;
+  esac
+  out=$(ep_connect "$impl" "$EP_ROGUE" GET /left-pad)
+  case "$out" in "502 "*) ;; *)
+    echo "a registry whose certificate the proxy does not trust was forwarded to: $out"
+    return 1
+    ;;
+  esac
+  [ ! -s "$EP_TMP/rogue.jsonl" ] || {
+    echo "a request reached the registry whose certificate the proxy does not trust"
+    return 1
+  }
+  if grep -q "PRIVATE KEY" "$EP_TMP/main.ready" "$EP_TMP/main.log"; then
+    echo "the authority's key is in the proxy's output"
+    return 1
+  fi
+  local left
+  left=$(grep -rl "PRIVATE KEY" "$EP_TMP" 2> /dev/null | grep -v -e "^$EP_TMP/key.pem$" -e "^$EP_TMP/rogue-key.pem$")
+  [ -z "$left" ] || {
+    echo "a private key the proxy made is on disk after its start: $left"
+    return 1
+  }
+}
+check "the registries are read-only: TLS inspected with the run's own authority, GET and HEAD only, GitHub downloads only" ep_registry_readonly
 
 ep_retire() {
   local judge out

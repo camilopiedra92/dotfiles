@@ -7,7 +7,11 @@ the run's provider credentials -- no agent does -- and:
 
 - forwards plain-HTTP requests to the provider of the pass that sent them,
   over TLS, with the pass's token replaced by the provider's credential;
-- tunnels CONNECT to the package registries for implement and verify passes;
+- answers CONNECT to a package registry, for implement and verify passes,
+  with a certificate its own authority signed, and forwards what comes
+  through it to the real registry over verified TLS -- GET and HEAD only, so
+  a pass can read packages and never publish, push or upload (FR-031,
+  research R25);
 - refuses and logs everything else.
 
 Started by `sdd-step egress-proxy` in a container of its own, it reads ONE
@@ -20,14 +24,25 @@ line of JSON from stdin and nothing after it:
                    "deepseek":  {"upstream": "https://api.deepseek.com",
                                  "credential": "<deepseek-api>",
                                  "models": "/models"}},
-     "registries": ["registry.npmjs.org", "pypi.org:443"]}
+     "registries": ["registry.npmjs.org", "github.com"],
+     "paths": {"github.com": "^/[^/]+/[^/]+/(releases/download|archive)/"}}
 
 A provider is present only when the run may use it: no DeepSeek key, no
-DeepSeek pass. A registry without a port means 443. Once listening, it
-fetches each provider's `models` path, if it names one, with its credential
-and prints one line on stdout: {"api_port": …, "models": {"deepseek": <the
-answer, or {"error": …}>}} -- the run records the model behind each
-configured id from it (research R6).
+DeepSeek pass. A registry without a port means 443; `paths` limits a
+registry, named as in `registries`, to the paths its regular expression
+matches. The rules live in the configuration, not here, because the run
+owns its policy as it owns the registry list -- and so the checks can give
+a stand-in registry github.com's rule.
+
+At its start the proxy makes a certificate authority with `openssl` in a
+directory of its own, signs one short-lived certificate per registry host,
+loads them and deletes the directory: the authority's key is then in no file
+and not even in memory, and the leaves' only in this process. Once listening,
+it fetches each provider's `models` path, if it names one, with its
+credential and prints one line on stdout: {"api_port": …, "models":
+{"deepseek": <the answer, or {"error": …}>}, "ca": "<the authority's PEM
+certificate>"} -- the run records the model behind each configured id
+(research R6), and gives the authority to every pass to trust.
 
 Passes are keyed by a random token the pass makes: the placeholder
 credential its agent sends (`Authorization: Bearer` or `x-api-key` for an
@@ -53,10 +68,12 @@ import http.server
 import json
 import os
 import re
-import select
+import shutil
 import socket
 import ssl
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -89,6 +106,60 @@ def hostport(entry):
     return (host, int(port)) if sep and port.isdigit() else (entry, 443)
 
 
+# Short-lived, as a run is: a resumed run starts a new proxy, and so a new
+# authority.
+DAYS = "2"
+
+
+def authority(hosts):
+    """A certificate authority and one server context per host it signs for.
+    The flags are those LibreSSL 3.3 (macOS), OpenSSL 3.0 (the worker image)
+    and OpenSSL 3.6 all take, and the certificates carry what a strict
+    verifier (Python 3.13's VERIFY_X509_STRICT) asks for (seen 2026-10-21)."""
+    openssl = shutil.which("openssl")
+    if not openssl:
+        raise ValueError("no openssl to make the run's certificate authority with")
+    work = tempfile.mkdtemp(prefix="sdd-proxy-ca-")
+    try:
+        def run(*args):
+            r = subprocess.run([openssl, *args], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, cwd=work)
+            if r.returncode != 0:
+                raise ValueError("openssl %s failed: %s" % (args[0], r.stderr.decode(errors="replace").strip()))
+
+        def write(name, text):
+            with open(os.path.join(work, name), "w") as f:
+                f.write(text)
+
+        write("ca.cnf", "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = sdd run authority\n"
+              "[ca]\nbasicConstraints = critical, CA:TRUE, pathlen:0\n"
+              "keyUsage = critical, keyCertSign, cRLSign\nsubjectKeyIdentifier = hash\n")
+        run("ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", "ca.key")
+        run("req", "-new", "-x509", "-key", "ca.key", "-out", "ca.pem", "-days", DAYS, "-sha256",
+            "-config", "ca.cnf", "-extensions", "ca")
+        leaves = {}
+        for i, host in enumerate(sorted(hosts)):
+            alt = ("IP:" if re.fullmatch(r"[0-9.]+|[0-9a-fA-F:]+", host) else "DNS:") + host
+            write("%d.cnf" % i, "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = %s\n"
+                  "[leaf]\nbasicConstraints = critical, CA:FALSE\nkeyUsage = critical, digitalSignature\n"
+                  "extendedKeyUsage = serverAuth\nsubjectAltName = %s\nsubjectKeyIdentifier = hash\n"
+                  "authorityKeyIdentifier = keyid\n" % (host, alt))
+            run("ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", "%d.key" % i)
+            run("req", "-new", "-key", "%d.key" % i, "-out", "%d.csr" % i, "-config", "%d.cnf" % i)
+            run("x509", "-req", "-in", "%d.csr" % i, "-CA", "ca.pem", "-CAkey", "ca.key",
+                "-set_serial", "0x" + os.urandom(8).hex(), "-out", "%d.pem" % i, "-days", DAYS, "-sha256",
+                "-extfile", "%d.cnf" % i, "-extensions", "leaf")
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.set_alpn_protocols(["http/1.1"])
+            ctx.load_cert_chain(os.path.join(work, "%d.pem" % i), os.path.join(work, "%d.key" % i))
+            leaves[host] = ctx
+        with open(os.path.join(work, "ca.pem")) as f:
+            return f.read(), leaves
+    finally:
+        # The authority's key is never needed again: every leaf is signed.
+        shutil.rmtree(work, ignore_errors=True)
+
+
 class State:
     def __init__(self, config):
         self.providers = {}
@@ -99,6 +170,10 @@ class State:
                 raise ValueError("provider %r needs a known name, an https upstream and a credential" % name)
             self.providers[name] = (url.hostname, url.port or 443, p["credential"], p.get("models"))
         self.registries = {hostport(r) for r in config.get("registries", [])}
+        self.paths = {hostport(r): re.compile(rx) for r, rx in config.get("paths", {}).items()}
+        if set(self.paths) - self.registries:
+            raise ValueError("a path rule names no registry")
+        self.ca, self.leaves = authority({h for h, _ in self.registries})
         self.admissions = config["admissions"]
         self.heartbeat_seconds = float(config["heartbeat_seconds"])
 
@@ -253,30 +328,96 @@ class Handler(http.server.BaseHTTPRequestHandler):
         target = hostport(self.path)
         if target not in self.state.registries:
             return self.refuse(403, "not a registry", token)
-        try:
-            far = socket.create_connection(target, timeout=30)
-        except OSError as e:
-            log("%s CONNECT %s -> error %s" % (who(token), self.path, type(e).__name__))
-            return self.refuse(502, "registry unreachable", token)
         self.send_response(200, "Connection Established")
         self.end_headers()
-        log("%s CONNECT %s -> tunnel" % (who(token), self.path))
+        self.wfile.flush()
         self.close_connection = True
-        near = self.connection
         try:
-            while True:
-                ready, _, _ = select.select([near, far], [], [], 600)
-                if not ready:
-                    return
-                for s in ready:
-                    data = s.recv(65536)
-                    if not data:
-                        return
-                    (far if s is near else near).sendall(data)
-        except OSError:
-            pass
+            tls = self.state.leaves[target[0]].wrap_socket(self.connection, server_side=True)
+        except (ssl.SSLError, OSError) as e:
+            log("%s CONNECT %s -> TLS handshake failed: %s" % (who(token), self.path, type(e).__name__))
+            return
+        log("%s CONNECT %s -> inspected" % (who(token), self.path))
+        inner = type("RegistryHandler", (RegistryHandler,), {"state": self.state, "target": target, "token": token})
+        inner(tls, self.client_address, self.server)
+
+
+class RegistryHandler(http.server.BaseHTTPRequestHandler):
+    """The requests a pass sends inside its CONNECT to a registry, after the
+    proxy terminated its TLS: only reads go on."""
+    protocol_version = "HTTP/1.1"
+    timeout = 300
+    state = target = token = None  # set per CONNECT
+
+    def log_message(self, *args):
+        pass
+
+    def url(self):
+        host, port = self.target
+        return "https://%s%s%s" % (host, "" if port == 443 else ":%d" % port, self.path[:200])
+
+    def refuse(self, status, why):
+        log("refused %s %s (%s): %s" % (self.command, self.url(), who(self.token), why))
+        body = (why + "\n").encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def __getattr__(self, name):
+        # Every method but GET and HEAD -- PUT, POST, DELETE, PATCH, and any
+        # the server has no handler for -- lands here: a registry is
+        # read-only to a pass.
+        if name.startswith("do_"):
+            return lambda: self.refuse(403, "a registry is read-only to a pass")
+        raise AttributeError(name)
+
+    def read(self):
+        if not self.path.startswith("/"):
+            return self.refuse(403, "not a path on this registry")
+        rule = self.state.paths.get(self.target)
+        if rule and not rule.match(self.path):
+            return self.refuse(403, "not a download this registry allows")
+        if self.headers.get("Content-Length", "0") != "0" or self.headers.get("Transfer-Encoding"):
+            return self.refuse(403, "a read carries no body")
+        host, port = self.target
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in DROPPED}
+        headers["Host"] = host if port == 443 else "%s:%d" % (host, port)
+        c = upstream(host, port)
+        try:
+            try:
+                c.request(self.command, self.path, headers=headers)
+                r = c.getresponse()
+            except (OSError, http.client.HTTPException) as e:
+                log("%s %s %s -> upstream error %s" % (who(self.token), self.command, self.url(), type(e).__name__))
+                return self.refuse(502, "registry unreachable or not trusted")
+            self.send_response(r.status)
+            for k, v in r.getheaders():
+                if k.lower() not in DROPPED:
+                    self.send_header(k, v)
+            if self.command == "HEAD" or r.status in (204, 304) or r.status < 200:
+                # No body follows; the length the registry gave is the
+                # answer to a HEAD.
+                if r.getheader("Content-Length") is not None:
+                    self.send_header("Content-Length", r.getheader("Content-Length"))
+                self.end_headers()
+            else:
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                while True:
+                    chunk = r.read1(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+                self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+            log("%s %s %s -> %s" % (who(self.token), self.command, self.url(), r.status))
         finally:
-            far.close()
+            c.close()
+
+    do_GET = do_HEAD = read
 
 
 def models(state):
@@ -318,7 +459,7 @@ def main():
     server.daemon_threads = True
     del config
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(json.dumps({"api_port": server.server_address[1], "models": models(state)}), flush=True)
+    print(json.dumps({"api_port": server.server_address[1], "models": models(state), "ca": state.ca}), flush=True)
     log("ready: providers %s, %d registries" % (", ".join(sorted(state.providers)) or "none", len(state.registries)))
     seen, since = state.heartbeat(), time.monotonic()
     while time.monotonic() - since < state.heartbeat_seconds:
