@@ -64,7 +64,7 @@ work and goes to the owner (plan.md, "Phase order").
 - [ ] T015 [P] [US1] Check marking (quickstart 6, FR-006): `sdd-step mark` refuses on `verify` = fail or `review` = blocking, and marks only the task ids `review.json` lists
 - [ ] T016 [P] [US1] Check `sdd-run` prerequisites (contracts/sdd-run.md, FR-011, FR-024, US1 AS7, FR-021): each missing prerequisite stops with exit 1 naming it — Spec Kit older than 1.2.1, no `.specify/`, the workflow missing or at an older version, a missing CLI, `sdd.check` unset; `CLAUDE_CODE_EFFORT_LEVEL` exported is unset before dispatch; `.sdd/routing.json` records each model's id and effort
 - [ ] T017 [P] [US1] Check the Sonnet implementation pass (quickstart 7–8, FR-008, FR-018, FR-023, US2 AS6–7): the feature directory is committed first; the stand-in agent works in a detached checkout; a created, changed or deleted `ruff.toml`, or a `pyproject.toml` without `[tool.ruff]`, exits 1 naming it with nothing applied; a judged patch is applied and committed as `worker: <feature> (claude-sonnet-5-5)`; an agent that outlives the limit is stopped and nothing applied; a crash leaves the feature's worktree unchanged and no checkout behind; `implement.json` records the usage from the JSON result
-- [ ] T018 [P] [US1] Check interrupted runs (FR-022): a run lock naming a dead process (process id and start time) makes `cleanup` remove that run's leftovers and `resume` report the phases that will run again; `sdd-run start --from <feature dir>` passes `spec.md` and skips every phase in `.sdd/phases.json`; a lock whose process id was reused by another process is not taken for dead
+- [ ] T018 [P] [US1] Check interrupted runs (FR-022): a run lock naming a dead process (process id and start time) makes `cleanup` remove that run's leftovers and `resume` report the phases that will run again; `sdd-run start --from <feature dir>` passes `spec.md` and skips every phase in `.sdd/phases.json`, and is refused when no phase is finished; a lock whose process id was reused by another process is not taken for dead
 - [ ] T019 [US1] Run T011–T018 once against stubs of `bin/sdd-run.sh`, `bin/sdd-step.sh` and `claude/speckit/sdd-routed.yml`; confirm each fails for the reason its case predicts; commit the red run's output summary in the commit message
 
 ### Implementation for User Story 1
@@ -101,7 +101,7 @@ work and goes to the owner (plan.md, "Phase order").
 ### Implementation for User Story 2
 
 - [ ] T032 [P] [US2] Write `containers/pi-worker/Containerfile` (Node 26 base pinned by digest, `@earendil-works/pi-coding-agent@1.3.0`, mise, uv), `entrypoint.sh` (reads the key from stdin once, starts pi with the brief), `models.json` (the ids `/models` returned in T006) and `egress.txt` (DeepSeek's API host and the registries research R5 names)
-- [ ] T033 [US2] Implement the DeepSeek path of `sdd-step implement` (contracts/sdd-step.md steps 1, 3, 4) and its record in `implement.json` (`model`, `pi_version`, tokens)
+- [ ] T033 [US2] Implement the DeepSeek path of `sdd-step implement` (contracts/sdd-step.md steps 1, 3, 4) and its record in `implement.json` (`model`, `pi_version`, tokens); a served model other than `models.json`'s, or a missing usage field, fails the pass naming it (checked in T029)
 - [ ] T034 [US2] On this machine, with the real `container`: the containment probe of quickstart.md 11 (SC-003), each attempt recorded with its result in `docs/sdd-routing.md`
 
 ### Close User Story 2
@@ -124,7 +124,7 @@ work and goes to the owner (plan.md, "Phase order").
 
 ## Phase 6: Measurement and polish
 
-- [ ] T039 Write `claude/speckit/eval/sdd-baseline.yml` per SC-001's baseline (same as `sdd-routed` with every Claude step on `claude-opus-5-5`, the fix loop replaced by `speckit.implement` on Opus, no `fix-stuck`, no `mark`), and a check that it differs from `sdd-routed.yml` only where SC-001 says
+- [ ] T039 Write `claude/speckit/eval/checkout/description.txt` and `clarify-answers.md` (keyed by topic) from the fixture's spec, and `claude/speckit/eval/sdd-baseline.yml` per SC-001's baseline (same as `sdd-routed` with every Claude step on `claude-opus-5-5`, the fix loop replaced by `speckit.implement` on Opus, no `fix-stuck`, no `mark`), and a check that it differs from `sdd-routed.yml` only where SC-001 says
 - [ ] T040 Run SC-001 and SC-002 (quickstart.md 12) in the story-workers repository's `checkout` fixture: both arms, gate answers as SC-001 fixes them, `sdd-run usage` for each, the held-out tests; record the result as it came out in `docs/sdd-routing.md`, with Spec Kit, Claude Code, `container` and pi versions
 - [ ] T041 Move the decisions later work builds on out of research.md before the PR opens: `docs/decisions/0001-sdd-routing-workflow.md` (a workflow of our own on Spec Kit's engine; outcome files in JSON validated against schemas; verify without a model) in MADR's shape, linking research.md R1, R10; point `CLAUDE.md` at `docs/decisions/`
 - [ ] T042 `/speckit-converge` until a pass finds nothing above LOW; its tasks implemented last

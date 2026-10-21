@@ -357,9 +357,9 @@ fixed above 30 minutes),
   reports no usage (killed or timed out before its result) is listed as
   unreported, and an arm with one is run again. The reference fixture is the
   `checkout` fixture of the story-workers preset's Eval 002 at the commit
-  named in the eval's record. Both arms start from the same description, the
-  fixture's `description.txt`, and answer clarify from the same file, the
-  fixture's `clarify-answers.md`, keyed by topic; a question it does not
+  named in the eval's record. Both arms start from the same description,
+  `claude/speckit/eval/checkout/description.txt`, and answer clarify from the
+  same file beside it, `clarify-answers.md`, keyed by topic; a question it does not
   cover takes clarify's own recommendation, and is recorded. The baseline is a workflow file of its own, kept with the eval: the
   routed workflow with every Claude step on the most capable model at the
   same effort, and its implement-and-verify loop replaced by Spec Kit's own
