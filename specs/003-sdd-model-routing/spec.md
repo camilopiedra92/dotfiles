@@ -354,9 +354,9 @@ fixed above 30 minutes),
 
 - **SC-001**: A routed run, opted in to the external provider, uses at least
   40% less Claude subscription usage than the baseline run, by the median of
-  three counted runs per arm on each of the story-workers eval harness's two
-  fixtures, `checkout` and `wordstats`; the range is reported beside the
-  median. Usage counts every attempt of every Claude step at list price as
+  three counted runs per arm, on each of the story-workers eval harness's two
+  fixtures, `checkout` and `wordstats`, separately: both fixtures must meet
+  it. The range is reported beside each median. Usage counts every attempt of every Claude step at list price as
   each reports it, summed for both arms by one tool, the harness's.
   - **What both arms run**: the routed workflow's steps from tasks to
     marking (contracts/workflow.md 11–16), on the fixture's committed spec
@@ -371,7 +371,9 @@ fixed above 30 minutes),
     lighter model, its decision 0001); verify runs once after it, and there
     is no `fix-stuck` checkpoint.
   - **Checkpoints**: `review-done` is approved; `fix-stuck` and
-    `converge-stuck` are answered `abort`, and a run that reaches either is
+    `converge-stuck` are answered `abort`. The same rule counts runs in
+    both arms: a run counts only if its last verify passed; one that reaches
+    either stuck checkpoint, or a baseline run whose last verify failed, is
     not counted and is run again under the harness's rerun limit.
   - **Recorded per run**: Spec Kit, Claude Code, `container` and pi versions,
     and the dotfiles commit.
@@ -382,9 +384,10 @@ fixed above 30 minutes),
     is met or not by that feature's recorded result, as it comes out.
     Whether the owner moves to the smaller plan is decided afterwards, from a
     week of real usage, not here.
-- **SC-002**: In the same comparison, the routed arm passes as many of each
-  fixture's held-out acceptance tests as the baseline in all three of its
-  counted runs (pass^3), and its own check command passes in each.
+- **SC-002**: On each fixture, the lowest number of held-out acceptance tests
+  any of the routed arm's three counted runs passes is at least the baseline's
+  median over its three, and the routed arm's own check command passes in
+  every counted run.
 - **SC-003**: The containment probe attempts, from inside the agent's runtime:
   reading the owner's SSH keys, the Keychain and another repository; writing
   to the feature's worktree outside the patch, to the home directory and to
