@@ -15,7 +15,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 ## Requirement Completeness
 
-- [ ] CHK001 Is the model for every phase stated somewhere a reader can find, including verify and review, not only the phases named in FR-001's scenario? [Completeness, Spec §US1 AS1, contracts/workflow.md]
+- [x] CHK001 Is the model for every phase stated somewhere a reader can find, including verify and review, not only the phases named in FR-001's scenario? [Completeness, Spec §US1 AS1, contracts/workflow.md]
 - [ ] CHK002 Does the spec define what "the feature's files" are that phases hand over through, so FR-002 can be judged? [Clarity, Spec §FR-002]
 - [ ] CHK003 Are the checkpoints FR-004 lists the same as the gates in contracts/workflow.md, including `answer-clarify`, `fix-stuck` and `converge-stuck`? [Consistency, Spec §FR-004]
 - [ ] CHK004 Is it specified who or what marks tasks `[X]` in a routed run, and on which evidence? [Completeness, Spec §FR-006]
@@ -27,13 +27,13 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 - [ ] CHK008 Is "contained to the feature's worktree" defined for reads as well as writes, and for network access? [Clarity, Spec §FR-007]
 - [ ] CHK009 Is "no access to the owner's credentials other than the one it needs" defined so a reviewer can list what the agent can and cannot reach? [Clarity, Spec §FR-007]
-- [ ] CHK010 Is the set of "lint, format, type-check or test configuration" files defined, or delegated to a named source of truth? [Clarity, Spec §FR-008, research R7]
+- [x] CHK010 Is the set of "lint, format, type-check or test configuration" files defined, or delegated to a named source of truth? [Clarity, Spec §FR-008, research R7]
 - [ ] CHK011 Is "findings above LOW" tied to a severity scale that converge actually emits? [Clarity, Spec §FR-014]
 - [ ] CHK012 Is "fresh context" defined so that a review in the same process as the code's author would fail it? [Clarity, Spec §FR-002, §FR-006]
 
 ## Requirement Consistency
 
-- [ ] CHK013 Do US2 AS4 and FR-015 agree on what happens after two failed fix rounds, and with contracts/workflow.md's `fix-loop` of three iterations? [Consistency]
+- [x] CHK013 Do US2 AS4 and FR-015 agree on what happens after two failed fix rounds, and with contracts/workflow.md's `fix-loop` of three iterations? [Consistency]
 - [ ] CHK014 Is the Assumption that story-workers stays installed consistent with a routed run's implement step bypassing it, and is the interaction specified? [Consistency, Spec §Assumptions]
 - [ ] CHK015 Does FR-003's "MUST NOT edit files Spec Kit installs" hold for `specify workflow add` copying the workflow into `.specify/workflows/`? [Consistency, constitution V]
 
@@ -41,7 +41,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 - [ ] CHK016 Is SC-001's baseline arm defined precisely enough to be rerun — which steps on which model, which implement path, which fixture state? [Measurability, Spec §SC-001]
 - [ ] CHK017 Is it stated how SC-001 counts usage the subscription spends but a step does not report (retries, a failed step, the converge loop's extra passes)? [Measurability, Spec §SC-001]
-- [ ] CHK018 Is SC-003's probe defined by what it attempts, so "0 writes land" has a fixed denominator? [Measurability, Spec §SC-003]
+- [x] CHK018 Is SC-003's probe defined by what it attempts, so "0 writes land" has a fixed denominator? [Measurability, Spec §SC-003]
 - [ ] CHK019 Can SC-005's "one answer per checkpoint" be met by the clarify checkpoint, where the owner writes several answers? [Measurability, Spec §SC-005, §FR-005]
 
 ## Scenario and Edge Case Coverage

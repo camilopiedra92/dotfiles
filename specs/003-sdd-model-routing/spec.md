@@ -9,19 +9,18 @@
 **Input**: User description: "Run a feature's Spec Kit phases each on the model
 that fits it: the judgment phases (specify, clarify, plan, checklist, analyze,
 review, converge) on the most capable Claude model, the routine ones (tasks,
-orchestration) on a lighter one, and implementation on DeepSeek through the pi
-coding agent, contained so it can touch only the feature's worktree. Built on
-Spec Kit's own workflow engine (the built-in `speckit` workflow plus a project
-overlay), installed by `sdd-init`. Goal: fit the owner's work into a smaller
-Claude subscription (Max 5x → Pro) without losing quality." Spiked on
+verify) on a lighter one, and implementation on DeepSeek through the pi coding
+agent, contained so it can touch only the feature's code. Built on Spec Kit's
+own workflow engine, installed by `sdd-init`. Every agent hands its work to
+the next as files on disk, not as text. Goal: fit the owner's work into a
+smaller Claude subscription (Max 5x → Pro) without losing quality." Spiked on
 2026-10-21 on Spec Kit 1.1.3, in a throwaway repository with a stand-in
-`claude` that records its arguments: an overlay replacing the `specify` step
-with `model: opus` composed (`specify workflow resolve` attributed it to the
-overlay) and dispatched `claude -p "/speckit-specify …" --model opus`; a run
-without a terminal paused at the first gate. A preset cannot carry a model:
-the same spike showed `model:` and `effort:` dropped from a preset command's
-generated skill, and upstream declined per-command model selection
-(github/spec-kit#1287).
+`claude` that records its arguments: a workflow step with `model: opus`
+dispatched `claude -p "/speckit-specify …" --model opus`; a run without a
+terminal paused at the first gate; a `shell` step saw no terminal and an empty
+stdin. A preset cannot carry a model: the same spike showed `model:` and
+`effort:` dropped from a preset command's generated skill, and upstream
+declined per-command model selection (github/spec-kit#1287).
 
 ## Clarifications
 
@@ -29,13 +28,19 @@ generated skill, and upstream declined per-command model selection
 
 Answered with clarify's recommended option, under the owner's delegation of
 2026-10-21 (take the recommended option throughout); the owner may overturn
-any of them.
+any of them. The last group came from the fresh-context review of
+`checklists/routing.md` and was answered the same way.
 
 - Q: How many converge passes may run before the run pauses for the owner? → A: Three; then it pauses with the open findings.
-- Q: After a failed suite or review, how many fix rounds go back to the external agent before the run stops for the owner? → A: Two; then the run pauses, it does not fall back to Claude on its own.
-- Q: What does SC-001's usage count? → A: The Claude models' per-run cost each headless phase reports, at list price, summed over the run.
+- Q: After a failed suite or review, how many fix rounds go back to the implementing agent before the run stops for the owner? → A: Two per convergence pass; then the run pauses, and work never moves to another agent on its own.
+- Q: What does SC-001's usage count? → A: Every attempt of every Claude step, failed and resumed ones included, at list price, as each reports it.
 - Q: Does this feature's success decide the move to the smaller plan? → A: No; the feature succeeds at SC-001's 40%, and the move is decided from a week of real usage afterwards.
-- Q: How do clarify's questions reach the owner, given a workflow step gets no terminal (probe, 2026-10-21: a `shell` step saw no TTY and an empty stdin)? → A: Clarify writes its questions, each with its recommended answer, to a file in the feature directory; the run pauses at a checkpoint showing that file; the owner writes the answers there and approves; a second pass applies them to the spec. Found during planning; FR-003 widened from "extend the built-in workflow" to "a workflow on Spec Kit's engine" for it (research R1).
+- Q: How do clarify's questions reach the owner, given a workflow step gets no terminal? → A: Through a file in the feature directory, which the owner answers before approving the checkpoint.
+- Q: How do agents hand over and how does the run decide what comes next? → A: Every step writes its outcome to a JSON file in the feature directory, validated against a schema; the run branches only on what a deterministic reader finds in valid outcome files, never on an agent's printed text, and a missing or invalid outcome fails the step. Proposed by the owner; checked against Anthropic's engineering posts "How we built our multi-agent research system" (subagent output to a filesystem, to avoid a "game of telephone") and "Effective harnesses for long-running agents" (state in a progress file, a JSON feature list and git; JSON because the model is less likely to overwrite it than Markdown; passing only after testing).
+- Q: Does verify need a model? → A: No; whether the check command passed is its exit status, so verify is a deterministic step and models are kept for judgment.
+- Q: What does the implementing agent see of the repository? → A: A disposable checkout of the committed code at the run's current commit, without untracked or ignored files; its changes come back as a patch the run judges before applying.
+- Q: What bounds the external provider's spend? → A: A time limit per implementation pass (30 minutes), the prepaid balance as the hard ceiling, and the provider's spend reported per run.
+- Q: How is a repository's check command known? → A: Declared once per repository by the owner; a run without it stops before planning, naming how to declare it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -49,80 +54,91 @@ move to a subscription with about a fifth of today's allowance.
 ### User Story 1 - A feature runs with each phase on its own model (Priority: P1)
 
 The owner starts a feature with one command and a description. Each phase runs
-in a fresh context on the model routed to it, handing over to the next through
-the feature's files only. The run stops at each checkpoint for the owner's
-approval and carries on from there when the owner approves. The owner never
-switches a model by hand.
+as a fresh agent on the model routed to it, reading and writing only the
+feature's files. The run stops at each checkpoint for the owner's approval and
+carries on from there. The owner never switches a model by hand.
 
 **Why this priority**: it is the saving that needs no new provider and no new
 tool on the machine, and it works on its own: if it alone brings usage within
 the smaller plan, the other stories are optional.
 
 **Independent Test**: in a scratch repository, run the routed workflow against a
-stand-in for the agent CLI that records each call, and read which model each
-phase was dispatched with, in which order, and where the run paused.
+stand-in for the agent CLI that records each call and writes canned outcome
+files; read which model each phase was dispatched with, in which order, which
+files each left, and where the run paused.
 
 **Acceptance Scenarios**:
 
 1. **Given** a repository set up for routing, **When** the owner starts a
-   feature, **Then** specify, clarify, plan, checklist and analyze are
-   dispatched on the most capable model, and tasks on the lighter one.
-2. **Given** a phase has finished, **When** the next one starts, **Then** it
-   starts in a fresh context and reads what it needs from the feature's files.
+   feature, **Then** specify, clarify, plan, checklist, analyze, review and
+   converge run on the most capable model, tasks on the lighter one, and
+   verify runs the repository's check command with no model.
+2. **Given** a phase has finished, **When** the next one starts, **Then** it is
+   a new agent with no conversation from any earlier phase, and it finds what
+   it needs in the feature's files.
 3. **Given** a checkpoint is reached, **When** no answer is given, **Then** the
-   run pauses and says how to approve or reject it; **When** the owner
+   run pauses and prints the one command that answers it; **When** the owner
    approves, **Then** the run continues from that checkpoint without redoing
    finished phases; **When** the owner rejects, **Then** the run stops.
-4. **Given** clarify has questions for the owner, **When** it runs, **Then** the
-   questions reach the owner and the answers reach the spec before plan starts.
-5. **Given** implementation and its checks are done, **When** the review runs,
-   **Then** it runs on the most capable model in a fresh context, and converge
-   repeats until a pass finds nothing above LOW; **Given** three passes have
-   run and findings above LOW remain, **Then** the run pauses for the owner
-   with those findings.
+4. **Given** clarify has questions, **When** it runs, **Then** they are written
+   with a recommended answer each to a file the run shows at a checkpoint, and
+   the owner's answers in that file reach the spec before plan starts;
+   **Given** clarify has none, **Then** that checkpoint is skipped.
+5. **Given** implementation and verify are done, **When** the review runs,
+   **Then** it is a fresh agent on the most capable model; converge repeats
+   until nothing above LOW remains; **Given** three passes have run and
+   findings above LOW remain, **Then** the run pauses for the owner with them.
 6. **Given** the Spec Kit CLI is upgraded, **When** the routed workflow next
    runs, **Then** the routing still applies without editing the upgraded
    files, or the run fails naming what it no longer finds.
+7. **Given** a repository's copy of the routed workflow is older than this
+   repository's, **When** a run starts, **Then** it stops naming the command
+   that updates the copy.
 
 ---
 
 ### User Story 2 - Implementation runs on DeepSeek, contained (Priority: P2)
 
-The implementation phase runs on DeepSeek through the pi coding agent. It can
-read and write only the feature's worktree. Its work counts as done only after
-the feature's whole test suite has passed and a fresh review on the most
-capable model has read it; the agent's own claim of success is not enough.
+The implementation phase runs on DeepSeek through the pi coding agent, in a
+disposable checkout inside a contained runtime that sees nothing else of the
+machine. Its changes come back as a patch that is judged before it lands, and
+the work counts as done only after the project's check command has passed and
+a fresh review on the most capable model has found nothing above LOW.
 
 **Why this priority**: it moves the largest share of tokens off the Claude
 subscription, but it adds a provider, a credential and a contained runtime, and
 the code leaves the machine. It is only worth having once Story 1 works.
 
 **Independent Test**: run the implementation step against a fixture feature with
-a stand-in for the external agent that tries to write inside the worktree,
-outside it, and to a guarded configuration file; read which writes landed and
-what the run reported.
+a stand-in for the external agent that tries to read and write outside its
+checkout, change and delete a guarded configuration file, and fail midway;
+read what landed in the feature's worktree, what the run reported and what it
+committed.
 
 **Acceptance Scenarios**:
 
 1. **Given** a feature with tasks, **When** the implementation step runs,
-   **Then** the external agent receives the tasks, the project's constitution
-   and the owner's test-first rules, and works only in the feature's worktree.
-2. **Given** the external agent tries to read or write outside the worktree,
-   **Then** the attempt fails and nothing outside the worktree changes.
-3. **Given** the external agent changes a lint, format, type-check or test
-   configuration file, **Then** the run fails naming the file, and the
-   tasks stay unmarked.
-4. **Given** the external agent reports success, **When** the suite fails,
-   **Then** the tasks stay unmarked and the failures go back to the external
-   agent; **Given** two such fix rounds have failed, **Then** the run pauses
-   for the owner, reporting the failing tests, and does not hand the work to a
-   Claude model on its own.
-5. **Given** the credential is missing, or the contained runtime is not
-   available, **Then** the step stops before any code is sent, naming what is
-   missing and how to provide it.
-6. **Given** a repository that has not opted in to sending its code to the
-   external provider, **Then** implementation runs on the lighter Claude model
-   instead, and the run says so.
+   **Then** the agent receives the brief defined in FR-017 and works in a
+   disposable checkout of the run's current commit.
+2. **Given** the agent tries to read or write outside its checkout, or to reach
+   a network address other than the provider's API, **Then** the attempt
+   fails and nothing outside the checkout changes.
+3. **Given** the agent's patch changes, creates or deletes a lint, format,
+   type-check or test configuration file, **Then** the run fails naming the
+   file, applies nothing, and the tasks stay unmarked.
+4. **Given** the agent reports success, **When** the check command fails,
+   **Then** the failures go back to the agent; **Given** two such fix rounds
+   have failed in one convergence pass, **Then** the run pauses for the owner,
+   who may allow one more round or stop the run.
+5. **Given** the credential is missing, the contained runtime is not available
+   or the repository has not opted in, **Then** no code is sent and the step
+   says what is missing and how to provide it.
+6. **Given** a repository that has not opted in, **Then** implementation runs
+   on the lighter Claude model under the same brief, patch judgment, verify,
+   review and loop limits, and the run says so.
+7. **Given** the agent fails, times out or is cut off midway, **Then** the
+   feature's worktree is unchanged, the disposable checkout is removed, and
+   the run can be resumed once the cause is fixed.
 
 ---
 
@@ -143,99 +159,168 @@ what landed in the commit, and what was printed.
 1. **Given** a fresh repository, **When** `sdd-init` runs, **Then** the routing
    is installed and lands in the same commit as the rest of Spec Kit.
 2. **Given** a repository that already has `.specify/`, **When** `sdd-init`
-   runs, **Then** it prints the commands that add the routing, as it does for
-   presets, and changes nothing.
+   runs, **Then** it prints the commands that add or update the routing, as it
+   does for presets, and changes nothing.
 3. **Given** a new repository, **Then** it has not opted in to the external
-   provider until the owner opts it in.
+   provider until the owner opts it in, and the opt-in instruction names the
+   provider's data terms.
 
 ### Edge Cases
 
 - The owner works interactively in a Claude session instead of starting the
   routed workflow: nothing changes there; routing applies only to routed runs.
-- A phase needs a permission the headless agent was not given: the run fails
-  naming the refused action, instead of the phase silently skipping it.
-- The external agent runs out of time, of prepaid credit, or returns an error:
-  the step fails with the provider's message and the run can be resumed after
-  the cause is fixed.
-- Two features run at once in two worktrees: each run's agent sees only its own
-  worktree.
+- A phase's agent is refused a permission it was not given: the step fails
+  naming the refused action and where the allow list is widened.
+- The external agent runs out of time or of prepaid credit, or the provider
+  returns an error or retires a model: the step fails with the provider's
+  message, nothing is applied, and the run can be resumed after the cause is
+  fixed.
+- The run is interrupted mid-step (terminal closed, machine asleep): the owner
+  is told how to continue, and which phases, if any, will run again.
+- Two features run at once: each run's agent sees only its own checkout and
+  its own tool cache.
 - The fixed cost of starting each phase cold outweighs the saving on a small
   feature: the measurement in SC-001 shows it, and the result is recorded as it
   came out.
+
+## Definitions
+
+- **The feature's files**: the feature directory `specs/<n>-<slug>/`, the
+  project's constitution, and the code committed on the feature's branch. They
+  are the only channel between phases.
+- **Outcome file**: a JSON file a step writes in the feature directory, in a
+  shape fixed by a schema the plan defines, saying what the step concluded
+  (for example passed or failed, converged or not, findings by severity). The
+  run's decisions read only outcome files that validate against their schema;
+  they never read an agent's printed text. Files meant for the owner to read
+  and answer, such as the clarify questions, are Markdown and are not outcome
+  files.
+- **Fresh agent**: a separate agent process started for one step, carrying no
+  conversation from any other step. Every step that runs a model is one,
+  review included.
+- **Severity**: CRITICAL, HIGH, MEDIUM, LOW, the scale converge and review
+  write in their outcome files. "Blocking" means any finding above LOW.
+- **Disposable checkout**: a second working copy of the repository at the
+  run's current commit, holding tracked files only, created for one
+  implementation pass and removed after it.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: A routed run MUST dispatch each Spec Kit phase on the model the
-  routing assigns to it, with no model switched by the owner by hand.
-- **FR-002**: Each phase MUST run in a fresh agent context; phases MUST hand
-  over only through the feature's files.
+- **FR-001**: A routed run MUST run each phase on the model the routing assigns
+  to it, with no model switched by the owner by hand.
+- **FR-002**: Each phase that runs a model MUST be a fresh agent; phases MUST
+  hand over only through the feature's files.
 - **FR-003**: The routing MUST be a workflow run by Spec Kit's own workflow
-  engine, and MUST NOT edit files Spec Kit installs (constitution V).
-- **FR-004**: A routed run MUST pause at a checkpoint after specify (with
-  clarify), after plan (with checklist and analyze), and before marking
-  implementation done, and MUST resume from where it paused.
-- **FR-005**: Clarification questions MUST reach the owner and the owner's
-  answers MUST be written into the spec before plan runs.
-- **FR-006**: Implementation MUST be marked done only after the project's whole
-  suite has passed and a fresh-context review on the most capable model has
-  run, whichever agent wrote the code.
-- **FR-007**: The external agent MUST be contained to the feature's worktree:
-  no read or write outside it, and no access to the owner's credentials other
-  than the one it needs.
-- **FR-008**: A change by the external agent to lint, format, type-check or
-  test configuration MUST fail the run, naming the file.
+  engine, and MUST NOT edit files Spec Kit installs (constitution V); each
+  repository's copy of it MUST change only through Spec Kit's install command.
+- **FR-004**: A routed run MUST pause for the owner at: the clarify questions
+  (when there are any), the spec, the plan with its checklist and analysis,
+  and the review before implementation is marked done; and, when a limit is
+  reached, at FR-014's and FR-015's checkpoints. Every checkpoint MUST be
+  answerable with one command without a terminal, and the run MUST resume
+  from where it paused.
+- **FR-005**: Clarify's questions MUST reach the owner in a file, each with a
+  recommended answer, and the owner's answers MUST be written into the spec
+  before plan runs.
+- **FR-006**: Tasks MUST be marked done only from the review's outcome, after
+  the owner's last checkpoint, and only when the latest verify outcome passed
+  and the review has nothing blocking; no implementing agent marks tasks.
+- **FR-007**: The external agent MUST work in a disposable checkout inside a
+  contained runtime: it MUST NOT read or write anything of the host outside
+  that checkout and its own tool cache, and MUST NOT reach any network address
+  but the provider's API and the package registries its toolchain installs
+  from.
+- **FR-008**: A patch from whichever agent implements that creates, changes or
+  deletes a lint, format, type-check or test configuration file MUST fail the
+  step, naming the file, with nothing applied. Which files count is decided by
+  the repository's existing configuration guard, not by a second list.
 - **FR-009**: The external provider's credential MUST come from the Keychain and
-  MUST NOT be written to any file in a repository or in the run's state.
+  MUST NOT appear in a command-line argument, in the environment of any host
+  process, in a file in any repository or in the disposable checkout, in an
+  image or a container's stored configuration, in the run's state or logs, or
+  in the agent's session files.
 - **FR-010**: Code MUST be sent to the external provider only from a repository
   the owner has opted in; otherwise implementation MUST run on the lighter
   Claude model and the run MUST say so.
-- **FR-011**: Every prerequisite the routed run depends on — the agent CLIs, the
-  contained runtime, the credential — MUST be declared in this repository's
-  manifests (constitution I), and a missing one MUST stop the run before the
-  phase that needs it, naming it.
+- **FR-011**: Every program the routed run depends on MUST be declared in this
+  repository's manifests (constitution I). Before the phase that needs it, a
+  run MUST stop naming any missing prerequisite and how to provide it: the
+  agent CLIs, the routing's scripts, the repository's check command, and, for
+  the external path, the contained runtime and the credential.
 - **FR-012**: `sdd-init` MUST install the routing in a fresh repository in the
-  same commit as Spec Kit, and MUST print the commands that add it to a
-  repository that already has Spec Kit.
+  same commit as Spec Kit, and MUST print the commands that add or update it
+  in a repository that already has Spec Kit.
 - **FR-013**: Each script with logic of its own that this feature adds MUST
   ship with a check in `checks/` seen red on its behaviour broken by hand
   (constitution III).
-- **FR-014**: Converge MUST stop after three passes with findings above LOW
+- **FR-014**: Converge MUST stop after three passes with blocking findings
   still open, pausing the run for the owner with those findings.
-- **FR-015**: After two failed fix rounds by the external agent, the run MUST
-  pause for the owner and MUST NOT hand the work to a Claude model unasked.
+- **FR-015**: After two failed fix rounds in one convergence pass, the run MUST
+  pause for the owner, whose options are one more round or stopping; the work
+  MUST NOT move to another agent unasked. Across a run this bounds
+  implementation to nine passes.
+- **FR-016**: Every step MUST leave its outcome in an outcome file, and the
+  run's branches MUST be decided by a deterministic reader that validates each
+  file against its schema; a missing or invalid outcome file MUST fail the
+  step, never read as a pass. No agent's output MUST be interpolated into a
+  shell command.
+- **FR-020**: Verify MUST be deterministic: it runs the repository's check
+  command and records its exit status and the failures in its outcome file,
+  with no model involved.
+- **FR-017**: The implementing agent's brief MUST name: the tasks to do, the
+  spec and the plan, the constitution, the owner's test-first rules (tests
+  from the acceptance scenarios first, seen to fail, then the simplest code;
+  no change to a check's configuration; nothing outside the tasks), and, on a
+  fix round, the latest verify outcome. Both implementing agents get the same
+  brief.
+- **FR-018**: Each implementation pass by the external agent MUST end within a
+  time limit, 30 minutes unless the owner sets another, and the run MUST
+  report the provider's spend.
+- **FR-019**: A deleted or weakened test MUST be a blocking finding of the
+  review.
 
 ### Key Entities
 
-- **Routing**: which model and which agent each phase runs on, and where the
-  checkpoints are. Lives in the repository, travels with it.
+- **Routing**: which model and which agent each phase runs on, where the
+  checkpoints are, and the loop limits. One file, copied into each repository
+  by Spec Kit.
 - **Run**: one pass of a feature through the routed workflow, with its state,
-  its pauses and the usage each phase reported.
+  its pauses and the usage each step reported.
+- **Outcome file**: see Definitions.
 - **Opt-in**: a repository's recorded consent to send its code to the external
   provider.
+- **Check command**: the one command a repository declares for verify to run.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: On the reference fixture (the `checkout` fixture of the
-  story-workers preset's Eval 002), a routed run uses at least 40% less Claude
-  subscription usage than the same feature run with every phase on the most
-  capable model, counting the Claude models' per-run cost each phase reports,
-  at list price, summed over the run. One counted run per arm; the result is
-  recorded as it comes out, whichever way. Whether the owner moves to the
-  smaller plan is decided afterwards, from a week of real usage, not here.
+- **SC-001**: On the reference fixture, a routed run uses at least 40% less
+  Claude subscription usage than the baseline run. Usage counts every attempt
+  of every Claude step, failed and resumed ones included, at list price, as
+  each reports it. The reference fixture is the `checkout` fixture of the
+  story-workers preset's Eval 002 at the commit named in the eval's record,
+  with the same prepared clarify answers in both arms. The baseline is the
+  same workflow with every Claude step on the most capable model and
+  implementation by Spec Kit's own implement command as `sdd-init` installs it
+  today. One counted run per arm; recorded as it comes out. Whether the owner
+  moves to the smaller plan is decided afterwards, from a week of real usage.
 - **SC-002**: In the same comparison, the routed run passes as many of the
-  fixture's held-out acceptance tests as the unrouted one, and its own suite is
-  green.
-- **SC-003**: In the containment probe, 0 writes outside the feature's worktree
-  land and every attempt to change a guarded configuration file fails the run.
+  fixture's held-out acceptance tests as the baseline, and its own check
+  command passes.
+- **SC-003**: The containment probe attempts, from inside the agent's runtime:
+  reading the owner's SSH keys, the Keychain and another repository; writing
+  to the feature's worktree outside the patch, to the home directory and to
+  another repository; and reaching a network address other than the
+  provider's. All of them fail, and nothing on the host changes.
 - **SC-004**: With the credential missing, the runtime unavailable or the
-  repository not opted in, 0 bytes of code are sent to the external provider,
-  and the owner is told what is missing in the step's output.
-- **SC-005**: Starting a feature takes the owner one command, and each
-  checkpoint one answer; the owner never types a model name.
+  repository not opted in, nothing is sent to the external provider, and the
+  owner is told what is missing in the step's output.
+- **SC-005**: Starting a feature takes the owner one command; each checkpoint
+  takes one approval, plus writing the answers in the clarify file at that
+  checkpoint; the owner never types a model name.
 - **SC-006**: Every check this feature adds has been seen red with the
   behaviour it guards broken by hand.
 
@@ -244,16 +329,24 @@ what landed in the commit, and what was printed.
 - "Most capable model" is Claude Opus and "lighter model" is Claude Sonnet,
   both through the owner's Claude subscription; the external provider is
   DeepSeek (V4 Flash by default) through its own prepaid API key, reached
-  through the pi coding agent. The names are the owner's choice of 2026-10-21
-  and are expected to change.
+  through the pi coding agent. The names, and the versions the plan pins, are
+  the owner's choice of 2026-10-21 and move only by a deliberate edit to this
+  repository; a retired model or a moved pin surfaces as a failed step naming
+  it, not as a silent change.
 - The routed workflow is an addition: the interactive way of running Spec Kit
   phases in one Claude session stays as it is.
-- The story-workers preset (Sonnet subagents per phase inside one session)
-  stays installed; a routed run's implementation step replaces what it does for
-  that run only. Whether to keep it afterwards is decided from SC-001's result.
+- A routed run never calls Spec Kit's implement command, so the story-workers
+  preset, which extends that command, takes no part in a routed run; it stays
+  installed for interactive sessions. Whether to keep it is decided from
+  SC-001's result.
 - Opt-in to the external provider is per repository and off by default: code
   from private repositories such as `renta` or `tli` leaves the machine only
-  by the owner's explicit choice.
+  by the owner's explicit choice. What the provider retains is governed by its
+  own terms, which this feature names but cannot change.
+- That the implementing agent follows the test-first rules in its brief is an
+  assumption, not a guarantee: the final patch cannot show whether a test was
+  seen to fail first. SC-002's held-out tests and FR-019's review are what
+  measure the result; the order of work is not measured.
 - The 40% target in SC-001 is the owner's goal (Pro is a fifth of Max 5x's
   allowance) discounted for what routing cannot move: the judgment phases stay
   on the most capable model.

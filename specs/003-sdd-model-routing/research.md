@@ -3,79 +3,85 @@
 Decisions for `003-sdd-model-routing`, each with what was observed and what
 lost. Probes ran on 2026-10-21 against Spec Kit 1.1.3 (`specify version`) in
 throwaway repositories under the session scratchpad, with a stand-in `claude`
-that records its arguments unless stated otherwise.
+that records its arguments unless stated otherwise. "Pending" marks a claim
+the first implementation tasks still have to observe on this machine.
 
 ## R1 — A workflow of our own on Spec Kit's engine, not an overlay
 
 **Decision**: one workflow file, `sdd-routed`, installed per repository with
-`specify workflow add`, run with `specify workflow run sdd-routed`.
+`specify workflow add`, run through `sdd-run` (R8).
 
 **Observed**: an overlay on the built-in `speckit` workflow composes and routes
 (`replace` of `specify` with `model: opus` dispatched
 `claude -p "/speckit-specify …" --model opus`). But the base has four command
-steps and two gates, and routing replaces all four and adds clarify,
-checklist, analyze, verify, review and converge; and overlays "cannot add new
-inputs" (docs/reference/workflows.md, "Limitations"), which the gate verdicts
-of R3 need.
+steps and two gates, routing replaces all four and adds a dozen steps, and
+overlays "cannot add new inputs" (docs/reference/workflows.md,
+"Limitations"), which every gate's verdict needs (R3).
 
-**Alternatives**: the overlay — kept nothing of the base it tracks, and cannot
-declare inputs. A preset carrying `model:` per command — the frontmatter is
-dropped from the generated skill (probe: `model: opus`, `effort: high` absent
-from `.claude/skills/speckit-plan/SKILL.md`), and upstream declined
-per-command models (github/spec-kit#1287, "Your coding agent is in
-control"). Skill frontmatter `model:` inside one session — the switch lasts
+**Alternatives**: the overlay — kept nothing of the base, and cannot declare
+inputs. A preset carrying `model:` per command — dropped from the generated
+skill (probe: `model: opus`, `effort: high` absent from
+`.claude/skills/speckit-plan/SKILL.md`); upstream declined per-command models
+(github/spec-kit#1287). Skill frontmatter `model:` inside one session — lasts
 for the rest of the turn and rewrites the conversation into the new model's
 prompt cache; per-step processes avoid both.
 
-## R2 — Each phase is a headless Claude process on its model
+## R2 — Each judgment phase is a headless Claude process on its model
 
-**Decision**: `command` steps with `integration: claude` and `model: opus` or
-`model: sonnet`. Spec Kit runs `claude -p <prompt> --model <m> --output-format
-json` (`integrations/base.py`, `build_exec_args`).
+**Decision**: `command` steps with `integration: claude` and `model: opus`
+(specify, clarify, plan, checklist, analyze, converge) or `model: sonnet`
+(tasks); `prompt` steps on `opus` for review. Spec Kit runs `claude -p
+<prompt> --model <m> --output-format json` (`integrations/base.py`,
+`build_exec_args`). Verify runs no model (R10).
 
 **Cost of the fresh start**: the median first turn of a session over the last
 28 days carried 43,040 tokens of context (507 sessions, local transcripts).
-Paid once per phase; SC-001 measures whether it outweighs the saving.
+Paid once per step; SC-001 measures whether it outweighs the saving.
 
-## R3 — Clarify's questions go to a file and a gate
+## R3 — Every checkpoint is a gate with a verdict input
 
 **Observed**: a `shell` step gets no terminal (probe: `[ -t 0 ]` false, `read`
-got an empty line, stdout captured into `state.json`), so an interactive
-clarify cannot run inside a step. A gate with no verdict input pauses when
-there is no TTY and prompts when there is one (docs, "Gate Verdict Inputs").
+got an empty line, stdout captured into `state.json`). A gate with no verdict
+input pauses without a TTY, and a bound verdict input set on resume decides it
+(docs, "Gate Verdict Inputs").
 
-**Decision**: `clarify-ask` (Opus) is told through its arguments to write its
-questions, each with options and its recommendation, to
-`<feature>/clarify-questions.md` and not to edit the spec; the gate
-`answer-clarify` shows that file (`show_file`); the owner writes answers in it
-and approves; `clarify-apply` (Opus) runs clarify again with "the answers are
-in clarify-questions.md; ask nothing". An empty file (no questions) skips the
-gate through an `if` step.
+**Decision**: every gate binds a verdict input declared by the workflow,
+`enum: ["", <its options>]`, default `""`, so `sdd-run resume <id> <verdict>`
+answers any of them (FR-004). Clarify's questions go to
+`<feature>/clarify-questions.md` (Markdown, for the owner); `clarify-ask` is
+told through its arguments to write them there with a recommendation each and
+to edit nothing else, and to write `clarify.json` saying how many it wrote;
+the gate `answer-clarify` shows the file (`show_file`); `clarify-apply` runs
+clarify again with "the answers are in clarify-questions.md; ask nothing".
 
-**Alternatives**: run clarify outside the workflow by hand — the owner would
-pick a model by hand (SC-005). Verdict inputs carrying the answers — a gate
-verdict must match one of its options, so free answers do not fit.
+**Pending**: the semantics of a gate's non-approve options (`retry` for
+`fix-stuck`, R10) are read from the engine's code and observed in the first
+task, before the workflow relies on them.
+
+**Alternatives**: clarify by hand outside the workflow — the owner would pick a
+model by hand (SC-005). Answers as a verdict — a verdict must match one of the
+gate's options, so free answers do not fit.
 
 ## R4 — Headless permissions fail closed
 
-**Decision**: the launcher (R8) sets
+**Decision**: `sdd-run` sets
 `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--permission-mode dontAsk --settings
-<routing settings>"`, the routing settings holding an explicit `allow` list:
-the file tools, `.specify/scripts/bash/*`, read-only git, and the project's
-check command for `verify`. Anything else is refused, and the refusal is in
-the JSON result's `permission_denials` (field name from memory of the CLI's
-output, **not yet observed on this version**: the first implementation task
-confirms it), which the run reports (spec, edge
-case "a permission the headless agent was not given").
+<routing-settings.json>"`, whose `allow` list holds the file tools,
+`.specify/scripts/bash/*` and read-only git. Since verify runs no model (R10),
+no Claude phase needs a project's check command, so one machine-wide list
+serves every repository.
+
+**Pending**: what a denied tool looks like in `-p` output on this CLI (a
+`permission_denials` field is expected, not yet observed) and whether the step
+exits non-zero. The first task observes it; the step must fail naming the
+refused tool, and `docs/sdd-routing.md` says where to widen the list.
 
 **Why not**: `bypassPermissions` — refused by this machine's
 `disableBypassPermissionsMode`. `auto` — a classifier decides; in the T3 Code
 spike of 2026-10-18 an Auto mode accepted `config-guard`'s ask on `ruff.toml`
 (sdd-decisions). `acceptEdits` alone — leaves Bash to the empty allowlist,
 which in `-p` refuses every script Spec Kit's phases run. The env var is per
-run, not per step (`_apply_extra_args_env_var`), so one allow list covers
-every Claude phase; the narrower per-step list would need `shell` steps
-calling `claude` directly, losing the native dispatch.
+run, not per step (`_apply_extra_args_env_var`).
 
 ## R5 — Apple's `container` as the contained runtime
 
@@ -84,85 +90,155 @@ containers using lightweight virtual machines"), declared in the `Brewfile`.
 
 **Why**: one lightweight VM per container (Virtualization.framework), so the
 agent is behind a kernel boundary of its own rather than a namespace in a
-shared VM; a Homebrew formula, open source, no desktop app or daemon licence;
-this machine is macOS on Apple Silicon (constitution, preamble), which is all
-it supports. **Not yet verified here**: the first implementation task runs
-`container system start` and a throwaway container on this machine before
-anything is built on it.
+shared VM; a Homebrew formula, open source, no desktop app or daemon licence.
+
+**Pending**: the macOS version it requires (`brew info` printed none), whether
+its networking can restrict egress to named hosts (FR-007), and a throwaway
+container run on this machine. The first task settles all three; if egress
+cannot be restricted by the runtime, the decision is reopened before anything
+is built on it, not worked around.
 
 **Alternatives**: Docker Desktop — installed on this machine but declared in
-no `Brewfile` (drift, reported separately), a shared VM for every container,
-and a commercial licence above a company size. OrbStack — proprietary, paid
-for commercial use. colima — a shared Lima VM, the same isolation as Docker
-Desktop with more moving parts. pi's own sandbox extension — runs in pi's
-process on the host, the boundary is the agent's own code.
+no `Brewfile` (drift, reported separately), one shared VM for every container,
+a commercial licence above a company size. OrbStack — proprietary, paid for
+commercial use. colima — a shared Lima VM. pi's own sandbox extension — runs
+in pi's process on the host, so the boundary is the agent's own code.
 
-## R6 — The worker image and what it is given
+## R6 — A disposable checkout, mounted alone
 
-**Decision**: `containers/pi-worker/Containerfile` in this repository, from a
-digest-pinned Node 26 base, installing `@earendil-works/pi-coding-agent@1.3.0`
-(`npm view` 2026-10-21: 1.3.0; `@mariozechner/pi-coding-agent` deprecated in
-its favour), mise and uv, and DeepSeek's provider entry for pi's
-`models.json` (DeepSeek's "pi mono" integration page: `openai-completions`
-API at `https://api.deepseek.com`, models `deepseek-v4-flash` and
-`deepseek-v4-pro`). The image is tagged with the Containerfile's hash and built
-by the runner when that tag is missing, so it is a cache of a declared file,
-not machine state (constitution IV).
+**Decision**: for each implementation pass, `sdd-step implement` creates a
+detached git worktree of the run's current commit in a temporary directory —
+tracked files only, so no untracked `.env` or ignored secret reaches the agent
+— and mounts it alone at `/work`. Afterwards it takes the pass's changes as a
+patch (`git diff --binary` plus new files), judges it (R7), applies it to the
+feature's worktree, commits, and removes the checkout. A pass that fails,
+times out or crashes leaves the feature's worktree untouched, so resume finds
+it clean (US2 AS7).
 
-**What the container sees**: the feature's worktree at `/work`, read-write,
-and nothing else from the host; a named volume for mise's tool cache. The
-credential enters on the container's stdin, read once by the entrypoint into
-the agent's environment, so it never lands in a file, an image layer, a
-container's stored configuration or the run's state (FR-009).
+**Tool cache**: a volume per run, `sdd-cache-<run_id>`, removed when the run
+completes, so concurrent runs share no writable state. Ceiling: each run
+installs its toolchain afresh; if that takes long enough to matter, a
+read-only shared cache populated on the host is the next step.
 
-**Git stays on the host**: a worktree's `.git` is a file pointing outside the
-mount, so the worker gets no git; the runner takes the baseline, the diff and
-the commits on the host.
+**Image**: `containers/pi-worker/Containerfile`, digest-pinned Node 26 base,
+`@earendil-works/pi-coding-agent@1.3.0` (`npm view` 2026-10-21; the
+`@mariozechner` package is deprecated in its favour), mise and uv, and
+DeepSeek's provider entry for pi's `models.json` (DeepSeek's "pi mono" page:
+`openai-completions` at `https://api.deepseek.com`, `deepseek-v4-flash`,
+`deepseek-v4-pro`). Tagged with the Containerfile directory's hash and built
+when the tag is missing: a cache of a declared file (constitution IV).
+
+**Credential**: written to the container's stdin, read once by the entrypoint
+into pi's environment inside the VM; pi's session directory is outside `/work`
+and inside the VM, discarded with it (FR-009).
+
+**Git stays on the host**: the worker gets no git; baseline, patch and commit
+are taken on the host.
 
 ## R7 — Guarded configuration, one source of truth
 
-**Decision**: after the worker exits, the runner feeds each changed file to
-`claude/config-guard.sh` as the `Write` tool call that would have produced it;
-an `ask` from the guard fails the step naming the file (FR-008).
+**Decision**: each path the patch creates, changes or deletes is passed to
+`claude/config-guard.sh` as the `Write` call that would produce its new
+content (empty for a deletion); an `ask` fails the step naming the path, with
+nothing applied (FR-008). **Pending**: that the guard asks on an empty `Write`
+to a whole-file config and on a `pyproject.toml` that loses a checker table;
+the check for R7 drives both.
 
-**Alternatives**: a second list of patterns in the runner — two lists that
-drift apart; the guard's own header names `pyproject.toml`'s `[tool.*]`
-tables as the reason it is not a list of file names.
+**Alternatives**: a second list of patterns — two lists that drift apart; the
+guard's own header names `pyproject.toml`'s `[tool.*]` tables as the reason it
+is not a list of file names.
 
-## R8 — A launcher, `sdd-run`
+## R8 — `sdd-run` and `sdd-step`
 
-**Decision**: `bin/sdd-run.sh`, linked as `sdd-run`, is what the owner types:
-it checks the prerequisites (FR-011), sets the extra arguments of R4, and
-execs `specify workflow run sdd-routed -i spec=…`, or `resume` with a run id.
-Logic of its own, so it ships with a check (constitution III).
+**Decision**: two scripts, each with checks (constitution III). `sdd-run` is
+what the owner types: prerequisites, the permission arguments of R4, the
+workflow copy's version against this repository's, then `specify workflow
+run` or `resume`, and `usage`. `sdd-step` is what the workflow's `shell` steps
+call: `route`, `verify`, `implement` and `outcome` (R10), so every decision the
+run takes is a deterministic command with checks of its own.
 
-## R9 — Opt-in is local git config
+## R9 — Opt-in and check command are local git config
 
 **Decision**: `git config --local sdd.implement deepseek` opts a repository
-in; absent, implementation runs on Sonnet through `speckit.implement` (FR-010).
+in; `git config --local sdd.check "<command>"` declares its check command.
+`sdd-run start` stops before any phase when `sdd.check` is absent, naming the
+command that sets it (FR-011). The opt-in instruction `sdd-step route` prints
+names DeepSeek's terms of service and privacy policy (US3 AS3).
 
-**Why local, not versioned**: consent is this owner's, on this machine, with
-this credential. A versioned flag would opt in every clone of a public
-repository, and would be a change to review in every repository that adopts
-it.
+**Why local, not versioned**: the opt-in is this owner's consent, on this
+machine; a versioned flag would opt in every clone of a public repository.
+The check command is a fact about the project and could be versioned, but
+there is no file every repository already has that holds it in a
+machine-readable way, and inventing one per repository is a convention for
+one consumer; local config keeps both settings in one place.
 
-## R10 — Verify, review and converge
+## R10 — Outcome files, validated; verify without a model
 
-**Decision**: after the worker, `verify` (Sonnet) runs the project's one check
-command and writes `PASS` or `FAIL` and the failures; a `do-while` sends
-failures back to the worker at most twice (FR-015), then a gate. `review`
-(Opus) reads the diff in a fresh process. `converge` (Opus) runs in a
-`do-while` of at most three passes (FR-014), stopping when its output says
-converged.
+**Decision**: every step writes `<feature>/.sdd/<step>.json`, validated against
+`claude/speckit/schemas/<step>.schema.json` by `sdd-step outcome <step>`, which
+prints a fixed token the workflow's `if` and `do-while` conditions compare
+(`pass`/`fail`, `converged`/`open`, `yes`/`no`) and exits non-zero on a
+missing or invalid file (FR-016). Verify is `sdd-step verify`: it runs
+`sdd.check`, and writes the exit status and the tail of its output (FR-020).
+Review and converge are told through their arguments to write their outcome
+file with findings by severity.
+
+**Source**: proposed by the owner, checked against Anthropic's engineering
+posts. "How we built our multi-agent research system": "Subagent output to a
+filesystem to minimize the 'game of telephone'". "Effective harnesses for
+long-running agents": state in `claude-progress.txt`, a JSON feature list and
+git; JSON because "the model is less likely to inappropriately change or
+overwrite JSON files compared to Markdown files"; a feature marked passing
+only after testing, and editing or removing tests unacceptable.
+
+**Validator**: `check-jsonschema` (python-jsonschema's CLI), declared in
+`uv-tools.txt` — a new dependency, approved by the owner on 2026-10-21
+together with `container` and the worker image's contents. The
+alternative, a hand-written stdlib check per outcome, makes the schema code
+instead of a contract another tool can read.
+
+**Rejected**: Claude Code's `--json-schema`, which constrains the output as it
+is generated and so is stronger than validating after; Spec Kit passes extra
+arguments per run, not per step (R4), so each step cannot get its own schema.
+Reopen if Spec Kit adds per-step integration arguments for Claude.
+
+**Loops**: `build` (convergence, at most three passes, FR-014) holds
+`fix-loop` (one attempt and at most two fix rounds, FR-015), so a run makes at
+most nine implementation passes. `fix-stuck` offers `retry` (one more round)
+and `abort`.
 
 **Observed**: a `shell` step exiting non-zero fails the whole run, so loop
-conditions read step output, not exit codes (probe: `do-while` with an
-exit-code condition ended `failed` on the first pass).
+conditions read `sdd-step outcome`'s printed token, and a non-zero exit is kept
+for what must stop the run (probe: a `do-while` on an exit-code condition
+ended `failed` on its first pass).
 
 ## R11 — Measuring SC-001
 
 **Decision**: each Claude step's JSON result carries `total_cost_usd` and
-`modelUsage`; it lands in the run's `state.json` (probe: step `output` holds
-`stdout`). `bin/sdd-run.sh usage <run_id>` sums it per model. The eval runs on
-the story-workers repository's `checkout` fixture, one arm routed and one arm
-with every step on Opus and implementation through `speckit.implement`.
+`modelUsage`, captured in the run's `state.json` (probe: step `output` holds
+`stdout`). `sdd-run usage <run_id>` sums every attempt per model, failed and
+resumed ones included, and the provider's tokens from the worker's outcomes.
+**Pending**: that a failed or resumed step's earlier attempt is still in
+`state.json` or `log.jsonl`; the first task observes it, and if it is not,
+`sdd-run` records each attempt's result itself before resuming.
+
+## R12 — Interrupted runs and stale copies
+
+**Interrupted**: Spec Kit 1.1.3 says a `running` run is not resumable, and its
+code has no handling for a process that died (grep of `workflows/` for a stale
+or orphaned run: nothing). **Pending**: the first task kills a run mid-step
+and records what `state.json` holds; `sdd-run` then either resumes it through
+the engine or tells the owner which phases a new run would redo — never by
+editing Spec Kit's state files.
+
+**Stale copy**: the workflow's `version` field is compared by `sdd-run` with
+this repository's file; a mismatch stops the run, naming the `specify workflow
+add` command that replaces the copy (US1 AS7).
+
+## R13 — Time and spend
+
+**Decision**: `sdd-step implement` ends a pass after 30 minutes
+(`sdd.implementTimeout` overrides it), stopping the container; the provider's
+prepaid balance is the hard ceiling; each worker outcome records pi's reported
+tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has
+no `timeout`; the limit is the script's own, around `container stop`.
