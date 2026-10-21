@@ -10,8 +10,9 @@ offline against stand-ins; the last two need the real services.
    `--model` and the prompt of each call and writes canned outcome files.
    Expected: specify, clarify, plan, checklist, analyze, review and converge
    on `claude-opus-5-5`, tasks on `claude-sonnet-5-5`, verify calling no model;
-   in that order; and every call carrying `--permission-mode dontAsk`,
-   `--settings` and `--output-format json`, with the engine's run id equal to
+   in that order; and every call carrying its row's `--effort`, its profile's
+   `--settings`, `--permission-mode dontAsk`, `--strict-mcp-config` with no
+   server, `--output-format json`, and `--json-schema` where the row has one, with the engine's run id equal to
    `SPECKIT_WORKFLOW_RUN_ID` and each Claude step's output in `state.json`
    (FR-025).
 2. **Gates** (US1 AS3, FR-004): with no TTY the run pauses at each gate;
@@ -43,7 +44,8 @@ offline against stand-ins; the last two need the real services.
 11. **Containment** (US2 AS2, SC-003): with the real `container`, a probe image
     tries to read `~/.ssh`, the Keychain and another repository, to write the
     home directory, another repository and the feature's worktree, and to
-    reach a host outside `egress.txt`. All fail; nothing on the host
+    reach a host outside `egress.txt` after the firewall is up, and as the
+    `node` user to change the firewall. All fail; nothing on the host
     changes.
 12. **SC-001 and SC-002**: on story-workers' eval harness, with the routed
     and baseline arms its own feature adds (spec SC-001); the result is that

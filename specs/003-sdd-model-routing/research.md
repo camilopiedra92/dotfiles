@@ -28,20 +28,46 @@ skill (probe: `model: opus`, `effort: high` absent from
 for the rest of the turn and rewrites the conversation into the new model's
 prompt cache; per-step processes avoid both.
 
-## R2 — Each judgment phase is a headless Claude process on its model
+## R2 — Every agent step goes through one dispatcher and a routing table
 
-**Decision**: `command` steps with `integration: claude` and `model:
-claude-opus-5-5` (specify, clarify, plan, checklist, analyze, converge) or
-`claude-sonnet-5-5` (tasks); a `prompt` step on Opus for review. Full ids,
-not the `opus`/`sonnet` aliases, so a model changes only by an edit here;
-the ids are those this CLI reports today (session environment, 2026-10-21). Spec Kit runs `claude -p
-<prompt> --model <m> --output-format json` (`integrations/base.py`,
-`build_exec_args`). Verify runs no model (R10).
+**Decision**: Spec Kit's workflow engine orchestrates — order, checkpoints,
+loops, resume, run state — and every step that runs an agent is a `shell`
+step calling `sdd-step agent <phase>`. The dispatcher reads one declarative
+table, `claude/speckit/routing.yml`, with a row per phase: `agent`
+(`claude` or `pi`), `model` (full id), `effort`, `profile` (the permissions
+and context the step gets, R4, R16), `schema` (for steps whose result is
+structured, R10) and `timeout`. It runs `claude -p "/speckit-<phase> …"`
+with that row's flags, or the pi worker for implementation (R5, R6).
 
-**Cost of the fresh start**: the median first turn of a session over the last
-28 days carried 43,040 tokens of context (507 sessions, local transcripts).
-Paid once per step; SC-001 measures whether it outweighs the saving.
+**Observed** (Spec Kit 1.2.2, `integrations/base.py`,
+`validate_runtime_config`): the Claude integration does not override it, so a
+`command` step with `integration_args` or `integration_options` is refused
+("does not support per-step 'integration_args'"); a Claude `command` step
+can set its model and nothing else, and every other flag is per run
+(`SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`). Effort, permissions, context and
+output schema per step therefore cannot come from native `command` steps on
+this version. No upstream issue or pull request asks for it (searched
+2026-10-21).
 
+**Why this is not a workaround**: a `shell` step is the engine's supported
+primitive for running a command, and the dispatcher reimplements only the
+part of Spec Kit's dispatch this feature needs (`claude -p <prompt> <flags>`,
+`integrations/base.py`, about ten lines), under checks of its own. **Reopen**:
+when Spec Kit's Claude integration accepts per-step arguments, the agent
+steps go back to native `command` steps with the table's values as
+`integration_args`.
+
+**Alternatives**: native `command` steps — model per step only (above).
+One interactive session with judgment phases in it and only implement
+scripted (the independent audit's smaller design, 2026-10-21) — fewer parts
+and no cold start per phase, but no per-step model, effort or permissions, the
+owner's stated requirement; the cold start it avoids is measured in R16 and
+mostly cached away. A per-phase Claude Code subagent — fixed model per agent
+definition, but no effort, schema or permission profile per call, and it
+runs inside a session the workflow cannot checkpoint.
+
+Full ids, not the `opus`/`sonnet` aliases ("To pin to a specific version,
+use the full model name", code.claude.com model-config).
 ## R3 — Every checkpoint is a gate with a verdict input
 
 **Observed**: a `shell` step gets no terminal (probe: `[ -t 0 ]` false, `read`
@@ -66,97 +92,100 @@ task, before the workflow relies on them.
 model by hand (SC-005). Answers as a verdict — a verdict must match one of the
 gate's options, so free answers do not fit.
 
-## R4 — Headless permissions fail closed
+## R4 — Headless permissions fail closed, one profile per step
 
-**Decision**: `sdd-run` sets
-`SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--permission-mode dontAsk
---output-format json --settings <routing-settings.json>"` (`--output-format`:
-R11), whose `allow` list holds the file tools,
-`.specify/scripts/bash/*` and read-only git. Since verify runs no model (R10),
-no judgment phase needs a project's check command, so one machine-wide list
-serves every phase but one: the lighter model's implementation pass (R6),
-whose settings add `Bash(<sdd.check>)` and limit `Edit` and `Write` to its
-checkout, composed per pass by `sdd-step implement`.
+**Decision**: every Claude step runs with `--permission-mode dontAsk` and
+the `--settings` file its routing row names — a profile in
+`claude/speckit/profiles/`. `judgment` (specify to analyze, tasks, converge)
+allows the file tools, `.specify/scripts/bash/*` and read-only git; `review`
+allows reading and nothing that writes; `implement-sonnet` allows the file
+tools limited to its checkout and `Bash(<sdd.check>)`, composed per pass by
+`sdd-step implement`. A denied call is denied, not asked, so an unattended
+step never waits and never does what its profile does not allow.
 
-**Pending**: what a denied tool looks like in `-p` output on this CLI (a
-`permission_denials` field is expected, not yet observed) and whether the step
-exits non-zero. The first task observes it; the step must fail naming the
-refused tool, and `docs/sdd-routing.md` says where to widen the list.
+**Observed in the docs** (code.claude.com, headless, read 2026-10-21):
+`dontAsk` "denies every call that would otherwise prompt, which is useful for
+locked-down CI runs", and denials are listed in the result's
+`permission_denials`. **Pending**: that a denial makes the step exit
+non-zero on this CLI version; the first task observes it, and the dispatcher
+fails the step naming the refused tool either way.
 
 **Why not**: `bypassPermissions` — refused by this machine's
 `disableBypassPermissionsMode`. `auto` — a classifier decides; in the T3 Code
 spike of 2026-10-18 an Auto mode accepted `config-guard`'s ask on `ruff.toml`
-(sdd-decisions). `acceptEdits` alone — leaves Bash to the empty allowlist,
-which in `-p` refuses every script Spec Kit's phases run. The env var is per
-run, not per step (`_apply_extra_args_env_var`).
+(sdd-decisions). One allow list for every step — wider than any one step
+needs (least privilege); possible only while flags were per run (R2).
+## R5 — The worker's runtime: a container with a deny-by-default firewall
 
-## R5 — Apple's `container` as the contained runtime
+**Decision**: pi runs in a Linux container built on Anthropic's reference
+devcontainer pattern (`anthropics/claude-code/.devcontainer`, read
+2026-10-21): an `ipset` of allowed domains, `iptables -P OUTPUT DROP`, a
+`REJECT` for everything else, the `NET_ADMIN` and `NET_RAW` capabilities
+granted only for the firewall script that runs at start, and the agent as the
+non-root user `node`. The allowed domains are `containers/pi-worker/egress.txt`:
+DeepSeek's API host and the registries the toolchain installs from.
 
-**Decision**: Apple's `container` (Homebrew formula `container`, 1.5.0, "Linux
-containers using lightweight virtual machines"), declared in the `Brewfile`.
+**Why the firewall lives in the container, not the runtime**: Apple's
+`container` documents isolation between networks but no egress allow list
+(`docs/networking.md`, read 2026-10-21), so the runtime alone cannot meet
+FR-007; the reference pattern enforces it inside the container on any runtime
+that grants `NET_ADMIN`, which is the published way to do it.
 
-**Why**: one lightweight VM per container (Virtualization.framework), so the
-agent is behind a kernel boundary of its own rather than a namespace in a
-shared VM; a Homebrew formula, open source, no desktop app or daemon licence.
+**Runtime**: Apple `container` (Homebrew formula, one VM per container) if it
+grants `NET_ADMIN` and its kernel has netfilter; otherwise colima (Homebrew
+formula, open source, a Lima VM) with the Docker CLI. **Pending**: the first
+task tries the firewall script under Apple `container` and records the
+result; colima is the fallback, decided by that observation, not assumed.
+Docker Desktop, found installed and undeclared, is not used: it is drift on
+this machine and carries a commercial licence above a company size.
 
-**Egress**: the allow list is `containers/pi-worker/egress.txt` — DeepSeek's
-API host and the registries the image's toolchain installs from (npm, PyPI,
-mise's sources) — one file the spec's three mentions all point to.
-
-**Pending**: the macOS version it requires (`brew info` printed none), whether
-its networking can restrict egress to the hosts in that file (FR-007), and a throwaway
-container run on this machine. The first task settles all three; if egress
-cannot be restricted by the runtime, the decision is reopened before anything
-is built on it, not worked around.
-
-**Alternatives**: Docker Desktop — installed on this machine but declared in
-no `Brewfile` (drift, reported separately), one shared VM for every container,
-a commercial licence above a company size. OrbStack — proprietary, paid for
-commercial use. colima — a shared Lima VM. pi's own sandbox extension — runs
-in pi's process on the host, so the boundary is the agent's own code.
-
+**Alternatives**: Claude Code on DeepSeek's Anthropic-compatible endpoint
+inside Claude Code's own sandbox — measured in the spike of 2026-10-21 (R17)
+at equal quality, but Anthropic "doesn't support routing Claude Code to
+non-Claude models through any gateway" (code.claude.com, llm-gateway), so it
+may break in any release; its sandbox also covers shell commands only, not
+the file tools. pi's own sandbox extension — runs in pi's process, so the
+boundary is the agent's own code. A proxy written here in front of Apple
+`container` — a component of our own where a published pattern exists.
 ## R6 — A disposable checkout, mounted alone
 
 **Decision**: for each implementation pass, `sdd-step implement` commits the
-feature directory, then creates a detached git worktree of that commit in a temporary directory —
-tracked files only, so no untracked `.env` or ignored secret reaches the agent
-— and mounts it alone at `/work`. Afterwards it takes the pass's changes as a
-patch (`git diff --binary` plus new files), judges it (R7), applies it to the
-feature's worktree, commits, and removes the checkout. A pass that fails,
-times out or crashes leaves the feature's worktree untouched, so resume finds
-it clean (US2 AS7). The Sonnet path uses the same checkout, judgment and time limit,
-running `claude -p` on the host in it rather than in the VM: Claude is under
-the headless permissions of R4 plus `Bash(<sdd.check>)`, so it can see its
-tests fail (FR-023), and no code leaves for a new provider; its JSON result
-goes into `implement.json` for `sdd-run usage`. Every
-checkout, container and volume is labelled with its run id, so `sdd-step
-cleanup` can remove what a killed pass left.
+feature directory, then creates a detached git worktree of that commit in a
+temporary directory — tracked files only, so no untracked `.env` or ignored
+secret reaches the agent — and mounts it alone at `/work`. Afterwards it takes
+the pass's changes as a patch (`git diff --binary` plus new files), judges it
+(R7), applies it to the feature's worktree, commits, and removes the
+checkout. A pass that fails, times out or crashes leaves the feature's
+worktree untouched, so resume finds it clean (US2 AS7). The Sonnet path uses
+the same checkout, judgment and time limit, running `claude -p` on the host
+in it under the `implement-sonnet` profile (R4); no code leaves for a new
+provider, and its JSON result goes into `implement.json`. Every checkout,
+container and volume is labelled with its run id, so `sdd-step cleanup` can
+remove what a killed pass left.
 
 **Tool cache**: a volume per run, `sdd-cache-<run_id>`, removed when the run
 completes, so concurrent runs share no writable state. Ceiling: each run
 installs its toolchain afresh; if that takes long enough to matter, a
 read-only shared cache populated on the host is the next step.
 
-**Image**: `containers/pi-worker/Containerfile`, digest-pinned Node 26 base,
+**Image**: `containers/pi-worker/Containerfile`, digest-pinned Node base,
 `@earendil-works/pi-coding-agent@1.3.0` (`npm view` 2026-10-21; the
-`@mariozechner` package is deprecated in its favour), mise and uv, and
-DeepSeek's provider entry for pi's `models.json` (DeepSeek's "pi mono" page:
-`openai-completions` at `https://api.deepseek.com`, models
-`deepseek-v4-flash` and `deepseek-v4-pro`). **Corrected 2026-10-21**: the API
-itself lists `deepseek-flash` and `deepseek-v4-pro` (`GET /models` with the
-owner's key, HTTP 200), so the page's `deepseek-v4-flash` is not an id it
-serves; `models.json` uses the ids `/models` returns, and the first
-implementation task checks them against `/models` again before a run relies on
-them. Tagged with the Containerfile directory's hash and built
-when the tag is missing: a cache of a declared file (constitution IV).
+`@mariozechner` package is deprecated in its favour), mise, uv, `iptables` and
+`ipset`, the firewall script of R5 and a non-root `node` user; DeepSeek's
+provider entry for pi's `models.json` from DeepSeek's "pi mono" page with the
+id the API serves: `GET /models` with the owner's key lists `deepseek-flash`
+and `deepseek-v4-pro` (HTTP 200, 2026-10-21), not the page's
+`deepseek-v4-flash`, and the spike of R17 ran on `deepseek-flash`. Tagged with
+the Containerfile directory's hash and built when the tag is missing: a cache
+of a declared file (constitution IV).
 
 **Credential**: written to the container's stdin, read once by the entrypoint
-into pi's environment inside the VM; pi's session directory is outside `/work`
-and inside the VM, discarded with it (FR-009).
+into pi's environment inside the container, after the firewall is up; pi's
+session directory is outside `/work` and discarded with the container
+(FR-009). Observed in R17's spike: `read -r` from stdin, no file, no argument.
 
 **Git stays on the host**: the worker gets no git; baseline, patch and commit
 are taken on the host.
-
 ## R7 — Guarded configuration, one source of truth
 
 **Decision**: each path the patch creates, changes or deletes is passed to
@@ -173,10 +202,10 @@ is not a list of file names.
 ## R8 — `sdd-run` and `sdd-step`
 
 **Decision**: two scripts, each with checks (constitution III). `sdd-run` is
-what the owner types: prerequisites, the permission arguments of R4, the
+what the owner types: prerequisites, the run id, the
 workflow copy's version against this repository's, then `specify workflow
 run` or `resume`, and `usage`. `sdd-step` is what the workflow's `shell` steps
-call: `route`, `verify`, `implement`, `outcome`, `mark` and `cleanup` (R10, R6), so every decision the
+call: `agent` (R2), `route`, `verify`, `implement`, `outcome`, `save-analysis`, `phase-done`, `mark` and `cleanup` (R10, R6), so every decision the
 run takes is a deterministic command with checks of its own.
 
 ## R9 — Opt-in and check command are local git config
@@ -219,10 +248,13 @@ together with `container` and the worker image's contents. The
 alternative, a hand-written stdlib check per outcome, makes the schema code
 instead of a contract another tool can read.
 
-**Rejected**: Claude Code's `--json-schema`, which constrains the output as it
-is generated and so is stronger than validating after; Spec Kit passes extra
-arguments per run, not per step (R4), so each step cannot get its own schema.
-Reopen if Spec Kit adds per-step integration arguments for Claude.
+**Structured output at generation**: the steps whose result is structured —
+review and converge — run with `--json-schema <their schema>`, which
+constrains the output as it is generated (code.claude.com, headless:
+`structured_output` in the result); the dispatcher writes that object to the
+outcome file, and `sdd-step outcome` still validates it, so a schema drift
+fails loudly at either end. This was rejected while flags were per run; the
+dispatcher of R2 makes it per step.
 
 **Loops**: `build` (convergence, at most three passes, FR-014) holds
 `fix-loop` (one attempt and at most two fix rounds, FR-015), so a run makes at
@@ -246,25 +278,18 @@ stream to the terminal and keep empty `stdout` — the probe had only seen a
 1.2.1 with opt-in capture (github/spec-kit#4957), so this feature requires
 Spec Kit ≥ 1.2.1 and runs on 1.2.2.
 
-**Decision**: every Claude step sets `capture: true` and an explicit
-`timeout` (a captured `command` step otherwise stops at 600 seconds, too
-short for plan or converge): 3600 for the judgment phases, 1800 for tasks.
-Shell steps have a limit of their own — 300 seconds unless set
-(`workflows/step/shell/__init__.py`, `config.get("timeout", 300)`, read on
-1.2.2) — enforced by killing the shell, which would orphan a running
-`container` or `claude`. So `implement` sets `timeout: 2100`, its maximum limit
-plus 300 seconds, `verify` to 3600, and `sdd-step implement` enforces its limit
-first, stopping its agent and cleaning up before Spec Kit's limit can fire.
-Any leftover from a kill the script could not see is removed by `cleanup`
-(R6).
-Captured steps are dispatched without `--output-format json`, so `sdd-run`
-adds it to `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS`; observed on 1.2.2 with a
-stand-in `claude`: `-p /speckit-specify probe --permission-mode dontAsk
---output-format json --model claude-opus-5-5`, and the step's `stdout` in
-`state.json` held the JSON result. Since no decision reads an agent's text
-(R10), JSON on every step changes nothing else. Captured text is kept in
-`state.json` unredacted (upstream's warning), which holds no secret here:
-the credential never reaches a Claude step (FR-009). `sdd-run usage <run_id>` sums every attempt per model, failed and
+**Decision**: every agent step is a `shell` step (R2), whose stdout the
+engine always keeps in `state.json` (probe, 1.2.2); the dispatcher passes
+`--output-format json` itself, so the kept text is Claude's JSON result.
+Shell steps stop at 300 seconds unless set (`workflows/step/shell/__init__.py`,
+`config.get("timeout", 300)`, read on 1.2.2), by killing the shell, which
+would orphan a running agent. So every agent step's `timeout:` in the workflow
+is its routing row's `timeout` plus 300 seconds, and the dispatcher enforces
+the row's limit first, stopping its agent and cleaning up before Spec Kit's
+limit can fire; `verify` sets 3600. Any leftover from a kill the script could
+not see is removed by `cleanup` (R6). Captured text is kept in `state.json`
+unredacted (upstream's warning), which holds no secret here: the credential
+never reaches a Claude step (FR-009). `sdd-run usage <run_id>` sums every attempt per model, failed and
 resumed ones included, and the provider's tokens from the worker's outcomes.
 **Where SC-001 is measured**: on story-workers' eval harness
 (`tests/eval/run.sh`, `usage.py`, three recorded evals), not by a protocol
@@ -321,42 +346,69 @@ The workflow's `requires.speckit_version` is advisory (`engine.py`, read on
 `sdd-run` checks `specify version` ≥ 1.2.1 itself before any step and stops
 naming the `uv-tools.txt` pin and `./install.sh` (FR-024).
 
-## R14 — Effort per model
+## R14 — Effort per step
 
-**Decision**: `routing-settings.json`, passed with `--settings`, sets
-`modelSettings` — `{"claude-opus-5-5": {"effortLevel": "medium"},
-"claude-sonnet-5-5": {"effortLevel": "medium"}}` — and `sdd-run` unsets
-`CLAUDE_CODE_EFFORT_LEVEL` before any step (FR-021). pi gets DeepSeek's
-`high` reasoning level explicitly.
+**Decision**: each row of the routing table names its effort, and the
+dispatcher passes it as `--effort <level>`, which takes precedence over every
+settings file (code.claude.com, model-config: an explicit choice first, then
+settings, then the model's default). `sdd-run` unsets
+`CLAUDE_CODE_EFFORT_LEVEL`, which would otherwise win over the flag's peers
+in the environment. pi gets `--thinking <level>` from the same table.
 
-**Observed in the docs** (code.claude.com, model-config and settings,
-2026-10-21): effort resolves as an explicit choice (`CLAUDE_CODE_EFFORT_LEVEL`,
-`--effort`, `/effort`) first, then settings (`modelSettings` per model, or
-`effortLevel`), then the model's default — `medium` for Opus 5.5 and Sonnet
-5.5. `--settings` sits above user, project and local files, below managed.
-`max` is accepted by neither settings key. This machine's user settings hold
-`medium` for both models, saved through `/effort`; the shell sets
-`CLAUDE_EFFORT=medium`, a name Claude Code does not document. **Pending**: a
-probe that a `--settings` level wins over the user file's for a `-p` run, and
-how the result reports the level. If it does not win, FR-021 cannot be met
-by settings, and the work stops for the owner: the remaining levers are an
-exported variable or `--effort`, both per run, not per model. The configured
-levels are recorded in `.sdd/routing.json` at every start and resume.
+**Levels**: `medium` for every Claude step — the documented default for Opus
+5.5 and Sonnet 5.5, so writing it changes nothing today and only shields a
+run from an interactive `/effort` or an exported variable; `high` for the pi
+step, DeepSeek's floor (its pi configuration maps every lower level to
+`high`). A higher level for plan, review or converge is a change to measure
+on one story first, then a one-line edit of the table.
 
-**Why medium**: the owner's policy (`docs/claude-settings.md`) is each
-model's default unless measured otherwise, and story-workers' decision 0001
-already writes a level only to decouple it from the session's. Writing the
-defaults out does the same here: a `/effort high` in an interactive session,
-or an exported variable, no longer reaches a routed run. DeepSeek's pi
-configuration maps every level below the highest to `high` (DeepSeek's "pi
-mono" page), so `high` is its floor.
+**Observed** (2026-10-21, R16's probe): changing effort between two otherwise
+identical `-p` calls on the same model read the same cached prefix as an
+unchanged repeat (18,052 tokens either way), so effort per step does not
+break the prompt cache.
+## R16 — Context per step: no MCP servers, the cache kept warm
 
-**Alternatives**: `high` or `xhigh` for the judgment phases — plausible for
-plan, review and converge, but unmeasured, and it spends the allowance this
-feature exists to save; reopen with a one-story A/B. Effort per step rather
-than per model — Spec Kit passes extra arguments per run (R4), so each step's
-model is the only lever; reopen if Spec Kit adds per-step arguments, together
-with R10's `--json-schema`.
+**Decision**: every Claude step runs with `--strict-mcp-config` and an empty
+MCP configuration, and with only the tools its profile names. The workflow
+keeps steps on the same model together (specify to analyze on Opus, then
+tasks, then implementation, then review and converge on Opus).
+
+**Observed** (2026-10-21, five identical minimal `claude -p` calls on Sonnet
+5.5 in a scratch repository, Claude Code 2.1.306):
+
+| Call | Context | Cache written | Cache read |
+|---|---|---|---|
+| with the owner's MCP servers | 43,637 | 32,174 | 11,461 |
+| the same again | 45,256 | 27,202 | 18,052 |
+| the same, effort changed | 44,670 | 26,616 | 18,052 |
+| no MCP servers | 22,944 | 11,480 | 11,462 |
+| no MCP servers, again | 22,944 | 0 | 22,942 |
+
+The owner's MCP servers double each step's context and keep the prefix from
+matching between processes, so even an identical repeat rewrote 27K tokens to
+the cache. Without them a second step on the same model reads its whole
+prefix from the cache, at about a tenth of the price. A change of model
+starts a new cache (caches are per model), which is why same-model steps are
+grouped.
+
+## R17 — DeepSeek through pi and through Claude Code, measured
+
+**Observed** (2026-10-21, one task, a throwaway repository: a `parse_duration`
+function from a spec, test-first, scored by 19 held-out tests the agents did
+not see; same prompt, `deepseek-flash` both times):
+
+| | Claude Code on DeepSeek's endpoint, sandboxed | pi in a container |
+|---|---|---|
+| Finished | yes | yes |
+| Held-out tests | 19/19 | 19/19 |
+| Own tests | 35 | 53 |
+| Turns / tool errors | 15 / 0 | 8 / 1 |
+| DeepSeek cost | about $0.0125 | about $0.0027 |
+
+Both work at equal quality on this task; pi used about a fifth of the tokens.
+One task: directional. pi is kept (R5) because it is the path DeepSeek
+documents and supports and it runs inside a full container boundary; Claude
+Code on DeepSeek is unsupported by Anthropic.
 
 ## R13 — Time and spend
 

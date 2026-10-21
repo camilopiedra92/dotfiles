@@ -6,13 +6,19 @@
 
 ## Summary
 
-A Spec Kit workflow, `sdd-routed`, runs each phase of a feature as its own
-step: Opus for specify, clarify, plan, checklist, analyze, review and
-converge; Sonnet for tasks; DeepSeek V4 Flash through the pi coding agent for
-implementation, in a disposable checkout inside an Apple `container` VM; and
-verify with no model, as the repository's check command. Every step leaves a
-JSON outcome file validated against a schema, and the run branches only on
-those. `sdd-run` is what the owner types; `sdd-step` is what the workflow's
+A Spec Kit workflow, `sdd-routed`, orchestrates a feature's phases —
+order, checkpoints, loops, resume — and every agent step goes through one
+dispatcher, `sdd-step agent`, that reads a declarative routing table: per
+phase, the agent, model, effort, permission profile, output schema and time
+limit. Opus for specify, clarify, plan, checklist, analyze, review and
+converge; Sonnet for tasks; DeepSeek through the pi coding agent for
+implementation, in a disposable checkout inside a container whose firewall
+denies all egress but an allow list; verify with no model, as the
+repository's check command. Each step loads only its profile's context — no
+MCP servers — so same-model steps reuse the prompt cache. Every step whose
+result is read leaves a JSON outcome file, structured at generation with
+`--json-schema` where the agent produces it, validated against its schema,
+and the run branches only on those. `sdd-run` is what the owner types; `sdd-step` is what the workflow's
 deterministic steps call; `sdd-init` installs the workflow. Decisions and what
 lost: [research.md](research.md).
 
@@ -25,9 +31,11 @@ outcome files; a Containerfile for the worker image.
 
 **Primary Dependencies**: Spec Kit CLI 1.2.2 (workflow engine with per-step
 output capture, ≥ 1.2.1 required; `uv-tools.txt`, moved in dotfiles PR #154);
-Claude Code CLI; new and approved by the owner on 2026-10-21: Apple
-`container` 1.5.0 (`Brewfile`), `check-jsonschema` (`uv-tools.txt`), and,
-inside the image only, Node 26, `@earendil-works/pi-coding-agent@1.3.0`, mise
+Claude Code CLI; new and approved by the owner on 2026-10-21: a container
+runtime — Apple `container` 1.5.0, or colima if `container` cannot run the
+firewall (research R5) — in the `Brewfile`, `check-jsonschema`
+(`uv-tools.txt`), and, inside the image only, Node, `iptables`/`ipset`,
+`@earendil-works/pi-coding-agent@1.3.0`, mise
 and uv.
 
 **Storage**: files only — the feature directory and its `.sdd/` outcome files,
@@ -59,7 +67,7 @@ at once in separate worktrees.
 
 | Principle | How this plan meets it |
 |---|---|
-| I. Declared, never hand-installed | `container` in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/pi-worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
+| I. Declared, never hand-installed | the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/pi-worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
 | II. One owner per layer | `container` is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand. The workflow and the schemas are driven by the same checks. |
 | IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds `container`'s first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
@@ -96,8 +104,10 @@ bin/
 └── sdd-step.sh                  # new
 claude/speckit/
 ├── sdd-routed.yml               # new: the workflow
-├── routing-settings.json        # new: allow list for headless Claude steps
-└── schemas/                     # new: one JSON Schema per outcome file
+├── routing.yml                  # new: the routing table, one row per phase
+├── profiles/                    # new: judgment, readonly, implement-sonnet (--settings)
+└── schemas/                     # new: the routing table's and each outcome file's
+    ├── routing-table.schema.json
     ├── route.schema.json
     ├── routing.schema.json
     ├── phases.schema.json
@@ -108,7 +118,8 @@ claude/speckit/
     └── converge.schema.json
 containers/pi-worker/
 ├── Containerfile                # new
-├── entrypoint.sh                # new: reads the credential from stdin
+├── init-firewall.sh             # new: deny-by-default egress, Anthropic's reference pattern
+├── entrypoint.sh                # new: firewall, then the credential from stdin, then pi as node
 ├── models.json                  # new: DeepSeek provider entry for pi
 ├── egress.txt                   # new: the hosts the worker may reach
 └── brief.md                     # new: the implementing agent's rules (FR-017)

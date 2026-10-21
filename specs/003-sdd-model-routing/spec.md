@@ -41,7 +41,10 @@ any of them. The last group came from the fresh-context review of
 - Q: What does the implementing agent see of the repository? → A: A disposable checkout of the committed code at the run's current commit, without untracked or ignored files; its changes come back as a patch the run judges before applying.
 - Q: What bounds the external provider's spend? → A: A time limit per implementation pass (30 minutes), the prepaid balance as the hard ceiling, and the provider's spend reported per run.
 - Q: How is a repository's check command known? → A: Declared once per repository by the owner; a run without it stops before planning, naming how to declare it.
-- Q: What effort does each model run at? → A: Set explicitly per model by the routing, so neither the owner's interactive effort nor an environment variable leaks into a run: Opus and Sonnet at `medium`, each model's documented default today, and DeepSeek at `high`, the lowest reasoning level DeepSeek's own pi configuration maps to. A higher level for the judgment phases is a change to measure on one story first, not to assume.
+- Q: What effort does each step run at? → A: Set per step by the routing, so neither the owner's interactive effort nor an environment variable leaks into a run: every Claude step at `medium`, the documented default for Opus 5.5 and Sonnet 5.5 today, and the DeepSeek step at `high`, the lowest reasoning level DeepSeek's own pi configuration maps to. A higher level for a judgment phase is a change to measure on one story first, then a one-line edit of the routing.
+- Q: Can a step's model, effort, permissions and context be chosen per step, given Spec Kit 1.2.2's Claude integration refuses per-step arguments? → A: Yes: the workflow engine keeps the order, checkpoints, loops and resume, and every agent step goes through one dispatcher reading a routing table with a row per phase (research R2). The owner asked for model and effort per step and for a design of the highest standard, not the smallest one, after an independent audit proposed a smaller design (2026-10-21).
+- Q: Must each change of model or effort reload all the context? → A: No: each step loads only what it needs — no MCP servers, only its profile's tools — measured at half the context, with the whole prefix read from the prompt cache on the next step of the same model (research R16); effort changes do not break the cache, model changes do, so same-model steps are kept together.
+- Q: Which harness runs DeepSeek? → A: pi, the path DeepSeek documents and supports, in a container whose firewall denies all egress but an allow list (Anthropic's reference devcontainer pattern); Claude Code on DeepSeek worked equally in a one-task spike but is unsupported by Anthropic (research R5, R17).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -217,8 +220,10 @@ what landed in the commit, and what was printed.
 
 ### Functional Requirements
 
-- **FR-001**: A routed run MUST run each phase on the model the routing assigns
-  to it, with no model switched by the owner by hand.
+- **FR-001**: A routed run MUST run each phase with the agent, model, effort,
+  permissions and output schema its row of the routing assigns, with no model
+  or effort switched by the owner by hand; the routing is one declarative
+  table, and changing a phase's model or effort is an edit of one row.
 - **FR-002**: Each phase that runs a model MUST be a fresh agent; phases MUST
   hand over only through the feature's files.
 - **FR-003**: The routing MUST be a workflow run by Spec Kit's own workflow
@@ -281,13 +286,11 @@ what landed in the commit, and what was printed.
   validates each outcome file against its schema; a missing or invalid outcome file MUST fail the
   step, never read as a pass. Agent output MUST NOT be interpolated into a
   shell command.
-- **FR-021**: Each model's effort MUST be set by the routing, per model, and
+- **FR-021**: Each step's effort MUST be set by its row of the routing and
   MUST NOT follow the owner's interactive effort or any effort environment
   variable; it changes only by an edit to this repository. Each run records
-  the level configured for each model, and the level each step reports
-  where the CLI reports one. If the routing cannot make its level win over
-  the owner's own settings, the feature stops for the owner rather than
-  route at an unknown effort.
+  the level every step was given, and the level each step reports where the
+  CLI reports one.
 - **FR-022**: A run left `running` by a process that no longer exists MUST,
   on the owner's next resume, stop naming the phases that will run again and
   the command that starts a new run from the existing feature directory at
@@ -304,10 +307,15 @@ what landed in the commit, and what was printed.
 - **FR-024**: A run MUST stop before any step on a Spec Kit older than the
   version the routing requires, naming the manifest update that brings it.
 - **FR-025**: The Spec Kit behaviours the routing relies on beyond its
-  version — the extra arguments it passes to every Claude step, the run id it
-  fixes, and per-step output capture — MUST each be asserted by a check, so a
+  version — the run id it fixes, a shell step's output kept in the run's
+  state, a shell step's timeout, and gate verdicts bound to inputs — MUST each
+  be asserted by a check, so a
   Spec Kit update that drops one fails the gate before it lands instead of
   silently routing without it.
+- **FR-026**: Each step MUST load only the context its row names: no MCP
+  server, and only the tools and permissions of its profile, so an unattended
+  step can do nothing its phase does not need and same-model steps reuse the
+  prompt cache.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
   the repository's check command, and nothing wider than the headless
   allow list plus that command; its Edit and Write tool calls MUST be
@@ -340,10 +348,11 @@ fixed above 30 minutes),
 
 ### Key Entities
 
-- **Routing**: which model and which agent each phase runs on, where the
-  checkpoints are, and the loop limits — one workflow file, copied into each
-  repository by Spec Kit — together with the per-model effort, permissions
-  and worker configuration, which stay on this machine.
+- **Workflow**: the order of phases, the checkpoints and the loop limits —
+  one workflow file, copied into each repository by Spec Kit.
+- **Routing table**: one row per phase — agent, model, effort, permission
+  profile, output schema, time limit — on this machine, read by the
+  dispatcher at every step.
 - **Run**: one pass of a feature through the routed workflow, with its state,
   its pauses and the usage each step reported.
 - **Outcome file**: see Definitions.
