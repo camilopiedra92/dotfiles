@@ -272,6 +272,19 @@ its source and date sit in a comment beside it (constitution VI).
 
 ## R7 — Guarded configuration, one source of truth
 
+**Observed** (T005, 2026-10-21): run from a copy in the bundle with
+`PATH=/usr/bin:/bin`, the guard answered `ask` to an empty `Write` to
+`ruff.toml` (how a deletion is judged) and to a `pyproject.toml` that lost
+`[tool.ruff]`, and gave no decision for an ordinary source file. Run instead
+with the owner's `PATH` from a directory holding a planted `mise.toml`
+(`python = "3.12"`), mise's shim for `python3` began downloading and
+installing Python 3.12.15 and the guard printed no decision — failing open,
+and installing a runtime because of a file an agent could write. The install
+was removed after the probe (`mise uninstall python@3.12.15`). This is what
+the fixed `PATH` and bundle working directory of contracts/pass.md prevent; the
+guard's own use as an interactive hook in an untrusted repository has the same
+exposure and is outside this feature.
+
 **Decision**: each path the patch creates, changes or deletes is passed to
 `claude/config-guard.sh` as the `Write` call that would produce its new
 content (empty for a deletion); an `ask` fails the step naming the path, with
