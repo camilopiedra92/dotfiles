@@ -556,6 +556,25 @@ subscription token, so it is not used.
 file tools or host tools run afterwards; an API key for the Claude steps —
 billed per token outside the subscription this feature exists to save.
 
+## R22 — No MCP server in any pass, and when that would change
+
+**Decision**: no pass loads an MCP server (FR-026). The owner's servers carry
+the owner's credentials — mail, documents, a brokerage account that can place
+orders, a car — and an unattended agent working on untrusted output has no
+business near them; they also doubled each step's context and broke the cache
+between steps (R16). No Spec Kit phase needs one: every phase works from the
+repository's files.
+
+**Reopen when** a phase needs something only an MCP server provides — the
+likely case is current library documentation (Context7) for plan or
+implement. The design then is a per-row `mcp` list in the routing defaults
+(never in a layer), limited to servers that hold no credential of the
+owner's, each server's host added to that pass's firewall allow list only,
+and the list frozen in the run bundle like every other input that governs a
+run. A server holding the owner's credentials never runs in an unattended
+pass. Not built now: no phase asks for it, and an extension point nobody uses
+is code to maintain for nothing.
+
 ## R13 — Time and spend
 
 **Decision**: `sdd-step implement` ends a pass at the effective implement
