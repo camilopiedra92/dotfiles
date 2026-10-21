@@ -668,13 +668,17 @@ def verify_inventory(run, rt, tag, ctx):
         committed = f.read().splitlines()
     if built == committed:
         return
+    if built is None:
+        # The check could not run: the image is neither refused nor
+        # accepted, and the next prepare-worker checks it again.
+        raise PassFailed("reading the worker image's inventory failed; run prepare-worker again: "
+                         + r.stderr.decode(errors="replace").strip()[-500:])
     deleted = subprocess.run([rt, "image", "delete", tag], env=HOST_ENV, stdout=subprocess.DEVNULL,
                              stderr=subprocess.PIPE, cwd=run.dir)
     if deleted.returncode != 0:
-        raise PassFailed(f"the worker image {tag} failed its inventory check and could not be deleted: "
-                         + deleted.stderr.decode(errors="replace").strip()[-300:] + f"; delete it by hand")
-    if built is None:
-        raise PassFailed("reading the built image's inventory failed: " + r.stderr.decode(errors="replace").strip()[-500:])
+        why = deleted.stderr.decode(errors="replace").strip()[-300:] or "the runtime gave no reason"
+        raise PassFailed(f"the worker image {tag} failed its inventory check and could not be deleted ({why}); "
+                         f"delete it by hand: container image delete {tag}")
     added = sorted(set(built) - set(committed))
     missing = sorted(set(committed) - set(built))
     raise PassFailed("the built worker image differs from containers/worker/inventory.txt; refused and deleted:\n"

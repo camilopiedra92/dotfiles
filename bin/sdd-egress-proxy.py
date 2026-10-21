@@ -141,8 +141,13 @@ def authority(hosts):
                 f.write(text)
 
         # Name-constrained to the registries: were its key to leak, the
-        # authority could vouch for no other host (review of Phase 2b).
+        # authority could vouch for no other host (review of Phase 2b). A
+        # name type left out is unconstrained (RFC 5280), so with no registry
+        # at an address every address is excluded. DNS constraints cover
+        # subdomains; that much is inherent to them.
         permitted = ", ".join("permitted;" + alt_name(h, constraint=True) for h in sorted(hosts))
+        if not any(alt_name(h).startswith("IP:") for h in hosts):
+            permitted += ", excluded;IP:0.0.0.0/0.0.0.0, excluded;IP:::/0:0:0:0:0:0:0:0"
         write("ca.cnf", "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = sdd run authority\n"
               "[ca]\nbasicConstraints = critical, CA:TRUE, pathlen:0\n"
               "keyUsage = critical, keyCertSign, cRLSign\nsubjectKeyIdentifier = hash\n"
@@ -368,12 +373,19 @@ USER_AGENT = "sdd-egress-proxy"
 UNSAFE_PATH = re.compile(r"(^|/)\.{1,2}(/|$)|%2e|%2f|%5c|\\", re.I)
 
 
+# The characters a download path on a ruled host may hold: unreserved ones
+# and "/" and "+". No "%" (no encoding a server could decode twice), no ";"
+# (path parameters), nothing a server could normalize into another path.
+SAFE_PATH = re.compile(r"[A-Za-z0-9._~/+-]*")
+
+
 def path_allowed(rule, target):
-    """A registry's path rule, held on the path alone: the query and fragment
-    cannot satisfy it, and a path that a server could normalize into another
-    is refused (review of Phase 2b)."""
+    """A registry's path rule, held on the path alone: the query cannot
+    satisfy it, and a path a server could read as another one — a dot
+    segment, an encoding, a parameter — is refused (review of Phase 2b)."""
     path = urllib.parse.urlsplit(target).path
-    return not UNSAFE_PATH.search(path) and rule.match(path) is not None
+    return (SAFE_PATH.fullmatch(path) is not None and not UNSAFE_PATH.search(path)
+            and rule.match(path) is not None)
 
 
 class RegistryHandler(http.server.BaseHTTPRequestHandler):
@@ -409,7 +421,9 @@ class RegistryHandler(http.server.BaseHTTPRequestHandler):
         raise AttributeError(name)
 
     def read(self):
-        if not self.path.startswith("/"):
+        if not self.path.startswith("/") or "#" in self.path:
+            # A request target never holds a fragment (RFC 9112); one here
+            # would be checked without it and sent with it.
             return self.refuse(403, "not a path on this registry")
         # The admission is read on every request, as on the API: a pass
         # retired while its tunnel is open reaches nothing more.

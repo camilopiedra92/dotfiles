@@ -18,9 +18,14 @@ trap 'rm -f "$list"' EXIT
   dpkg-query -W -f='deb ${Package} ${Version}\n'
   # The tools neither dpkg nor npm installed: node from the base, mise and uv
   # from their checked downloads.
-  echo "tool node $(node --version | sed 's/^v//')"
-  echo "tool mise $(mise --version | awk '{ print $1 }')"
-  echo "tool uv $(uv --version | awk '{ print $2 }')"
+  # Each version in a variable first: set -e sees a failing assignment, not a
+  # failing $(...) inside echo's arguments (review of Phase 2b).
+  node_v=$(node --version)
+  mise_v=$(mise --version)
+  uv_v=$(uv --version)
+  echo "tool node ${node_v#v}"
+  echo "tool mise $(echo "$mise_v" | awk '{ print $1 }')"
+  echo "tool uv $(echo "$uv_v" | awk '{ print $2 }')"
   node -e '
 const fs = require("fs"), path = require("path");
 function walk(dir) {

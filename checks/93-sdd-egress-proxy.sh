@@ -488,6 +488,12 @@ ep_registry_readonly() {
     echo "the run's authority does not permit its registries' names"
     return 1
   }
+  # A name type the constraints leave out is unconstrained (RFC 5280): with
+  # no registry at an address, every address is excluded.
+  openssl x509 -in "$EP_TMP/main.ca" -noout -text 2> /dev/null | grep -A4 "Excluded:" | grep -q "IP:0.0.0.0/0.0.0.0" || {
+    echo "the run's authority leaves IP addresses unconstrained"
+    return 1
+  }
   impl=$(ep_admit '["deepseek", "registries"]')
   verify=$(ep_admit '["registries"]')
   for method in GET HEAD; do
@@ -572,7 +578,9 @@ ep_registry_hardened() {
   local impl out path retire
   impl=$(ep_admit '["deepseek", "registries"]')
   for path in "/o/r?/archive/" "/settings?a/x/archive/" "/o/r/archive/%2e%2e/%2e%2e/o2/r2.git/info/refs" \
-    "/o/r/releases/download/../../../x" "/o/r/archive/%2F..%2Fx" "/o/r/archive/./x" "/o/r/releases/download/v1/%2E%2E/x"; do
+    "/o/r/releases/download/../../../x" "/o/r/archive/%2F..%2Fx" "/o/r/archive/./x" "/o/r/releases/download/v1/%2E%2E/x" \
+    "/o/r/archive/%252e%252e/x" "/o/r/archive/..;/..;/x" "/o/r;x/archive/y" "/o/r/archive/x#/../../y" \
+    "/o/r/archive/%ef%bc%8e%ef%bc%8e/x"; do
     out=$(ep_connect "$impl" "$EP_GITHUB" GET "$path")
     case "$out" in "403 "*) ;; *)
       echo "GET $path on GitHub was not refused: $out"
@@ -600,7 +608,8 @@ sys.exit(0 if ua == "sdd-egress-proxy" else "a read reached the registry with Us
     return 1
     ;;
   esac
-  python3 -I - "$EP_ROOT/bin/sdd-egress-proxy.py" "$(ep_rule codeload.github.com)" << 'PY' || return 1
+  # -B: importing the proxy must not leave its bytecode in bin/.
+  python3 -I -B - "$EP_ROOT/bin/sdd-egress-proxy.py" "$(ep_rule codeload.github.com)" << 'PY' || return 1
 import importlib.util, json, re, sys
 spec = importlib.util.spec_from_file_location("proxy", sys.argv[1])
 proxy = importlib.util.module_from_spec(spec)
@@ -615,6 +624,10 @@ for path in ("/o/r", "/o/r?/tar.gz/", "/o/r/tar.gz/../../x"):
         bad.append("codeload allowed %s" % path)
 sys.exit("\n".join(bad) or 0)
 PY
+  [ ! -e "$EP_ROOT/bin/__pycache__" ] || {
+    echo "importing the proxy left bin/__pycache__ behind"
+    return 1
+  }
 }
 check "a registry's rule holds on the path alone, no agent header rides a read, a retired token's tunnel goes dark" ep_registry_hardened
 

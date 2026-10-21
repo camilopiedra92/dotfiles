@@ -104,3 +104,17 @@ exec_bits() {
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits
+
+# No compiled Python is tracked: a .pyc is a build product of whichever
+# interpreter last ran the file, stale after the next edit (one was committed
+# by a check that imported bin/sdd-egress-proxy.py, review of Phase 2b).
+no_bytecode() {
+  local found
+  found=$(this_repo_git ls-files | grep -E '(^|/)__pycache__/|\.py[co]$')
+  [ -z "$found" ] || {
+    echo "compiled Python is tracked:"
+    printf '%s\n' "$found"
+    return 1
+  }
+}
+check "no compiled Python is tracked" no_bytecode
