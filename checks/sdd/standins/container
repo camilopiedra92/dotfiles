@@ -66,6 +66,8 @@ run)
   [ -n "$name" ] && printf '%s' "$labels" >"$here/labels.$name"
   case " $* " in
   *sdd-egress-proxy.py*)
+    # proxy.fail: the proxy exits before it is ready.
+    [ -e "$here/proxy.fail" ] && exit 1
     IFS= read -r line
     /usr/bin/python3 -I -c '
 import json, os, sys
@@ -128,6 +130,14 @@ print(json.dumps(out))
   ;;
 inspect)
   printf '[{"status":{"networks":[{"ipv4Address":"127.0.0.1/8"}]}}]\n'
+  ;;
+--version)
+  echo "container CLI version 1.6.0 (stand-in)"
+  ;;
+system)
+  # runtime.down: the runtime does not answer.
+  [ -e "$here/runtime.down" ] && exit 1
+  exit 0
   ;;
 image)
   case "${2:-}" in

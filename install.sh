@@ -131,6 +131,12 @@ link "$DOTFILES/bin/sdd-init.sh" "$HOME/.local/bin/sdd-init"
 link "$DOTFILES/bin/merge-on-green.sh" "$HOME/.local/bin/merge-on-green"
 # Same. Reads github/repos.json, which it finds by resolving this link.
 link "$DOTFILES/bin/repo-rules.sh" "$HOME/.local/bin/repo-rules"
+# Same. The routed Spec Kit workflow (specs/003-sdd-model-routing): sdd-run is
+# what the owner runs; sdd-step is what the workflow's steps run, by the
+# absolute path sdd-run freezes. Both find the schemas, the routing table and
+# the worker's recipe by resolving their links.
+link "$DOTFILES/bin/sdd-run.sh" "$HOME/.local/bin/sdd-run"
+link "$DOTFILES/bin/sdd-step.sh" "$HOME/.local/bin/sdd-step"
 # Not a command you run: it is what ~/.claude.json points the ynab MCP server
 # at, so the server logs into its own directory instead of into whichever
 # repository the editor was started in. See the file.

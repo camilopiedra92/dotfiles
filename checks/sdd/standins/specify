@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Stand-in for the Spec Kit CLI in checks/95-sdd-run.sh. sdd-run's contract
+# with Spec Kit is what it passes and what it reads back: the arguments, the
+# environment it exports, and the run's state.json. The engine itself was
+# observed in T004 (research R3) and runs for real in the workflow checks.
+# Records each call (argv and the variables sdd-run must or must not pass) in
+# specify.jsonl beside it; `--version` answers version.txt, else 1.2.2; a
+# workflow run or resume runs specify.sh beside it, if any, from the
+# repository root, then writes the run's state from state.json beside it
+# (default: completed) into .specify/workflows/runs/<run id>/state.json.
+here=$(cd "$(dirname "$0")" && pwd -P)
+/usr/bin/python3 -I -c '
+import json, os, sys
+keep = ("SDD_RUN_DIR", "SDD_STEP", "SPECKIT_WORKFLOW_RUN_ID", "CLAUDE_CODE_EFFORT_LEVEL")
+print(json.dumps({"argv": sys.argv[1:], "env": {k: os.environ[k] for k in keep if k in os.environ}, "cwd": os.getcwd()}))
+' "$@" >> "$here/specify.jsonl"
+case "${1:-}" in
+  --version)
+    cat "$here/version.txt" 2> /dev/null || echo "specify 1.2.2"
+    exit 0
+    ;;
+  workflow) ;;
+  *) exit 0 ;;
+esac
+verb=$2
+case "$verb" in
+  run) run_id=$SPECKIT_WORKFLOW_RUN_ID ;;
+  resume) run_id=$3 ;;
+  *) exit 0 ;;
+esac
+status=0
+[ -f "$here/specify.sh" ] && { bash "$here/specify.sh" "$@"; status=$?; }
+mkdir -p ".specify/workflows/runs/$run_id"
+if [ -f "$here/state.json" ]; then
+  cp "$here/state.json" ".specify/workflows/runs/$run_id/state.json"
+else
+  printf '{"run_id":"%s","status":"completed"}\n' "$run_id" > ".specify/workflows/runs/$run_id/state.json"
+fi
+exit "$status"
