@@ -297,8 +297,9 @@ the one source `sdd-run usage` reads.
 Shell steps stop at 300 seconds unless set (`workflows/step/shell/__init__.py`,
 `config.get("timeout", 300)`, read on 1.2.2), by killing the shell, which
 would orphan a running agent. So every agent step's `timeout:` in the workflow
-is its routing row's `timeout` plus 300 seconds, and the dispatcher enforces
-the row's limit first, stopping its agent and cleaning up before Spec Kit's
+is a ceiling — its routing row's `max_timeout` plus 300 seconds, a literal the
+workflow schema requires — and the dispatcher enforces the effective `timeout`,
+never above `max_timeout`, first, stopping its agent and cleaning up before Spec Kit's
 limit can fire; `verify` sets 3600. Any leftover from a kill the script could
 not see is removed by `cleanup` (R6). Captured text is kept in `state.json`
 unredacted (upstream's warning), which holds no secret here: the credential
@@ -454,9 +455,12 @@ cannot hold values the workflow does not carry (research R2).
 ## R13 — Time and spend
 
 **Decision**: `sdd-step implement` ends a pass at the effective implement
-row's `timeout`, 1800 seconds by default; a routing layer may lower it, and a
-value above 1800 is refused, because the step's `timeout` in the workflow is a
-fixed 2100 and the inner limit must always fire first; it stops the container
+row's `timeout`, 1800 seconds by default; a routing layer may set it anywhere
+up to the row's `max_timeout`, 3600, and a value beyond is refused, because
+the step's `timeout` in the workflow is a fixed 3900 and the inner limit must
+always fire first; an earlier version allowed only lowering the limit, an
+artefact of setting the workflow's timeout at the default rather than at a
+ceiling; it stops the container
 or the `claude` process; the provider's
 prepaid balance is the hard ceiling; each worker outcome records pi's reported
 tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has

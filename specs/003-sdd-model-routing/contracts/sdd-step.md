@@ -21,7 +21,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 ## `implement`, step by step
 
 1. **Prerequisites**, each stopping with exit 1 before any code leaves the
-   machine (SC-004); the effective implement row's `timeout` is 1–1800 seconds.
+   machine (SC-004); the effective implement row's `timeout` is within its `max_timeout`.
    For deepseek (as `route.json` says): still opted in — a repository opted
    out since `route` ran sends nothing and the pass runs on sonnet instead,
    saying so, after sonnet's prerequisites, and records `agent: sonnet` in

@@ -11,8 +11,9 @@
 
 Overridable fields: a layer may set only `model` — within the row's agent's
 family, a Claude id for `claude` rows and a DeepSeek id for `pi` rows —
-`effort`, and `timeout`, never above the default row's. `agent`, `profile`,
-`prompt`, `schema` and `result_to` belong to the defaults alone, and
+`effort`, and `timeout`, up or down within the row's `max_timeout`. `agent`,
+`profile`, `prompt`, `schema`, `result_to` and `max_timeout` belong to the
+defaults alone, and
 `routing-layer.schema.json` refuses them in a layer: a layer cannot send code
 to another provider, widen a step's permissions, or drop a rule from a prompt.
 
@@ -46,15 +47,17 @@ research R2). A row's fields:
 | `prompt` | `/speckit-<command>` plus fixed arguments | what the agent is asked; the feature's paths and, for `specify`, the run's `spec` input are appended by the dispatcher |
 | `schema` | a file name in `claude/speckit/schemas/`, or absent | passed as `--json-schema`; the result's `structured_output` is written to the step's outcome file (research R10) |
 | `result_to` | a path relative to the feature directory, or absent | where the result's text is written (`analyze` → `analysis.md`) |
-| `timeout` | seconds | the dispatcher's limit; the workflow step's `timeout:` is this plus 300 (research R11) |
+| `timeout` | seconds, 1 to `max_timeout` | the dispatcher's limit for the step |
+| `max_timeout` | seconds; defaults only | the phase's ceiling; the workflow step's `timeout:` is this plus 300, so the dispatcher's limit always fires first (research R11) |
 
 The rows on 2026-10-21:
 
-Timeouts: 3600 seconds for every judgment row and for review and converge,
-1800 for `tasks` and for both implement rows. The workflow's step `timeout:`
-is the default row's value plus 300, fixed in `sdd-routed.yml`; a layer may
-lower a row's `timeout` but not raise it above the workflow's minus 300, which
-`sdd-run` refuses (FR-018, research R11). The implement rows carry no schema:
+Timeouts: `timeout` 3600 and `max_timeout` 7200 for every judgment row and for
+review and converge; `timeout` 1800 and `max_timeout` 3600 for `tasks` and for
+both implement rows. Each workflow step's `timeout:` in `sdd-routed.yml` is its
+row's `max_timeout` plus 300, and `./check.sh` asserts the two files agree. A
+layer may set `timeout` anywhere from 1 to `max_timeout`; a value beyond it is
+refused by `sdd-run`, naming the ceiling (FR-018, research R11). The implement rows carry no schema:
 `sdd-step implement` alone writes `implement.json`.
 
 | Phase | agent | model | effort | profile | schema |

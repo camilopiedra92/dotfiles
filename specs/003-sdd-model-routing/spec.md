@@ -321,7 +321,8 @@ what landed in the commit, and what was printed.
   stopping the run naming the layer and field; each run MUST record every
   effective value and the layer it came from, and the owner MUST be able to
   print that table. A layer MAY change only a step's model, within its agent's
-  provider, its effort, and its time limit downwards; it MUST NOT change a
+  provider, its effort, and its time limit within the phase's ceiling; it MUST
+  NOT change a
   step's agent, permissions, prompt or outputs, so no layer can enable the
   external provider, widen a step, or drop a rule from a prompt. The
   effective table MUST be fixed for the whole run, kept where no step can
@@ -349,9 +350,9 @@ what landed in the commit, and what was printed.
   fix round, the latest verify outcome. Both implementing agents get the same
   brief.
 - **FR-018**: Each implementation pass, by either agent, MUST end within a
-  time limit, 30 minutes of wall-clock time unless a routing layer sets a
-shorter one (a longer one is refused, since the workflow's own limit for the
-step is fixed above 30 minutes),
+  time limit, 30 minutes of wall-clock time unless a routing layer sets another
+within the phase's ceiling of 60 minutes (a value beyond it is refused, since
+the workflow's own limit for the step sits just above the ceiling),
   enforced by the run itself before any outer limit can cut it off, so the
   pass always stops its agent and cleans up; a pass that spans the machine's
   sleep may reach its limit on waking, which fails it with nothing applied; the run MUST report each pass's usage — the provider's tokens and
