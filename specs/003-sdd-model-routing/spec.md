@@ -378,9 +378,12 @@ fixed above 30 minutes),
   baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
   repository, added to the fixture from the same dotfiles commit as the
   routed one, and started with `sdd-run start --workflow sdd-baseline`, so
-  it gets the same prerequisites, permissions, effort, output format, run id
-  and usage record; its implement step is also allowed the repository's
-  check command. In both counted runs every review checkpoint is approved,
+  it gets the same prerequisites, effort, output format, run id and usage
+  record, and the same permissions plus what story-workers' implement runs:
+  the `Agent` tool for its workers, the git commands it stages and commits
+  with, and the repository's check command. A baseline run whose implement
+  shows no usage on the lighter model ran without its workers, and is not a
+  counted run. In both counted runs every review checkpoint is approved,
   `fix-stuck` and `converge-stuck` are answered `abort`; an arm that reaches
   either is not a counted run: it is recorded and run once more, and a second
   such run is the arm's result, recorded as it came out. The one model step not on the most capable model is

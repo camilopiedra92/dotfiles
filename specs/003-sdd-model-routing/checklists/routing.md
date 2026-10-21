@@ -46,7 +46,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 ## Scenario and Edge Case Coverage
 
-- [ ] CHK020 Are requirements defined for a run interrupted mid-step (terminal closed, machine asleep) and resumed? [Coverage, Recovery, Gap]
+- [x] CHK020 Are requirements defined for a run interrupted mid-step (terminal closed, machine asleep) and resumed? [Coverage, Recovery, Gap]
 - [x] CHK021 Are requirements defined for the external agent leaving the worktree dirty or partially changed when it fails mid-pass? [Coverage, Exception Flow, Gap]
 - [x] CHK022 Is the behaviour specified when a phase's headless process is refused a permission it needs — does the run fail, and how does the owner widen the allow list? [Coverage, Spec §Edge Cases]
 - [x] CHK023 Are requirements defined for the external provider's spend exceeding a bound within one run? [Coverage, Non-Functional, Gap]
@@ -62,7 +62,7 @@ defaults when interaction is impossible; run under the owner's delegation of
 
 - [x] CHK028 Is the dependency on Apple's `container` stated with the macOS version it needs and what happens on a machine without it? [Dependency, research R5]
 - [x] CHK029 Is the assumption that pi follows a brief's test-first rules stated as an assumption to be measured, not a requirement met by construction? [Assumption, Spec §US2]
-- [ ] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
+- [x] CHK030 Are the version pins this feature relies on (Spec Kit's workflow engine, pi 1.3.0, the DeepSeek model ids) named with what happens when each moves? [Dependency, Spec §US1 AS6]
 
 ## Notes
 
