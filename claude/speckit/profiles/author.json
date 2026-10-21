@@ -6,23 +6,7 @@
       "Grep",
       "Edit",
       "Write",
-      "Edit(specs/**)",
-      "Edit(.specify/**)",
-      "Bash(cd /work)",
-      "Bash(mkdir -p:*)",
-      "Bash(cp:*)",
-      "Bash(printf:*)",
-      "Bash(ls:*)",
-      "Bash(.specify/scripts/bash/check-prerequisites.sh:*)",
-      "Bash(.specify/scripts/bash/setup-plan.sh:*)",
-      "Bash(.specify/scripts/bash/setup-tasks.sh:*)",
-      "Bash(.specify/scripts/bash/create-new-feature.sh:*)",
-      "Bash(git status:*)",
-      "Bash(git diff:*)",
-      "Bash(git log:*)",
-      "Bash(git show:*)",
-      "Bash(git rev-parse:*)",
-      "Bash(git branch --show-current)"
+      "Bash"
     ]
   }
 }

@@ -206,9 +206,19 @@ for a in agents:
         bad.append("%s: --json-schema %s" % (k, "given" if "--json-schema" in argv else "missing"))
     if "--resume" in argv or "--continue" in argv:
         bad.append("%s resumed a session" % k)
+# Inside the container the agents may use the shell (research R27): the
+# container, its firewall, the proxy and the judge are the boundary. The
+# phases that only read get no Edit or Write.
 impl = next(a for a in agents if key(a) == "speckit-implement")
-if not impl["profile"] or "Bash(./check-app.sh)" not in impl["profile"] or "<check>" in impl["profile"]:
-    bad.append("the implementer's profile does not allow exactly the frozen check command: %s" % impl["profile"])
+if not impl["profile"] or '"Bash"' not in impl["profile"]:
+    bad.append("the implementer cannot use the shell: %s" % impl["profile"])
+reader = next(a for a in agents if key(a) == "review")
+if not reader["profile"] or '"Bash"' not in reader["profile"] or '"Edit"' in reader["profile"] or '"Write"' in reader["profile"]:
+    bad.append("a reading phase is not the shell without Edit or Write: %s" % reader["profile"])
+# Spec Kit's scripts find the feature through SPECIFY_FEATURE_DIRECTORY,
+# since the export has no git branch to name it (contracts/pass.md).
+if impl["env"].get("SPECIFY_FEATURE_DIRECTORY") != "/work/specs/001-probe":
+    bad.append("the implementer was not told SPECIFY_FEATURE_DIRECTORY: %r" % impl["env"].get("SPECIFY_FEATURE_DIRECTORY"))
 review = next(a for a in agents if key(a) == "review")
 p = review["argv"][review["argv"].index("-p") + 1]
 if "/input/diff.patch" not in p or "weakened test" not in p:

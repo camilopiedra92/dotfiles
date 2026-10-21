@@ -790,9 +790,24 @@ permission rules match a `Bash(<prefix>:*)` prefix only up to a word boundary
 (`mkdir -p specs/:*` does not match `mkdir -p specs/001-x`), and a shell
 redirect into a file is a file write matched by path (`Edit(<path>)`), not by
 the bare `Edit` rule; probed with `claude -p --permission-mode dontAsk`. The
-author profile allows `mkdir -p`, `cp`, `printf`, `ls`, `cd /work` and
-writes under `specs/` and `.specify/`; the container and the judge's writes
-list remain the boundary.
+first fix allowed those commands one by one; the plan phase then ran
+`SPECIFY_FEATURE_DIRECTORY=… setup-plan.sh --json; echo; cat spec.md` — an
+environment prefix and a compound command no prefix rule matches — the third
+distinct denial in three phases.
+
+**Decision** (2026-10-21, the owner's choice): inside the container the
+agents may use the shell; the phases that only read (analyze, review) get it
+without Edit or Write. This is Anthropic's devcontainer pattern — Claude Code
+with permissions open because a firewalled container is the boundary — and
+here the boundary is stronger: the firewall reaches only the proxy, the proxy
+admits only the provider's endpoints and reads from the registries, and the
+judge applies nothing outside the phase's writes, nothing in the protected
+set, nothing holding a credential. The profiles were defence in depth; a
+per-command allow list broke Spec Kit's own agents on every version and
+prompt, and kept the implementer from running tests other than the check
+command. The pass also gives each agent `SPECIFY_FEATURE_DIRECTORY`, which
+contracts/pass.md promised and the agent had to invent; the entrypoint passes
+it only as `/work/specs/<nnn>-<slug>`.
 
 **Decision** (2026-10-21, the owner's review of the brief): both
 implementers run Spec Kit's own implement command through Spec Kit's native

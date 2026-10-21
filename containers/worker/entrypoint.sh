@@ -146,6 +146,13 @@ env=(
 )
 [ -z "${ANTHROPIC_BASE_URL:-}" ] || env+=(ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL")
 [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] || env+=(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN")
+# The feature Spec Kit's scripts work on (they cannot read it from a git
+# branch: the export has none); a path under /work, nothing else.
+if [ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]; then
+  [[ $SPECIFY_FEATURE_DIRECTORY =~ ^/work/specs/[0-9]{3}-[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
+    fail "SPECIFY_FEATURE_DIRECTORY must be /work/specs/<nnn>-<slug>"
+  env+=(SPECIFY_FEATURE_DIRECTORY="$SPECIFY_FEATURE_DIRECTORY")
+fi
 
 # A cache volume is created by the runtime owned by root; node gets it, and
 # every package manager in the image keeps its cache there.

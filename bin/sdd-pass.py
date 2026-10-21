@@ -540,12 +540,7 @@ def run_agent(run, phase, implement=None):
         schema = agent_schema(row["schema"]) if row.get("schema") in SCHEMA_STEPS else None
         mounts = [f"{p.inputs}:/bundle:ro"]
         if row["agent"] == "claude":
-            # The implementer may run the check command frozen in the bundle,
-            # which its profile names as <check>.
-            profile = open(os.path.join(run.dir, "profiles", row["profile"] + ".json")).read()
-            command = load(os.path.join(run.dir, "check.json"))["command"]
-            with open(os.path.join(p.inputs, "profile.json"), "w") as f:
-                f.write(profile.replace("<check>", json.dumps(command)[1:-1]))
+            shutil.copy(os.path.join(run.dir, "profiles", row["profile"] + ".json"), os.path.join(p.inputs, "profile.json"))
             env = {"ANTHROPIC_BASE_URL": p.proxy_url(), "CLAUDE_CODE_OAUTH_TOKEN": p.token}
         else:
             # pi's provider, from the worker's template, pointed at the proxy
@@ -557,6 +552,10 @@ def run_agent(run, phase, implement=None):
             with open(os.path.join(p.inputs, "models.json"), "w") as f:
                 json.dump(models, f, indent=1)
             env = {}
+        if feature:
+            # Spec Kit's scripts name the feature from this, since the export
+            # has no git branch to name it (contracts/pass.md, Steps 3).
+            env["SPECIFY_FEATURE_DIRECTORY"] = "/work/" + feature
         hosts = ["anthropic" if row["agent"] == "claude" else "deepseek"]
         if implement:
             shutil.copy(os.path.join(run.dir, "check.json"), os.path.join(p.inputs, "check.json"))

@@ -152,16 +152,15 @@ profiles add least privilege on top. Every profile is `dontAsk`.
 
 | Profile | Allows |
 |---|---|
-| `author` | Read, Glob, Grep; Edit and Write; `Bash` for the named Spec Kit scripts (`check-prerequisites.sh`, `setup-plan.sh`, `setup-tasks.sh`, `create-new-feature.sh`) and read-only git |
-| `reader` | Read, Glob, Grep; read-only git |
-| `implementer` | Read, Glob, Grep; Edit and Write; `Bash(<the check command frozen in the bundle>)` and read-only git |
+| `author` | Read, Glob, Grep, Edit, Write and `Bash` (research R27: the container, the proxy and the judge are the boundary) |
+| `reader` | Read, Glob, Grep and `Bash`; no Edit or Write, and the judge refuses any write |
+| `implementer` | Read, Glob, Grep, Edit, Write and `Bash` |
 
-"Read-only git" is exactly `Bash(git status:*)`, `Bash(git diff:*)`,
-`Bash(git log:*)`, `Bash(git show:*)`, `Bash(git rev-parse:*)` and
-`Bash(git branch --show-current)`. The export has no `.git` (contracts/pass.md),
-so these see an empty history; they are allowed so a skill that calls them
-does not fail. Profiles differ in permission rules only, never in the tools
-offered, so the tool definitions — part of the cached prefix — stay the same
-across a same-model group (research R16). A patch touching the check
-command's own files is allowed but flagged (FR-029): the review counts it as a
-finding and the owner's last checkpoint shows it.
+The export has no `.git` (contracts/pass.md), so git commands there see no
+history. Profiles differ in permission rules only, never in the tools offered
+(an allow list removes no tool; research R24), so the tool definitions — part
+of the cached prefix — stay the same across a same-model group (research
+R16); a reading phase that tries Edit or Write is denied, and a denial fails
+the pass. A patch touching the check command's own files is allowed but
+flagged (FR-029): the review counts it as a finding and the owner's last
+checkpoint shows it.
