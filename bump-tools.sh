@@ -8,7 +8,7 @@
 # ecosystem for "a version in a workflow env var plus a hash in a text file",
 # and Renovate's regex managers can move the version but not regenerate the
 # hash, which needs postUpgradeTasks and therefore a self-hosted instance. This
-# script is the thing that renews those five pins, and the scheduled workflow
+# script is the thing that renews those pins, and the scheduled workflow
 # in tool-updates.yml is what remembers to run it.
 #
 # It never merges anything by itself. The hashes it writes are whatever
@@ -20,7 +20,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 WORKFLOW=.github/workflows/ci.yml
 CHECKSUMS=.github/tool-checksums.txt
-TOOLS="shellcheck shfmt actionlint ghostty taplo zizmor gitleaks"
+TOOLS="shellcheck shfmt actionlint ghostty taplo zizmor gitleaks uv"
 
 BOLD=$'\033[1m'
 GREEN=$'\033[32m'
@@ -42,6 +42,7 @@ var_of() {
     taplo) echo TAPLO_VERSION ;;
     zizmor) echo ZIZMOR_VERSION ;;
     gitleaks) echo GITLEAKS_VERSION ;;
+    uv) echo UV_VERSION ;;
   esac
 }
 
@@ -68,6 +69,7 @@ latest_of() {
     taplo) gh api repos/tamasfe/taplo/releases/latest --jq .tag_name | sed 's/^v//' ;;
     zizmor) gh api repos/zizmorcore/zizmor/releases/latest --jq .tag_name | sed 's/^v//' ;;
     gitleaks) gh api repos/gitleaks/gitleaks/releases/latest --jq .tag_name | sed 's/^v//' ;;
+    uv) gh api repos/astral-sh/uv/releases/latest --jq .tag_name | sed 's/^v//' ;;
   esac
 }
 
@@ -84,6 +86,7 @@ url_of() {
     taplo) echo "https://github.com/tamasfe/taplo/releases/download/$2/taplo-darwin-aarch64.gz" ;;
     zizmor) echo "https://github.com/zizmorcore/zizmor/releases/download/v$2/zizmor-aarch64-apple-darwin.tar.gz" ;;
     gitleaks) echo "https://github.com/gitleaks/gitleaks/releases/download/v$2/gitleaks_${2}_darwin_arm64.tar.gz" ;;
+    uv) echo "https://github.com/astral-sh/uv/releases/download/$2/uv-aarch64-apple-darwin.tar.gz" ;;
   esac
 }
 
@@ -96,6 +99,9 @@ name_of() {
     taplo) echo "taplo-darwin-aarch64.gz" ;;
     zizmor) echo "zizmor-aarch64-apple-darwin.tar.gz" ;;
     gitleaks) echo "gitleaks_${2}_darwin_arm64.tar.gz" ;;
+    # uv's artifact name carries no version; the recorded name adds it, so the
+    # checksum line moves with the pin instead of being rewritten in place.
+    uv) echo "uv-$2-aarch64-apple-darwin.tar.gz" ;;
   esac
 }
 
