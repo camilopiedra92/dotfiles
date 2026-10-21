@@ -23,8 +23,9 @@ offline against stand-ins; the last two need the real services.
 4. **Outcome files** (FR-016): a missing, malformed or extra-field outcome
    fails the run at that step; valid ones drive the branches.
 5. **Loops** (FR-014, FR-015): a check command that always fails gives three
-   implementation passes and a pause at `fix-stuck`; `retry` gives one more;
-   a converge that never converges gives three passes and `converge-stuck`.
+   implementation passes and a stop at `fix-stuck`; `sdd-run resume <id> retry`
+   gives exactly one more round and the next failure stops again; a converge
+   that never converges gives three passes and a stop at `converge-stuck`.
 6. **Marking** (FR-006): `sdd-step mark` refuses on a failing verify or a
    blocking review, and marks only the tasks the review lists.
 7. **Patch judgment** (US2 AS3): a stand-in container runtime whose agent edits,

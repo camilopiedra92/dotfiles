@@ -429,9 +429,9 @@ the workflow's own limit for the step sits just above the ceiling),
     replaced by one Spec Kit implement step on that model, with the
     story-workers preset as `sdd-init` installs it today (its workers on the
     lighter model, its decision 0001); verify runs once after it, and there
-    is no `fix-stuck` checkpoint.
-  - **Checkpoints**: `review-done` is approved; `fix-stuck` and
-    `converge-stuck` are answered `abort`. The same rule counts runs in
+    is no `fix-stuck` stop.
+  - **Checkpoints**: `review-done` is approved; a stop at `fix-stuck` or
+    `converge-stuck` is answered `sdd-run abort`. The same rule counts runs in
     both arms: a run counts only if its last verify passed; one that reaches
     either stuck checkpoint, or a baseline run whose last verify failed, is
     not counted and is run again under the harness's rerun limit. If either

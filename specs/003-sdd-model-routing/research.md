@@ -84,9 +84,21 @@ that the dispatcher writes to `clarify.json` (R2, R10);
 the gate `answer-clarify` shows the file (`show_file`); `clarify-apply` runs
 clarify again with "the answers are in clarify-questions.md; ask nothing".
 
-**Pending**: the semantics of a gate's non-approve options (`retry` for
-`fix-stuck`, R10) are read from the engine's code and observed in the first
-task, before the workflow relies on them.
+**Observed** (T004, 2026-10-21, Spec Kit 1.2.2): a gate treats only an option
+named `reject` or `abort` as a rejection (`workflows/step/gate/__init__.py`);
+any other choice approves, and its bound verdict input is never reset, so it
+answers every later occurrence of the gate by itself — a `retry` bound once
+ran a three-pass loop to its end without asking again. A failed shell step
+is re-executed by `resume` (its two attempts both in `log.jsonl`); a run whose
+process is killed stays `running` and `resume` refuses it ("Cannot resume run
+… with status 'running'"). Spec Kit's `check-prerequisites.sh` with
+`SPECIFY_FEATURE_DIRECTORY` and `create-new-feature.sh` work in an export with
+no `.git`; the latter numbered the next feature and wrote
+`.specify/feature.json` as `{"feature_directory":"specs/<n>-<slug>"}`.
+**Decision**: the two stops inside loops — `fix-stuck` and `converge-stuck` —
+are shell steps (`sdd-step stuck`), not gates: they fail the step to stop the
+run, and `sdd-run resume <id> retry` writes a one-shot verdict file they
+consume, so each `retry` buys exactly one round and the next stop asks again.
 
 **Alternatives**: clarify by hand outside the workflow — the owner would pick a
 model by hand (SC-005). Answers as a verdict — a verdict must match one of the
@@ -331,8 +343,8 @@ dispatcher of R2 makes it per step.
 
 **Loops**: `build` (convergence, at most three passes, FR-014) holds
 `fix-loop` (one attempt and at most two fix rounds, FR-015), so a run makes at
-most nine implementation passes. `fix-stuck` offers `retry` (exactly one more
-implement-and-verify round) and `abort`; `converge-stuck` offers `retry` (one
+most nine implementation passes. `fix-stuck` takes `retry` (exactly one more
+implement-and-verify round) or `abort` (R3: one-shot, not a gate); `converge-stuck` takes `retry` (one
 more convergence pass) and `abort`. Without retries a run makes at most nine
 implementation passes. Converge counts as converged only when its outcome is
 `converged` and it lists no finding above LOW.
@@ -594,8 +606,9 @@ scripts", requiring a Pro, Max, Team or Enterprise plan; code.claude.com,
 authentication, read 2026-10-21), read from the Keychain item `claude-oauth`
 (how it reaches the provider is R23's egress proxy; no container holds it). The container's home holds no
 settings, MCP server or global CLAUDE.md of the owner's, so each step's
-context is the export plus its profile — what R4 and R16 sought with
-`--setting-sources ""`, here by construction.
+context is the export plus its profile. (Correction, R24: the export's own
+skills and CLAUDE.md load only with `--setting-sources project`, which also
+loads its tracked `.claude/settings.json`, bounded by the container.)
 
 **What it replaces**: host-side profiles with deny lists and Claude Code's
 Bash sandbox as the boundary for the judgment steps (R4, R19), and the

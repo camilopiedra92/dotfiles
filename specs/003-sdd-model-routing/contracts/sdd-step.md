@@ -17,6 +17,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | `verify` | the contained pass with no agent (contracts/pass.md, "Verify"): the check command frozen in the bundle, inside the worker container, registries only; writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
+| `stuck fix` / `stuck converge` | reads `.sdd/verify.json` or `.sdd/converge.json`; `clear` when it passed or converged; else consumes and deletes `$SDD_RUN_DIR/verdicts/retry` if present and prints `retry`; else fails, naming the two commands that answer it | `clear` or `retry` | 0, or non-zero to stop the run for the owner |
 | `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
 | `cleanup [<run_id>]` | removes the exports, containers, volumes and the egress proxy labelled with that run, or with any run that is not `running`, or whose run lock names a process that no longer exists (process id and start time, FR-022) | what it removed | 0 |
 
