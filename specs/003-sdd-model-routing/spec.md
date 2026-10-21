@@ -257,7 +257,8 @@ what landed in the commit, and what was printed.
   configuration, in the container runtime's logs, in the run's state or logs,
   or in the agent's session files.
 - **FR-010**: Code MUST be sent to the external provider only from a repository
-  the owner has opted in; otherwise implementation MUST run on the lighter
+  the owner has opted in, as recorded when the run started — an opt-out
+  during a run is honoured, an opt-in during a run is not; otherwise implementation MUST run on the lighter
   Claude model and the run MUST say so.
 - **FR-011**: Every program the routed run depends on MUST be declared in this
   repository's manifests (constitution I). Before the phase that needs it, a
@@ -328,7 +329,11 @@ what landed in the commit, and what was printed.
   effective table MUST be fixed for the whole run, kept where no step can
   change it.
 - **FR-026**: Each step MUST load only the context its row names: no MCP
-  server, and only the tools and permissions of its profile, so an unattended
+  server, and only the tools and permissions of its profile, read from a copy
+  frozen for the run where no step can change it; no step may change a skill,
+  a Spec Kit script, an outcome file, the routing, the opt-in or any profile,
+  and the operating system's sandbox MUST enforce the same limits on the
+  shell commands a step runs, so an unattended
   step can do nothing its phase does not need and same-model steps reuse the
   prompt cache.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run

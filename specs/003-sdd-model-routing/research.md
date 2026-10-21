@@ -101,9 +101,10 @@ file tools, `.specify/scripts/bash/*` and read-only git; `readonly` (analyze,
 review) allows reading and nothing that writes; every step also runs with
 `--setting-sources ""`, so its profile — which carries the config-guard and
 git-guard hooks — is its only source of permissions and hooks, and neither the
-owner's user settings nor the routed repository's can widen it (pending T003;
-fallback: `--setting-sources user` with an empty user allow list that `sdd-run`
-checks); `implement-sonnet` allows the file
+owner's user settings nor the routed repository's can widen it (pending T003,
+which also checks that project skills and CLAUDE.md still load; fallback:
+`--setting-sources user` with an empty user allow list and no user hook but
+the guards, both checked by `sdd-run`); `implement-sonnet` allows the file
 tools limited to its checkout and `Bash(<sdd.check>)`, composed per pass by
 `sdd-step implement`. A denied call is denied, not asked, so an unattended
 step never waits and never does what its profile does not allow.
