@@ -124,8 +124,8 @@ work and goes to the owner (plan.md, "Phase order").
 
 ## Phase 6: Measurement and polish
 
-- [ ] T039 In `~/Development/spec-kit-preset-story-workers`, a feature of its own (short path, its constitution): add a routed arm and an all-Opus baseline arm to `tests/eval/run.sh`, measured from tasks onward on the `checkout` fixture with a state carrying `.sdd/phases.json` (specify and plan done), as spec SC-001 defines the two arms; the harness's own rules decide setup, counting, reruns and versions
-- [ ] T040 Run both arms with that harness; link its recorded result from `docs/sdd-routing.md`, stating SC-001 and SC-002 met or not as it came out
+- [ ] T039 In `~/Development/spec-kit-preset-story-workers`, a feature of its own (short path, its constitution): extend `tests/eval/run.sh` from single-step arms to the two multi-step arms spec SC-001 defines — steps 11–16, the baseline's implement replacement, checkpoint answers, not-counted rules — on `checkout` and `wordstats`, each with a state that removes `tasks.md` and carries `.sdd/phases.json` (specify and plan done); one usage tool for both arms; `versions.txt` gains `container`, pi and the dotfiles commit
+- [ ] T040 Run three counted runs per arm per fixture with that harness; link its recorded result — median and range of usage, pass^3 on the held-out tests — from `docs/sdd-routing.md`, stating SC-001 and SC-002 met or not as it came out
 - [ ] T041 Move the decisions later work builds on out of research.md before the PR opens: `docs/decisions/0001-sdd-routing-workflow.md` (a workflow of our own on Spec Kit's engine; outcome files in JSON validated against schemas; verify without a model) in MADR's shape, linking research.md R1, R10; point `CLAUDE.md` at `docs/decisions/`
 - [ ] T042 `/speckit-converge` until a pass finds nothing above LOW; its tasks implemented last
 

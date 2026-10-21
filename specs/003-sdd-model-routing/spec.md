@@ -353,25 +353,38 @@ fixed above 30 minutes),
 ### Measurable Outcomes
 
 - **SC-001**: A routed run, opted in to the external provider, uses at least
-  40% less Claude subscription usage than the baseline run, counting every
-  attempt of every Claude step at list price as each reports it. Both arms are
-  measured from tasks onward on the same committed spec and plan: every phase
-  before tasks runs on the most capable model in both arms, so the routing
-  changes nothing there, and starting after it removes every difference in
-  input between the arms. The baseline is the same phases with every Claude
-  step on the most capable model and implementation by Spec Kit's implement
-  command with the story-workers preset as `sdd-init` installs it today. The
-  measurement runs on the story-workers preset's eval harness and its
-  `checkout` fixture, which already define how a fixture is laid out, which
-  runs count, when a run is repeated, how versions are matched across arms and
-  how held-out tests are applied; the two arms are added to that harness by a
-  feature of its own in that repository, and this criterion is met or not by
-  that feature's recorded result. One counted run per arm; recorded as it
-  comes out. Whether the owner moves to the smaller plan is decided
-  afterwards, from a week of real usage, not here.
-- **SC-002**: In the same comparison, the routed run passes as many of the
-  fixture's held-out acceptance tests as the baseline, and its own check
-  command passes.
+  40% less Claude subscription usage than the baseline run, by the median of
+  three counted runs per arm on each of the story-workers eval harness's two
+  fixtures, `checkout` and `wordstats`; the range is reported beside the
+  median. Usage counts every attempt of every Claude step at list price as
+  each reports it, summed for both arms by one tool, the harness's.
+  - **What both arms run**: the routed workflow's steps from tasks to
+    marking (contracts/workflow.md 11–16), on the fixture's committed spec
+    and plan, from a state that removes the fixture's `tasks.md`. Every
+    earlier phase runs on the most capable model in both arms, so starting at
+    tasks leaves out nothing the routing changes and every difference in
+    input between the arms.
+  - **The baseline**: the same steps with every Claude step on the most
+    capable model, and each convergence pass's implement-and-verify loop
+    replaced by one Spec Kit implement step on that model, with the
+    story-workers preset as `sdd-init` installs it today (its workers on the
+    lighter model, its decision 0001); verify runs once after it, and there
+    is no `fix-stuck` checkpoint.
+  - **Checkpoints**: `review-done` is approved; `fix-stuck` and
+    `converge-stuck` are answered `abort`, and a run that reaches either is
+    not counted and is run again under the harness's rerun limit.
+  - **Recorded per run**: Spec Kit, Claude Code, `container` and pi versions,
+    and the dotfiles commit.
+  - **Where**: the harness already fixes fixture layout, hermetic setup,
+    held-out tests and version matching across arms; it runs single-step
+    arms today, so a feature of its own in that repository extends it to
+    multi-step arms with these checkpoints and counting rules. This criterion
+    is met or not by that feature's recorded result, as it comes out.
+    Whether the owner moves to the smaller plan is decided afterwards, from a
+    week of real usage, not here.
+- **SC-002**: In the same comparison, the routed arm passes as many of each
+  fixture's held-out acceptance tests as the baseline in all three of its
+  counted runs (pass^3), and its own check command passes in each.
 - **SC-003**: The containment probe attempts, from inside the agent's runtime:
   reading the owner's SSH keys, the Keychain and another repository; writing
   to the feature's worktree outside the patch, to the home directory and to
@@ -423,5 +436,8 @@ fixed above 30 minutes),
 - The 40% target in SC-001 is the owner's goal (Pro is a fifth of Max 5x's
   allowance) discounted for what routing cannot move: the judgment phases stay
   on the most capable model.
-- One counted run per arm, as in the story-workers evals: the result is
-  directional, not statistical.
+- Three counted runs per arm on two fixtures follow Anthropic's guidance for
+  agent evals ("Demystifying evals for AI agents": multiple trials, because
+  outputs vary between runs; small samples suffice for a large effect, and
+  40% is one). It is still a small sample: the result reports the median and
+  the range, not a significance level.
