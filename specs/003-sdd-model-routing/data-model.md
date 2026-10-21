@@ -5,13 +5,13 @@ No database: each entity is a file or a setting that already has an owner.
 | Entity | Where it lives | Fields that matter | Written by |
 |---|---|---|---|
 | Workflow | `claude/speckit/sdd-routed.yml`, copied into each repository's `.specify/workflows/` by `specify workflow add` | `version`; gate `verdict_input`; loop `max_iterations`; step `timeout`; no model, effort or permission (contracts/workflow.md) | this repository, through `sdd-init` |
-| Run | `.specify/workflows/runs/<run_id>/` (`state.json`, `inputs.json`, `log.jsonl`), Spec Kit's, read-only to our scripts | status (`running`, `paused`, `completed`, `failed`, `aborted`), current step, each step's `output` (a Claude step's JSON result with `total_cost_usd` and `modelUsage`) | Spec Kit's engine |
+| Run | `.specify/workflows/runs/<run_id>/` (`state.json`, `inputs.json`, `log.jsonl`), Spec Kit's, read-only to our scripts | status (`running`, `paused`, `completed`, `failed`, `aborted`), current step, each step's `output` (the dispatcher's one-line summary; usage is in the usage log) | Spec Kit's engine |
 | Routing table | defaults `claude/speckit/routing.yml`; project `<repo>/.claude/sdd-routing.yml`; local `<repo>/.claude/sdd-routing.local.yml`; a run's `--set` — merged per FR-027 | per phase: `agent`, `model`, `effort`, `profile`, `prompt`, `schema`, `result_to`, `timeout` (contracts/routing.md) | this repository |
-| Usage log | `<feature>/.sdd/usage.jsonl` | one line per agent step attempt: phase, model, effort given, effort and usage reported | `sdd-step agent`, `sdd-step implement` |
+| Usage log | `$(git rev-parse --git-dir)/sdd/<run_id>/usage.jsonl`, per run | a start and an end line per agent step attempt: run id, phase, model, effort given, effort and usage reported | `sdd-step agent`, `sdd-step implement` |
 | Outcome files | `<feature>/.sdd/<step>.json`, one schema each in `claude/speckit/schemas/` | below | the step named |
 | Clarify questions | `<feature>/clarify-questions.md` (Markdown, for the owner) | up to five questions, options, recommendation, the owner's answer | `clarify-ask`, then the owner |
 | Opt-in | `git config --local sdd.implement` | `deepseek`, or absent | the owner |
-| Run lock | `$(git rev-parse --git-dir)/sdd/<run_id>.json` | run id, `sdd-run`'s process id and its start time | `sdd-run` |
+| Run directory | `$(git rev-parse --git-dir)/sdd/<run_id>/`: `lock.json` (run id, `sdd-run`'s process id and its start time), `routing.json` (the frozen effective table), `usage.jsonl` | — | `sdd-run`, `sdd-step` |
 | Check command | `git config --local sdd.check` | the command verify runs | the owner |
 | Credential | Keychain, generic password, service `deepseek-api` | the API key | the owner |
 | Worker image | the container runtime's image store | tag `sdd-pi-worker:<hash>` | `sdd-step implement` |

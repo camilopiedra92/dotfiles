@@ -98,8 +98,11 @@ the `--settings` file its routing row names — a profile in
 `claude/speckit/profiles/`. `judgment` (specify, clarify, plan, checklist, tasks, converge) allows the
 file tools, `.specify/scripts/bash/*` and read-only git; `readonly` (analyze,
 review) allows reading and nothing that writes; every step also runs with
-`--setting-sources user`, so the owner's hooks apply and the routed
-repository's own settings cannot widen a profile; `implement-sonnet` allows the file
+`--setting-sources ""`, so its profile — which carries the config-guard and
+git-guard hooks — is its only source of permissions and hooks, and neither the
+owner's user settings nor the routed repository's can widen it (pending T003;
+fallback: `--setting-sources user` with an empty user allow list that `sdd-run`
+checks); `implement-sonnet` allows the file
 tools limited to its checkout and `Bash(<sdd.check>)`, composed per pass by
 `sdd-step implement`. A denied call is denied, not asked, so an unattended
 step never waits and never does what its profile does not allow.
@@ -238,8 +241,9 @@ prints a fixed token the workflow's `if` and `do-while` conditions compare
 (`pass`/`fail`, `converged`/`open`, `yes`/`no`) and exits non-zero on a
 missing or invalid file (FR-016). Verify is `sdd-step verify`: it runs
 `sdd.check`, and writes the exit status and the tail of its output (FR-020).
-Review and converge are told through their arguments to write their outcome
-file with findings by severity.
+Clarify-ask, review and converge return their outcome as structured output
+(`--json-schema`), which the dispatcher writes to the outcome file; review's
+`readonly` profile could not write it itself.
 
 **Source**: proposed by the owner, checked against Anthropic's engineering
 posts. "How we built our multi-agent research system": "Subagent output to a
@@ -281,13 +285,14 @@ ended `failed` on its first pass).
 **Correction**: an earlier version of this entry said a Claude step's result
 lands in `state.json`. It does not on 1.1.3: `command` and `prompt` steps
 stream to the terminal and keep empty `stdout` — the probe had only seen a
-`shell` step captured, and the claim generalised it. Upstream fixed it in
-1.2.1 with opt-in capture (github/spec-kit#4957), so this feature requires
-Spec Kit ≥ 1.2.1 and runs on 1.2.2.
+`shell` step captured, and the claim generalised it. Upstream added opt-in capture in
+1.2.1 (github/spec-kit#4957); the dispatcher of R2 no longer relies on it, and
+the floor is 1.2.2 for the reason R15 gives.
 
 **Decision**: every agent step is a `shell` step (R2), whose stdout the
-engine always keeps in `state.json` (probe, 1.2.2); the dispatcher passes
-`--output-format json` itself, so the kept text is Claude's JSON result.
+engine keeps in `state.json` (probe, 1.2.2); the dispatcher prints a one-line
+summary there, and usage goes to the run's usage log (contracts/routing.md),
+the one source `sdd-run usage` reads.
 Shell steps stop at 300 seconds unless set (`workflows/step/shell/__init__.py`,
 `config.get("timeout", 300)`, read on 1.2.2), by killing the shell, which
 would orphan a running agent. So every agent step's `timeout:` in the workflow

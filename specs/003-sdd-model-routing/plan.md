@@ -90,6 +90,7 @@ specs/003-sdd-model-routing/
 ├── contracts/
 │   ├── sdd-run.md          # the owner's command
 │   ├── sdd-step.md         # the workflow's deterministic steps and the worker
+│   ├── routing.md          # the routing table, its layers and the dispatcher
 │   └── workflow.md         # sdd-routed's steps, models, gates, loops, outcomes
 └── tasks.md
 ```
@@ -109,6 +110,7 @@ claude/speckit/
 ├── profiles/                    # new: judgment, readonly, implement-sonnet (--settings)
 └── schemas/                     # new: the routing table's and each outcome file's
     ├── routing-table.schema.json
+    ├── routing-layer.schema.json
     ├── route.schema.json
     ├── routing.schema.json
     ├── phases.schema.json

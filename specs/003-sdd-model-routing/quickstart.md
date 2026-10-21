@@ -13,8 +13,8 @@ offline against stand-ins; the last two need the real services.
    in that order; and every call carrying its row's `--effort`, its profile's
    `--settings`, `--permission-mode dontAsk`, `--strict-mcp-config` with no
    server, `--output-format json`, and `--json-schema` where the row has one, with the engine's run id equal to
-   `SPECKIT_WORKFLOW_RUN_ID` and each Claude step's output in `state.json`
-   (FR-025).
+   `SPECKIT_WORKFLOW_RUN_ID` and each attempt in the run's usage log
+   (FR-025, contracts/routing.md).
 2. **Gates** (US1 AS3, FR-004): with no TTY the run pauses at each gate;
    `sdd-run resume <id> approve` continues, `reject` aborts, at every gate.
 3. **Clarify through a file** (US1 AS4): two canned questions pause the run at

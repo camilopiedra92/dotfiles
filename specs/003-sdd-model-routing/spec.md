@@ -289,7 +289,7 @@ what landed in the commit, and what was printed.
   shell command.
 - **FR-021**: Each step's effort MUST be set by its row of the routing and
   MUST NOT follow the owner's interactive effort or any effort environment
-  variable; it changes only by an edit to this repository. Each run records
+  variable; it changes only through a routing layer (FR-027). Each run records
   the level every step was given, and the level each step reports where the
   CLI reports one.
 - **FR-022**: A run left `running` by a process that no longer exists MUST,
@@ -320,8 +320,12 @@ what landed in the commit, and what was printed.
   field. The merged table MUST be validated before any step, an invalid value
   stopping the run naming the layer and field; each run MUST record every
   effective value and the layer it came from, and the owner MUST be able to
-  print that table. A routing layer MUST NOT enable the external provider for
-  a repository that has not opted in.
+  print that table. A layer MAY change only a step's model, within its agent's
+  provider, its effort, and its time limit downwards; it MUST NOT change a
+  step's agent, permissions, prompt or outputs, so no layer can enable the
+  external provider, widen a step, or drop a rule from a prompt. The
+  effective table MUST be fixed for the whole run, kept where no step can
+  change it.
 - **FR-026**: Each step MUST load only the context its row names: no MCP
   server, and only the tools and permissions of its profile, so an unattended
   step can do nothing its phase does not need and same-model steps reuse the
@@ -435,7 +439,7 @@ step is fixed above 30 minutes),
   DeepSeek V4 Flash through its own prepaid API key, reached
   through the pi coding agent. The names, and the versions the plan pins, are
   the owner's choice of 2026-10-21 and move only by a deliberate edit to this
-  repository; a retired model or a moved pin surfaces as a failed step naming
+  repository or a routing layer (FR-027); a retired model or a moved pin surfaces as a failed step naming
   it, not as a silent change. Claude models are therefore named by full model
   id, not by an alias such as `opus` that upstream repoints. Two dependencies
   are not pinned: the container runtime (a Homebrew formula) and the Claude

@@ -59,7 +59,9 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    deleted); an `ask` stops with exit 1 naming the path, nothing applied.
 8. **Apply and commit** on the feature's worktree: `worker: <feature>
    (<model>)`; `.sdd/implement.json` records the files, the commit, and
-   the pass's usage: pi's tokens, or Claude's reported cost and model usage.
+   the pass's usage: pi's tokens, or Claude's reported cost and model usage;
+   the same start and end lines go to the run's `usage.jsonl`
+   (contracts/routing.md).
 9. **Clean up**: the checkout, the container and, when the run completes, its
    volume removed whatever happened in 4–8. A pass whose own process was
    killed cannot clean up; `sdd-run start` and `resume` call `sdd-step

@@ -61,8 +61,10 @@ group reads its prefix from the prompt cache (research R16).
 
 Every agent step's `timeout:` is its default routing row's `timeout` plus
 300 seconds (a layer may only lower a row's limit, contracts/routing.md), so the dispatcher's own limit always fires first and cleans up;
-`verify` sets 3600; the other shell steps keep Spec Kit's 300-second default
-(research R11).
+`implement` (13.1.1), though run by `sdd-step implement` rather than
+`sdd-step agent`, is an agent step for this rule: `timeout: 2100`, the
+1800-second maximum of its rows plus 300; `verify` sets 3600; the other shell
+steps keep Spec Kit's 300-second default (research R11).
 
 ## Guarantees
 
