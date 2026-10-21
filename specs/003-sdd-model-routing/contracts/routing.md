@@ -20,7 +20,6 @@ exports it to every step, and writes into it before any step runs:
 | `proxy.json` | the egress proxy's address and port, written by `egress-proxy` while it runs |
 | `admissions/` | one `<token>.json` per running pass, and the `heartbeat` file `sdd-run` touches |
 | `finished.json` | written by `sdd-run` when the run completes or is aborted; until then the run holds its worker image |
-
 | `usage.jsonl` | appended by every agent attempt |
 
 `sdd-run start` also links the bundle as `~/.local/state/sdd/runs/<run_id>`,
