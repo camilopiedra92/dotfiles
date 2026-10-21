@@ -1,6 +1,8 @@
 """The contained pass of the sdd-routed workflow (contracts/pass.md).
 
-Run by `sdd-step` as `/usr/bin/python3 -I sdd-pass.py <agent PHASE|implement|verify> REPO`,
+Run by `sdd-step` as `/usr/bin/python3 -I sdd-pass.py <subcommand> [ARG] REPO`, for
+`agent PHASE`, `implement`, `verify`, and the machinery around them:
+`prepare-worker`, `egress-proxy` and `cleanup [RUN_ID]`,
 with its working directory in the run bundle, PATH fixed to the system's and
 nothing of the repository's configuration in reach: every host tool is called
 by an absolute path, git as /usr/bin/git with system and global configuration,
@@ -15,11 +17,13 @@ only interpreter whose path no repository can change.
 """
 
 import fnmatch
+import hashlib
 import json
 import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -502,9 +506,167 @@ def verify(run):
     print("pass" if code == 0 else "fail")
 
 
+def prepare_worker(run):
+    """Builds the worker image once per content of containers/worker/, so no
+    pass's limit pays for a build, and records its tag in the bundle."""
+    ctx = os.path.join(DOTFILES, "containers", "worker")
+    h = hashlib.sha256()
+    for root, dirs, files in os.walk(ctx):
+        dirs.sort()
+        for name in sorted(files):
+            full = os.path.join(root, name)
+            h.update(os.path.relpath(full, ctx).encode() + b"\0")
+            with open(full, "rb") as f:
+                h.update(f.read() + b"\0")
+    tag = f"sdd-worker:{h.hexdigest()[:12]}"
+    rt = run.tool("container")
+    present = subprocess.run([rt, "image", "inspect", tag], env=HOST_ENV, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, cwd=run.dir).returncode == 0
+    if not present:
+        r = subprocess.run([rt, "build", "-t", tag, "-f", os.path.join(ctx, "Containerfile"), ctx], env=HOST_ENV,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=run.dir)
+        if r.returncode != 0:
+            raise PassFailed("building the worker image failed:\n" + r.stdout.decode(errors="replace")[-1500:])
+    with open(os.path.join(run.dir, "worker.json"), "w") as f:
+        json.dump({"image": tag}, f)
+    print(tag)
+
+
+def egress_proxy(run):
+    """Runs the run's egress proxy until it stops (contracts/pass.md): its own
+    container on a network made for the run, the credentials written to its
+    stdin and nowhere else, the admissions directory mounted read-only. Records
+    where agents reach it, and the model behind each DeepSeek id, in the
+    bundle; removes the network when the proxy is gone."""
+    rt = run.tool("container")
+    net, name = f"sdd-{run.id}", f"sdd-{run.id}-proxy"
+    admissions = os.path.join(run.dir, "admissions")
+    os.makedirs(admissions, exist_ok=True)
+    # sdd-run touches this while it lives; the proxy exits a minute after it stops.
+    with open(os.path.join(admissions, "heartbeat"), "w") as f:
+        f.write(now())
+    # The proxy runs from the bundle's copy, like everything else that governs a run.
+    code_dir = os.path.join(run.dir, "proxy")
+    os.makedirs(code_dir, exist_ok=True)
+    shutil.copy(os.path.join(DOTFILES, "bin", "sdd-egress-proxy.py"), code_dir)
+    image = load(os.path.join(run.dir, "worker.json"))["image"]
+    host = lambda *a: subprocess.run([rt, *a], env=HOST_ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=run.dir)
+    r = host("network", "create", net)
+    if r.returncode != 0 and net not in host("network", "list", "-q").stdout.decode().split():
+        raise PassFailed("creating the run's network failed: " + r.stderr.decode(errors="replace").strip())
+    deepseek = load(os.path.join(run.dir, "optin.json")).get("implement") == "deepseek"
+    providers = {"anthropic": {"upstream": "https://api.anthropic.com", "credential": run.secret("claude-oauth")}}
+    if deepseek:
+        providers["deepseek"] = {"upstream": "https://api.deepseek.com", "credential": run.secret("deepseek-api"),
+                                 "models": "/models"}
+    with open(os.path.join(DOTFILES, "containers", "worker", "egress-registries.txt")) as f:
+        registries = [l.split("#")[0].strip() for l in f if l.split("#")[0].strip()]
+    start = json.dumps({"listen": "0.0.0.0:8080", "admissions": "/admissions", "heartbeat_seconds": 60,
+                        "providers": providers, "registries": registries})
+    del providers
+    proc = subprocess.Popen([rt, "run", "--rm", "-i", "--name", name, "--label", f"sdd.run={run.id}",
+                             "--network", net, "-v", f"{admissions}:/admissions:ro", "-v", f"{code_dir}:/proxy:ro",
+                             "--entrypoint", "python3", image, "-I", "/proxy/sdd-egress-proxy.py"],
+                            env=HOST_ENV, stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=run.dir)
+
+    def stop(*_):
+        subprocess.run([rt, "stop", name], env=HOST_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       cwd=run.dir)
+
+    signal.signal(signal.SIGTERM, lambda *_: (stop(), sys.exit(0)))
+    try:
+        proc.stdin.write(start.encode() + b"\n")
+        proc.stdin.close()
+        del start
+        ready = json.loads(proc.stdout.readline() or "null") or {}
+        if "api_port" not in ready:
+            raise PassFailed("the egress proxy did not start")
+        info = json.loads(host("inspect", name).stdout or "[]")
+        address = info[0]["status"]["networks"][0]["ipv4Address"].split("/")[0]
+        routing_path = os.path.join(run.dir, "routing.json")
+        routing = load(routing_path)
+        listed = (ready.get("models") or {}).get("deepseek") or {}
+        names = {m.get("id"): m.get("name", m.get("id")) for m in listed.get("data", [])} if isinstance(listed, dict) else {}
+        for row in run.rows.values():
+            if row["agent"] == "pi" and row["model"] in names:
+                routing["served"][row["model"]] = names[row["model"]]
+        with open(routing_path, "w") as f:
+            json.dump(routing, f, indent=1)
+        with open(os.path.join(run.dir, "proxy.json"), "w") as f:
+            json.dump({"address": address, "port": ready["api_port"]}, f)
+        proc.wait()
+    finally:
+        stop()
+        proc.wait()
+        for leftover in ("proxy.json",):
+            try:
+                os.remove(os.path.join(run.dir, leftover))
+            except OSError:
+                pass
+        host("network", "delete", net)
+
+
+def process_alive(lock):
+    """The lock's process exists and is the one that wrote it: same pid, same
+    start time as `ps` prints it, so a reused pid does not keep a dead run."""
+    try:
+        os.kill(int(lock["pid"]), 0)
+    except (OSError, ValueError, KeyError):
+        return False
+    r = subprocess.run(["/bin/ps", "-o", "lstart=", "-p", str(lock["pid"])], env=HOST_ENV,
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return r.stdout.decode().strip() == str(lock.get("started", "")).strip()
+
+
+def cleanup(run, only=None):
+    """Removes what a run left behind — its containers, cache volumes, network,
+    exports and admissions — for the run named, or for every run whose lock
+    names a process that is gone."""
+    root = os.path.dirname(run.dir)
+    rt = run.tool("container")
+    host = lambda *a: subprocess.run([rt, *a], env=HOST_ENV, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=run.dir)
+    dead = []
+    for rid in sorted(os.listdir(root)):
+        lock_path = os.path.join(root, rid, "lock.json")
+        if only and rid != only:
+            continue
+        try:
+            lock = load(lock_path)
+        except (OSError, ValueError):
+            lock = {}
+        if only or not process_alive(lock):
+            dead.append(rid)
+    try:
+        containers = json.loads(host("list", "--all", "--format", "json").stdout or "[]")
+    except ValueError:
+        containers = []
+    volumes = host("volume", "list", "-q").stdout.decode().split()
+    for rid in dead:
+        for c in containers:
+            conf = c.get("configuration", {})
+            if (conf.get("labels") or {}).get("sdd.run") == rid:
+                host("stop", conf["id"])
+                host("delete", "--force", conf["id"])
+                print(f"container {conf['id']}")
+        for v in volumes:
+            if v in (f"sdd-cache-implement-{rid}", f"sdd-cache-verify-{rid}"):
+                host("volume", "delete", v)
+                print(f"volume {v}")
+        host("network", "delete", f"sdd-{rid}")
+        d = os.path.join(root, rid)
+        if os.path.isdir(os.path.join(d, "passes")) and os.listdir(os.path.join(d, "passes")):
+            shutil.rmtree(os.path.join(d, "passes"))
+            print(f"exports of {rid}")
+        adm = os.path.join(d, "admissions")
+        for name in os.listdir(adm) if os.path.isdir(adm) else []:
+            if name.endswith(".json"):
+                os.remove(os.path.join(adm, name))
+
+
 def main():
     if len(sys.argv) < 3:
-        print("usage: sdd-pass.py <agent PHASE|implement|verify> REPO", file=sys.stderr)
+        print("usage: sdd-pass.py <agent PHASE|implement|verify|prepare-worker|egress-proxy|cleanup [RUN]> REPO",
+              file=sys.stderr)
         return 2
     what, repo = sys.argv[1], sys.argv[-1]
     try:
@@ -515,6 +677,12 @@ def main():
             implement(run)
         elif what == "verify":
             verify(run)
+        elif what == "prepare-worker":
+            prepare_worker(run)
+        elif what == "egress-proxy":
+            egress_proxy(run)
+        elif what == "cleanup":
+            cleanup(run, sys.argv[2] if len(sys.argv) > 3 else None)
         else:
             raise PassFailed(f"unknown pass {what}")
     except PassFailed as e:

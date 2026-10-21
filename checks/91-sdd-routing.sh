@@ -471,3 +471,116 @@ if command -v check-jsonschema > /dev/null 2>&1; then
 else
   skip "the contained pass exports, judges, applies and cleans up, and no credential or repository configuration reaches a host step" check-jsonschema
 fi
+
+# The run's own machinery (contracts/sdd-step.md): prepare-worker builds the
+# worker image once per content of containers/worker/ and records its tag;
+# egress-proxy starts the proxy container on the run's network with the
+# credentials on its stdin only, records where agents reach it and the model
+# behind each DeepSeek id, and removes the network when the proxy stops;
+# cleanup removes what a run left behind, and leaves a live run alone.
+sdd_lifecycle() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh repo=$tmp/repo sa=$tmp/standins run out
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  fail() {
+    echo "$1"
+    status=1
+  }
+  cp -R checks/sdd/standins "$sa"
+  mkdir -p "$sa/secrets" "$repo"
+  printf '%s' "$claude_secret" > "$sa/secrets/claude-oauth"
+  printf '%s' "$deepseek_secret" > "$sa/secrets/deepseek-api"
+  git -C "$repo" init -q -b main
+  git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
+  run=$(python3 -I checks/sdd/bundle.py "$tmp" "$dotfiles") || return 1
+  rm -f "$run/proxy.json" "$run/worker.json"
+  printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"x"}\n' "$$" > "$run/lock.json"
+  sub() { (cd "$repo" && SDD_RUN_DIR=$run "$step" "$@" 2>&1); }
+  calls() { grep -F "\"$1\"" "$sa/calls.jsonl" 2> /dev/null; }
+
+  # prepare-worker: builds once, from dotfiles' containers/worker/, and records the tag.
+  local tag
+  tag=$(sub prepare-worker) || fail "prepare-worker: failed: $tag"
+  [[ "$tag" =~ ^sdd-worker:[0-9a-f]{12}$ ]] || fail "prepare-worker: printed '$tag', not sdd-worker:<12 hex>"
+  calls build | grep -qF "$dotfiles/containers/worker" || fail "prepare-worker: did not build from containers/worker"
+  /usr/bin/python3 -I -c 'import json,sys; sys.exit(json.load(open(sys.argv[1]))["image"] != sys.argv[2])' "$run/worker.json" "$tag" 2> /dev/null ||
+    fail "prepare-worker: worker.json does not record $tag"
+  out=$(sub prepare-worker) || fail "prepare-worker: second run failed: $out"
+  [ "$(calls build | wc -l | tr -d ' ')" -eq 1 ] || fail "prepare-worker: built again although the image was present"
+
+  # egress-proxy, opted out: Claude's credential only.
+  local opt pid
+  for opt in sonnet deepseek; do
+    printf '{"implement":"%s"}\n' "$opt" > "$run/optin.json"
+    rm -f "$run/proxy.json" "$sa/proxy-start.json"
+    (cd "$repo" && SDD_RUN_DIR=$run "$step" egress-proxy > "$tmp/proxy.out" 2>&1) &
+    pid=$!
+    local waited=0
+    while [ ! -s "$run/proxy.json" ] && [ $waited -lt 100 ] && kill -0 "$pid" 2> /dev/null; do
+      sleep 0.1
+      waited=$((waited + 1))
+    done
+    [ -s "$run/proxy.json" ] || {
+      fail "egress-proxy $opt: no proxy.json: $(cat "$tmp/proxy.out")"
+      kill "$pid" 2> /dev/null
+      continue
+    }
+    /usr/bin/python3 -I - "$run/proxy.json" "$sa/proxy-start.json" "$opt" "$run/routing.json" "$run/admissions" << 'PY' || status=1
+import json, sys
+proxy, start, opt, routing, admissions = sys.argv[1:]
+bad = []
+p = json.load(open(proxy))
+if p != {"address": "127.0.0.1", "port": 8080}:
+    bad.append(f"proxy.json is {p}")
+s = json.load(open(start))
+want = {"anthropic": True, "deepseek": True} if opt == "deepseek" else {"anthropic": True}
+if s["providers"] != want:
+    bad.append(f"the proxy got credentials {s['providers']}, wanted {want} (True: the Keychain's value)")
+if s["admissions"] != "/admissions":
+    bad.append(f"admissions read from {s['admissions']}")
+served = json.load(open(routing))["served"]
+if opt == "deepseek" and served.get("deepseek-flash") != "DeepSeek-Standin-Flash":
+    bad.append(f"routing.json served is {served}, not the name /models gave")
+import os
+if not os.path.exists(os.path.join(admissions, "heartbeat")):
+    bad.append("no heartbeat file in the admissions directory")
+for b in bad:
+    print(f"egress-proxy {opt}: {b}")
+sys.exit(1 if bad else 0)
+PY
+    local proxy_run
+    proxy_run=$(calls run | grep -F sdd-egress-proxy.py | tail -1)
+    printf '%s' "$proxy_run" | grep -qF '"--network", "sdd-run1"' || fail "egress-proxy $opt: not on the run's network: $proxy_run"
+    printf '%s' "$proxy_run" | grep -qF "$run/admissions:/admissions:ro" || fail "egress-proxy $opt: admissions not mounted read-only: $proxy_run"
+    calls network | grep -qF '"create", "sdd-run1"' || fail "egress-proxy $opt: the run's network was not created"
+    grep -qF -e "$claude_secret" -e "$deepseek_secret" "$sa/calls.jsonl" "$tmp/proxy.out" "$run"/*.json &&
+      fail "egress-proxy $opt: a credential reached an argument, the bundle or the output"
+    "$sa/container" stop sdd-run1-proxy
+    wait "$pid" || fail "egress-proxy $opt: exited non-zero when the proxy stopped: $(cat "$tmp/proxy.out")"
+    grep -qx sdd-run1 "$sa/networks.txt" 2> /dev/null && fail "egress-proxy $opt: the network outlived the proxy"
+  done
+
+  # cleanup: everything labelled with a dead run goes; a live run's stays.
+  mkdir -p "$run/passes/plan-1/export" "$run/admissions"
+  : > "$run/admissions/sdd-pass-leftover.json"
+  printf 'sdd.run=run1 ' > "$sa/labels.sdd-run1-plan-1"
+  local live=$repo/.git/sdd/run2
+  mkdir -p "$live/passes/plan-9"
+  cp "$run/tools.json" "$live/"
+  printf '{"run_id":"run2","pid":%s,"started":"%s","base":"x"}\n' "$$" "$(ps -o lstart= -p $$ | sed 's/^ *//')" > "$live/lock.json"
+  printf 'sdd.run=run2 ' > "$sa/labels.sdd-run2-plan-9"
+  printf '{"run_id":"run1","pid":999999,"started":"x","base":"x"}\n' > "$run/lock.json"
+  printf '%s\n' sdd-cache-implement-run1 sdd-cache-verify-run1 sdd-cache-verify-run2 > "$sa/volumes.txt"
+  out=$(sub cleanup) || fail "cleanup: failed: $out"
+  [ ! -e "$sa/labels.sdd-run1-plan-1" ] || fail "cleanup: left the dead run's container"
+  [ -z "$(ls -A "$run/passes" 2> /dev/null)" ] || fail "cleanup: left the dead run's exports"
+  [ ! -e "$run/admissions/sdd-pass-leftover.json" ] || fail "cleanup: left the dead run's admissions"
+  grep -q run1 "$sa/volumes.txt" && fail "cleanup: left the dead run's cache volumes"
+  if [ ! -e "$sa/labels.sdd-run2-plan-9" ] || [ ! -d "$live/passes/plan-9" ] || ! grep -qx sdd-cache-verify-run2 "$sa/volumes.txt"; then
+    fail "cleanup: touched the live run"
+  fi
+  return "$status"
+}
+check "prepare-worker builds once, egress-proxy holds the credentials and records the served model, cleanup spares a live run" sdd_lifecycle

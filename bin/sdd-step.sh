@@ -7,6 +7,7 @@
 #         sdd-step agent <phase>
 #         sdd-step implement
 #         sdd-step verify
+#         sdd-step prepare-worker | egress-proxy | cleanup [<run_id>]
 #
 # Every subcommand runs inside a run: SDD_RUN_DIR names its bundle, and every
 # host tool is found there or at a fixed system path, never through the PATH
@@ -88,11 +89,11 @@ case "${1:-}" in
     shift
     outcome "$@"
     ;;
-  agent | implement | verify)
+  agent | implement | verify | prepare-worker | egress-proxy | cleanup)
     # The pass starts in the bundle's directory, with no environment but what
     # it sets itself.
     cd "$SDD_RUN_DIR" || die "cannot enter $SDD_RUN_DIR"
     exec /usr/bin/env -i HOME="$HOME" "$PY" -I "$DOTFILES/bin/sdd-pass.py" "$@" "$REPO"
     ;;
-  *) die "usage: sdd-step <outcome|agent|implement|verify> ..." ;;
+  *) die "usage: sdd-step <outcome|agent|implement|verify|prepare-worker|egress-proxy|cleanup> ..." ;;
 esac
