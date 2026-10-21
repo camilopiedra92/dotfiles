@@ -10,7 +10,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | Subcommand | Does | Prints | Exit |
 |---|---|---|---|
 | `agent <phase>` | runs a Claude routing row (contracts/routing.md) | — | 0 when the result is a success with no denial; non-zero naming the cause otherwise |
-| `route` | reads `git config --local sdd.implement`, writes `.sdd/route.json` | `deepseek`, or `sonnet` plus a line on how to opt in and DeepSeek's terms | 0 |
+| `route` | reads the opt-in frozen in `$SDD_RUN_DIR/optin.json`, writes `.sdd/route.json` | `deepseek`, or `sonnet` plus a line on how to opt in and DeepSeek's terms | 0 |
 | `outcome <step>` | validates `.sdd/<step>.json` | the step's token: `yes`/`no` (clarify), `pass`/`fail` (verify), `converged`/`open` (converge), `blocking`/`clear` (review) | 0; non-zero when the file is missing or invalid |
 | `verify` | runs `git config sdd.check`, writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
@@ -22,7 +22,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 
 1. **Prerequisites**, each stopping with exit 1 before any code leaves the
    machine (SC-004); the effective implement row's `timeout` is within its `max_timeout`.
-   For deepseek (as `route.json` says): still opted in — a repository opted
+   For deepseek (as `route.json` says): opted in both in the bundle and now — a repository opted
    out since `route` ran sends nothing and the pass runs on sonnet instead,
    saying so, after sonnet's prerequisites, and records `agent: sonnet` in
    `implement.json` (FR-010); the container runtime research R5 settled on,

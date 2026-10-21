@@ -332,8 +332,9 @@ else `uuid4()[:8]`), so the lock can be named before the run begins.
 
 **Interrupted** (FR-022): `sdd-run` writes the run id, its own process id
 and that process's start time (`ps -o lstart= -p <pid>`) to
-`$(git rev-parse --git-dir)/sdd/<run_id>.json` at start and resume —
-inside git's own directory, per worktree, never committed. A `phase-done`
+the run bundle's `lock.json`, `$SDD_RUN_DIR`, at start and resume — inside
+git's common directory, shared by the repository's worktrees, never
+committed (R19). A `phase-done`
 shell step after each approved checkpoint, and after tasks, appends the phase
 to `<feature>/.sdd/phases.json`; `--from` starts at the first phase not in it. On resume, a run in state
 `running` whose recorded process is gone is reported with the phases that will
@@ -451,6 +452,29 @@ opt in every clone of a public repository (research R9).
 without editing a shared file; environment variables per field — no
 validation of the whole and no provenance; Spec Kit workflow overlays — they
 cannot hold values the workflow does not carry (research R2).
+
+## R19 — The run bundle and defence in depth
+
+**Finding** (fresh-context analysis, 2026-10-21): with profiles, hooks, skills
+and the opt-in read live, a judgment step allowed `Bash(.specify/scripts/bash/*)`
+and unrestricted Write could write a script there and run it — `git config
+sdd.implement deepseek` would have sent code to DeepSeek without the owner's
+opt-in — or edit a later step's skill or profile.
+
+**Decision**: what governs a run is copied into a bundle in git's common
+directory at start (contracts/routing.md) and read only from there; the
+opt-in is frozen with it and can only be downgraded mid-run. Profiles allow
+Bash for named scripts and exact read-only git subcommands only, and deny Edit
+and Write on git's directory, `.claude/**`, `.specify/**`, `.sdd/**` and the
+bundle. Claude Code's Bash sandbox runs under every profile with no network
+and writes limited to the worktree minus those paths, so the operating system
+enforces what the rules state (code.claude.com, sandboxing: "a boundary that
+the operating system enforces around the shell commands").
+
+**Alternatives**: rules alone — one hole in a pattern is a hole; the sandbox
+alone — it covers shell commands, not the file tools; running every Claude
+step in a container — the strongest boundary, but the Claude steps need the
+owner's subscription login inside it, which this feature does not move.
 
 ## R13 — Time and spend
 

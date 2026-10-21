@@ -1,5 +1,28 @@
 # Contract: the routing table and `sdd-step agent`
 
+## The run bundle
+
+`sdd-run start` resolves the run directory once,
+`SDD_RUN_DIR=$(git rev-parse --git-common-dir)/sdd/<run_id>` — git's own
+directory, shared by every worktree of the repository and never committed —
+exports it to every step, and writes into it before any step runs:
+
+| File | What |
+|---|---|
+| `lock.json` | run id, `sdd-run`'s process id and its start time (FR-022) |
+| `optin.json` | the repository's opt-in as read at start (`sdd.implement`) |
+| `routing.json` | the merged effective table, each value with its layer |
+| `profiles/*.json` | copies of the profiles, their hook commands rewritten to the bundle's absolute paths |
+| `hooks/` | copies of `config-guard.sh` and `git-guard.sh` |
+| `usage.jsonl` | appended by every agent attempt |
+
+Every step reads its routing, profile, hooks and opt-in only from the bundle,
+never from the repository or dotfiles, and `resume` reuses the bundle as it
+is: what governs a run is fixed from its first step to its last. An opt-out
+recorded after start is honoured as a downgrade — implementation runs on
+Sonnet — and nothing can upgrade a run to the external provider mid-run
+(FR-010). No profile can write the bundle (below).
+
 ## Layers (FR-027)
 
 | Precedence | File or source | Versioned | Holds |
@@ -22,13 +45,9 @@ row, and adds no phase the defaults do not have. `--set` values are typed by
 the schema (`timeout=900` is an integer). Validation: each layer
 against `claude/speckit/schemas/routing-layer.schema.json`, the merged table
 against `routing-table.schema.json`; any failure stops `sdd-run` naming the
-layer, phase and field. Freeze: `sdd-run start` writes the merged table,
-with each value's layer, to the run's directory,
-`$(git rev-parse --git-dir)/sdd/<run_id>/routing.json` — inside git's own
-directory, which no profile can write — before any step; `sdd-step agent`
-reads only that file; `resume` reuses it unchanged, so a run routes the same
-from first step to last. A copy goes to `.sdd/routing.json` once the feature
-directory exists, as a record. `sdd-run routing [--set …]` prints that table from
+layer, phase and field. The merged table is frozen in the run bundle (above);
+a copy goes to `.sdd/routing.json` once the feature directory exists, as a
+record. `sdd-run routing [--set …]` prints that table from
 the repository root without starting a run. A row with `agent: pi` applies
 only when `sdd.implement` opts the repository in; otherwise the run uses
 `implement-sonnet` and says so, whatever the layers say.
@@ -82,7 +101,7 @@ Runs, from the repository root:
 claude -p "<row.prompt> <feature paths>" \
   --model <row.model> --effort <row.effort> \
   --permission-mode dontAsk --setting-sources "" \
-  --settings claude/speckit/profiles/<row.profile>.json \
+  --settings "$SDD_RUN_DIR/profiles/<row.profile>.json" \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
   --output-format json [--json-schema <schema>]
 ```
@@ -96,7 +115,7 @@ with `CLAUDE_CODE_EFFORT_LEVEL` unset, stopped after `row.timeout`. Then:
 - the result's text goes to `row.result_to` when the row names one;
 - a start line before the call and an end line after it — run id, phase,
   model, effort given, reported usage and effort — are appended to the run's
-  `$(git rev-parse --git-dir)/sdd/<run_id>/usage.jsonl`, the one source
+  `$SDD_RUN_DIR/usage.jsonl`, the one source
   `sdd-run usage <run_id>` reads (the DeepSeek pass appends the same lines); a start with no end
   is an attempt that reported nothing (FR-021, SC-001). Its stdout is a
   one-line summary; usage is not read from the run's state.
@@ -109,7 +128,12 @@ therefore carries the config-guard and git-guard hooks itself (FR-026,
 research R4). **Pending**: that this CLI accepts an empty source list, and
 that the profile's hooks fire; T003 observes both, and if it does not,
 `--setting-sources user` with an empty user allow list checked by `sdd-run`
-is the fallback, recorded in research R4.
+is the fallback, recorded in research R4, together with what it checks: an
+empty user allow list and no user hook other than the guards, which then run
+from the user's settings rather than twice. **Pending** too: that project
+skills (`/speckit-*`) and the project's CLAUDE.md — the constitution's import —
+still load with no setting source; T003 observes it, and the fallback is
+chosen by what it shows.
 
 The `pi` row is run by `sdd-step implement` (contracts/sdd-step.md), with
 `--model deepseek/<row.model> --thinking <row.effort>`.
@@ -118,13 +142,24 @@ The `pi` row is run by `sdd-step implement` (contracts/sdd-step.md), with
 
 | Profile | Allows |
 |---|---|
-| `judgment` | Read, Edit, Write, Glob, Grep; `Bash(.specify/scripts/bash/*)`; read-only git |
+| `judgment` | Read, Glob, Grep; Edit and Write in the worktree; `Bash` for each named Spec Kit script the phases run (`check-prerequisites.sh`, `setup-plan.sh`, `setup-tasks.sh`, `create-new-feature.sh`), with any arguments; read-only git |
 | `readonly` | Read, Glob, Grep; read-only git |
 | `implement-sonnet` | Read, Glob, Grep; Edit and Write limited to the pass's checkout; `Bash(<sdd.check>)` — not a file in `profiles/`: composed per pass by `sdd-step implement` (FR-023) |
 
+"Read-only git" is exactly `Bash(git status:*)`, `Bash(git diff:*)`,
+`Bash(git log:*)`, `Bash(git show:*)`, `Bash(git rev-parse:*)` and
+`Bash(git branch --show-current)`; `git config`, `git commit` and every other
+subcommand are denied.
+
 Every profile is `dontAsk`: what it does not allow is denied, never asked.
-Every profile denies Edit and Write on `.git/**` and on
-`.claude/sdd-routing*.yml`, so no step can change the routing it runs under.
+Every profile denies Edit and Write on the git common directory (by absolute
+path, so linked worktrees are covered), `.claude/**`, `.specify/**`,
+`.sdd/**` and the run bundle: no step can change a skill, a Spec Kit script,
+an outcome file, the routing or its own permissions. Every profile also turns
+on Claude Code's Bash sandbox (`sandbox.enabled`, `allowUnsandboxedCommands:
+false`, no allowed network domain, writes limited to the worktree minus those
+paths), so the operating system enforces the same limits on whatever a
+permitted command runs (code.claude.com, sandboxing).
 Profiles differ in permission rules only, never in the tools offered, so
 the tool definitions — part of the cached prefix — stay the same across a
 same-model group (research R16).
