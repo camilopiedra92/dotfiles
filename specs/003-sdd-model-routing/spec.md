@@ -286,9 +286,11 @@ what landed in the commit, and what was printed.
   the owner's own settings, the feature stops for the owner rather than
   route at an unknown effort.
 - **FR-022**: A run left `running` by a process that no longer exists MUST,
-  on the owner's next resume, either continue through the engine or stop
-  naming the phases that will run again and the command that starts a new
-  run from the existing feature directory at the first unfinished phase;
+  on the owner's next resume, stop naming the phases that will run again and
+  the command that starts a new run from the existing feature directory at
+  the first unfinished phase (Spec Kit 1.2.2 resumes only paused or failed
+  runs); a new run from a feature with no finished phase is refused, and the
+  owner starts again from the description;
   finished phases' files MUST NOT be rewritten by that new run. A phase is
   finished when its checkpoint was approved, or, for tasks, when its output
   was written; each is recorded in an outcome file as it happens. Whether a
@@ -355,8 +357,10 @@ fixed above 30 minutes),
   reports no usage (killed or timed out before its result) is listed as
   unreported, and an arm with one is run again. The reference fixture is the
   `checkout` fixture of the story-workers preset's Eval 002 at the commit
-  named in the eval's record, with the same prepared clarify answers in both
-  arms. The baseline is a workflow file of its own, kept with the eval: the
+  named in the eval's record. Both arms start from the same description, the
+  fixture's `description.txt`, and answer clarify from the same file, the
+  fixture's `clarify-answers.md`, keyed by topic; a question it does not
+  cover takes clarify's own recommendation, and is recorded. The baseline is a workflow file of its own, kept with the eval: the
   routed workflow with every Claude step on the most capable model at the
   same effort, and its implement-and-verify loop replaced by Spec Kit's own
   implement command, which marks tasks itself (a measurement arm, not bound
@@ -372,8 +376,9 @@ fixed above 30 minutes),
   baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
   repository, added to the fixture from the same dotfiles commit as the
   routed one. In both counted runs every review checkpoint is approved,
-  `fix-stuck` and `converge-stuck` are answered `abort`, and an arm that
-  reaches either is recorded so. The one model step not on the most capable model is
+  `fix-stuck` and `converge-stuck` are answered `abort`; an arm that reaches
+  either is not a counted run: it is recorded and run once more, and a second
+  such run is the arm's result, recorded as it came out. The one model step not on the most capable model is
   story-workers' own worker inside that implement command, on the lighter
   model at `medium` as its decision 0001 sets it; it is part of the
   baseline as `sdd-init` installs it today. Spec Kit 1.2.2; the Claude Code
@@ -410,7 +415,11 @@ fixed above 30 minutes),
   are not pinned: the `container` runtime (a Homebrew formula) and the Claude
   Code CLI. A changed flag or a missing field in either's output fails the
   step naming it, and a missing usage figure is never read as zero; each run
-  records both versions.
+  records both versions. DeepSeek's id `deepseek-flash` names no version
+  either: a pass whose response reports a model other than the one
+  configured fails, naming both; pi moves only by an edit to the worker
+  image, and a pass whose output lacks a field the run reads fails naming
+  it.
 - The routed workflow is an addition: the interactive way of running Spec Kit
   phases in one Claude session stays as it is.
 - A routed run never calls Spec Kit's implement command, so the story-workers

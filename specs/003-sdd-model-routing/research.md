@@ -2,7 +2,8 @@
 
 Decisions for `003-sdd-model-routing`, each with what was observed and what
 lost. Probes ran on 2026-10-21 against Spec Kit 1.1.3 and were rerun the same
-day on 1.2.2 (dotfiles PR #154), which this feature requires (R11), in
+day on 1.2.2 (dotfiles PR #154); this feature requires 1.2.1 or newer (R11,
+R15) and is built and checked on 1.2.2, in
 throwaway repositories under the session scratchpad, with a stand-in `claude`
 that records its arguments unless stated otherwise. "Pending" marks a claim
 the first implementation tasks still have to observe on this machine.
@@ -281,9 +282,9 @@ and that process's start time (`ps -o lstart= -p <pid>`) to
 inside git's own directory, per worktree, never committed. A `phase-done`
 shell step after each approved checkpoint, and after tasks, appends the phase
 to `<feature>/.sdd/phases.json`; `--from` starts at the first phase not in it. On resume, a run in state
-`running` whose recorded process is gone is either resumed through the engine,
-if the pending probe shows the engine allows it, or reported with the phases
-that will run again, and restarted with `sdd-run start --from <feature dir>`,
+`running` whose recorded process is gone is reported with the phases that will
+run again — the engine refuses to resume it (`engine.py`, 1.2.2: only `paused`
+or `failed` runs resume) — and restarted with `sdd-run start --from <feature dir>`,
 whose `resume_from` input makes every phase before the first unfinished one
 a skipped `if`. Spec Kit 1.2.2 says a `running` run is not resumable, and its
 code has no handling for a process that died (grep of `workflows/` for a stale

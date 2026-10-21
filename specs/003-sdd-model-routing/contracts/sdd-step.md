@@ -49,6 +49,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 7. **Apply and commit** on the feature's worktree: `worker: <feature>
    (<model>)`; `.sdd/implement.json` records the files, the commit, and
    the pass's usage: pi's tokens, or Claude's reported cost and model usage.
+   A response reporting a model other than the configured one, or lacking a
+   usage field, fails the pass naming it.
 8. **Clean up**: the checkout, the container and, when the run completes, its
    volume removed whatever happened in 4–7. A pass whose own process was
    killed cannot clean up; `sdd-run start` and `resume` call `sdd-step
