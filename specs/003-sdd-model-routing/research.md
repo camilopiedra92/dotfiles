@@ -221,6 +221,22 @@ colima was not needed. Its kernel is applied by `install.sh` (step 6b) and
 reported by `drift.sh` (seen red with the kernel moved away); `sdd-run` starts
 the services when they are not running.
 
+**Observed** (T016, 2026-10-21): `containers/worker/` built with `container
+build` in about 70 seconds. Run on a network of its own with `NET_ADMIN` and
+`NET_RAW`, `SDD_PROXY` naming a stand-in proxy container (Python's
+`http.server`) on it: the command ran as `node` with `NoNewPrivs: 1` and every
+capability set empty (`CapPrm`, `CapEff`, `CapBnd` all zero); the stand-in
+answered HTTP 200; `1.1.1.1:443`, the host gateway `192.168.64.1` and a DNS
+lookup all failed; its environment held only the entrypoint's allow list; pi's
+`models.json` carried the proxy's URL and was still owned by `node`. Claude
+Code 2.1.306, pi 1.3.0, Python 3.11.2, mise 2026.10.7 and uv 0.13.0 answered
+`--version`. Installed with `--ignore-scripts`, `claude` was only a stub
+printing how to run its postinstall; the image runs that one script by name
+(`install.cjs`, which copies the native binary from npm's optional dependency,
+offline). Neither `ipset` nor a resolver is installed: with the proxy as the
+only destination (R23) the firewall allows one address and resolves nothing,
+so R5's "ipset of allowed domains" no longer applies.
+
 ## R6 — A disposable checkout, mounted alone
 
 *The checkout described here — a detached git worktree — is superseded by R20

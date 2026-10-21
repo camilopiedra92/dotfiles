@@ -1,0 +1,19 @@
+# Hosts the egress proxy tunnels (CONNECT) for implement and verify passes,
+# and only for those: the package registries and release hosts the toolchain
+# in the worker installs from (specs/003-sdd-model-routing, research R5, R23).
+# One host per line; a judgment pass reaches none of them.
+#
+# npm, pnpm and yarn resolve from the npm registry.
+registry.npmjs.org
+# pip and uv resolve from PyPI; packages download from its file host.
+pypi.org
+files.pythonhosted.org
+# mise and uv download runtimes (node, python-build-standalone) from GitHub
+# releases, which redirect to its object store.
+github.com
+objects.githubusercontent.com
+release-assets.githubusercontent.com
+# mise downloads node from nodejs.org's own distribution.
+nodejs.org
+# mise resolves runtime versions through its own index.
+mise-versions.jdx.dev

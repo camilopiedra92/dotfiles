@@ -9,7 +9,7 @@ printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh
+  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -18,7 +18,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh
+  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -59,7 +59,7 @@ else
   skip "gitleaks" "brew install gitleaks"
 fi
 
-syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
