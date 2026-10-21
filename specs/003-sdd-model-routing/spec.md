@@ -280,16 +280,22 @@ what landed in the commit, and what was printed.
   shell command.
 - **FR-021**: Each model's effort MUST be set by the routing, per model, and
   MUST NOT follow the owner's interactive effort or any effort environment
-  variable; it changes only by an edit to this repository, and each run
-  records the level every step ran at.
+  variable; it changes only by an edit to this repository. Each run records
+  the level configured for each model, and the level each step reports
+  where the CLI reports one. If the routing cannot make its level win over
+  the owner's own settings, the feature stops for the owner rather than
+  route at an unknown effort.
 - **FR-022**: A run left `running` by a process that no longer exists MUST,
   on the owner's next resume, either continue through the engine or stop
   naming the phases that will run again and the command that starts a new
   run from the existing feature directory at the first unfinished phase;
-  finished phases' files MUST NOT be rewritten by that new run.
+  finished phases' files MUST NOT be rewritten by that new run. A phase is
+  finished when its checkpoint was approved, or, for tasks, when its output
+  was written; each is recorded in an outcome file as it happens.
 - **FR-023**: The lighter model's implementation pass MUST be allowed to run
   the repository's check command, and nothing wider than the headless
-  allow list plus that command.
+  allow list plus that command; its file writes MUST be limited to its
+  disposable checkout, and a write outside it fails the pass.
 - **FR-020**: Verify MUST be deterministic: it runs the repository's check
   command and records its exit status and the failures in its outcome file,
   with no model involved.
@@ -313,8 +319,9 @@ what landed in the commit, and what was printed.
 ### Key Entities
 
 - **Routing**: which model and which agent each phase runs on, where the
-  checkpoints are, and the loop limits. One file, copied into each repository
-  by Spec Kit.
+  checkpoints are, and the loop limits — one workflow file, copied into each
+  repository by Spec Kit — together with the per-model effort, permissions
+  and worker configuration, which stay on this machine.
 - **Run**: one pass of a feature through the routed workflow, with its state,
   its pauses and the usage each step reported.
 - **Outcome file**: see Definitions.
@@ -340,9 +347,16 @@ what landed in the commit, and what was printed.
   implement command, which marks tasks itself (a measurement arm, not bound
   by FR-006); review, converge and the gates run as in the routed arm. The
   repository is set up by `sdd-init` as of dotfiles commit `180490c`
-  (constitution-authoring v1.2.1, story-workers v0.2.0, whose workers run on
-  the lighter model at `medium`, its decision 0001); Spec Kit 1.1.3; the
-  Claude Code version recorded with the result. One counted run per
+  (constitution-authoring v1.2.1, story-workers v0.2.0), and each arm's
+  workflow is added from the dotfiles commit recorded with the result. In the
+  baseline, `build`'s three convergence passes still run, each with one
+  Spec Kit implement step on the most capable model in place of the
+  implement-and-verify loop, followed by verify, review and converge, with no
+  separate marking. The one model step not on the most capable model is
+  story-workers' own worker inside that implement command, on the lighter
+  model at `medium` as its decision 0001 sets it; it is part of the
+  baseline as `sdd-init` installs it today. Spec Kit 1.1.3; the Claude Code
+  version recorded with the result. One counted run per
   arm; recorded as it comes out. Whether the owner
   moves to the smaller plan is decided afterwards, from a week of real usage.
 - **SC-002**: In the same comparison, the routed run passes as many of the
@@ -366,7 +380,7 @@ what landed in the commit, and what was printed.
 
 - "Most capable model" is Claude Opus and "lighter model" is Claude Sonnet,
   both through the owner's Claude subscription; the external provider is
-  DeepSeek (V4 Flash by default) through its own prepaid API key, reached
+  DeepSeek V4 Flash through its own prepaid API key, reached
   through the pi coding agent. The names, and the versions the plan pins, are
   the owner's choice of 2026-10-21 and move only by a deliberate edit to this
   repository; a retired model or a moved pin surfaces as a failed step naming

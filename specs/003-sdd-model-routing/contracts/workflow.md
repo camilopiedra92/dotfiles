@@ -28,12 +28,12 @@ Every gate binds one of them with `verdict_input` (R3).
 | 3 | `has-questions` | shell `sdd-step outcome clarify` | — | — | prints `yes`/`no` |
 | 4 | `answer-clarify` | gate in `if` 3 = yes | owner | — | `show_file: clarify-questions.md`; `clarify_verdict` |
 | 5 | `clarify-apply` | command `speckit.clarify` in the same `if` | opus | `spec.md` | args: apply the file's answers, ask nothing |
-| 6 | `review-spec` | gate | owner | — | `spec_verdict`, reject aborts |
+| 6 | `review-spec` | gate | owner | — | `spec_verdict`, reject aborts; then `sdd-step phase-done specify` |
 | 7 | `plan` | command `speckit.plan` | opus | plan artifacts | |
 | 8 | `checklist` | command `speckit.checklist` | opus | `checklists/` | |
 | 9 | `analyze` | command `speckit.analyze` | opus | `.sdd/analyze.md` | |
-| 10 | `review-plan` | gate | owner | — | `plan_verdict`, reject aborts |
-| 11 | `tasks` | command `speckit.tasks` | sonnet | `tasks.md` | |
+| 10 | `review-plan` | gate | owner | — | `plan_verdict`, reject aborts; then `sdd-step phase-done plan` |
+| 11 | `tasks` | command `speckit.tasks` | sonnet | `tasks.md` | then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
 | 13 | `build` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome converge` prints `converged` (FR-014) |
 | 13.1 | `fix-loop` | `do-while`, `max_iterations: 3` | — | — | until `sdd-step outcome verify` prints `pass` (FR-015) |
@@ -44,7 +44,7 @@ Every gate binds one of them with `verdict_input` (R3).
 | 13.4 | `converge` | command `speckit.converge` | opus | `tasks.md`, `.sdd/converge.json` | args: write the outcome file with findings by severity |
 | 14 | `converge-stuck` | gate in `if` converge = open | owner | — | `converge_verdict`: `retry` runs one more 13 pass and comes back here if still open; `abort` stops |
 | 15 | `review-done` | gate | owner | — | `done_verdict`: shows `review.json`; approve runs 16 |
-| 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006) |
+| 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006); then `sdd-step phase-done build` |
 
 ## Guarantees
 

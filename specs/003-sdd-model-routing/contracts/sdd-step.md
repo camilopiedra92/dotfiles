@@ -14,6 +14,7 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
 | `verify` | runs `git config sdd.check`, writes `.sdd/verify.json`: exit status, the last 200 lines of output, the time | `pass`/`fail` | 0 either way; non-zero only when `sdd.check` is unset |
 | `implement` | one pass of the agent `route.json` names, steps below | a summary | 0 when a judged patch is applied and committed or the agent made no change; 1 on a missing prerequisite, a guarded file, a timeout or an agent error |
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
+| `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
 | `cleanup [<run_id>]` | removes the checkouts, containers and volumes labelled with that run, or with any run no longer `running` | what it removed | 0 |
 
 ## `implement`, step by step
@@ -30,8 +31,8 @@ against `claude/speckit/schemas/<step>.schema.json` (research R10).
    built when absent.
 4. **Agent**. Sonnet: `claude -p --model claude-sonnet-5-5` with the same
    brief, its working directory the checkout, under the routing settings of
-   research R4 plus `Bash(<sdd.check>)` (FR-023), stopped after the time
-   limit; its JSON result kept for step 7. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
+   research R4 plus `Bash(<sdd.check>)`, with `Edit` and `Write` limited to
+   the checkout (FR-023), stopped after the time limit; its JSON result kept for step 7. DeepSeek, in a **container**: `container run --rm -i`, the checkout mounted alone at
    `/work`, the volume `sdd-cache-<run_id>` for the tool cache, network limited
    to the hosts in `containers/pi-worker/egress.txt` (research R5, pending); the credential written to stdin and read once by the entrypoint;
    pi given the brief of FR-017 (`containers/pi-worker/brief.md` plus the

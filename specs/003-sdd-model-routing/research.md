@@ -70,8 +70,10 @@ gate's options, so free answers do not fit.
 `SPECKIT_INTEGRATION_CLAUDE_EXTRA_ARGS="--permission-mode dontAsk --settings
 <routing-settings.json>"`, whose `allow` list holds the file tools,
 `.specify/scripts/bash/*` and read-only git. Since verify runs no model (R10),
-no Claude phase needs a project's check command, so one machine-wide list
-serves every repository.
+no judgment phase needs a project's check command, so one machine-wide list
+serves every phase but one: the lighter model's implementation pass (R6),
+whose settings add `Bash(<sdd.check>)` and limit `Edit` and `Write` to its
+checkout, composed per pass by `sdd-step implement`.
 
 **Pending**: what a denied tool looks like in `-p` output on this CLI (a
 `permission_denials` field is expected, not yet observed) and whether the step
@@ -240,7 +242,10 @@ resumed ones included, and the provider's tokens from the worker's outcomes.
 ## R12 — Interrupted runs and stale copies
 
 **Interrupted** (FR-022): `sdd-run` writes the run id and its own process id
-to `<feature>/.sdd/run.json` at start and resume. On resume, a run in state
+to `$(git rev-parse --git-dir)/sdd/<run_id>.json` at start and resume —
+inside git's own directory, per worktree, never committed. A `phase-done`
+shell step after each approved checkpoint, and after tasks, appends the phase
+to `<feature>/.sdd/phases.json`; `--from` starts at the first phase not in it. On resume, a run in state
 `running` whose recorded process is gone is either resumed through the engine,
 if the pending probe shows the engine allows it, or reported with the phases
 that will run again, and restarted with `sdd-run start --from <feature dir>`,
@@ -273,7 +278,10 @@ add` command that replaces the copy (US1 AS7).
 `medium` for both models, saved through `/effort`; the shell sets
 `CLAUDE_EFFORT=medium`, a name Claude Code does not document. **Pending**: a
 probe that a `--settings` level wins over the user file's for a `-p` run, and
-how the result reports the level (FR-021's record).
+how the result reports the level. If it does not win, FR-021 cannot be met
+by settings, and the work stops for the owner: the remaining levers are an
+exported variable or `--effort`, both per run, not per model. The configured
+levels are recorded in `.sdd/routing.json` at every start and resume.
 
 **Why medium**: the owner's policy (`docs/claude-settings.md`) is each
 model's default unless measured otherwise, and story-workers' decision 0001
