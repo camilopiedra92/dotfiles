@@ -90,6 +90,8 @@ wf_fresh() {
     cd "$WF_REPO" || exit 1
     git init -q -b main
     printf 'print(1)\n' > src/app.py
+    # As `specify init` leaves it: feature.json is each worktree's own state.
+    mkdir -p .specify && printf 'feature.json\n' > .specify/.gitignore
     printf '#!/bin/sh\necho checking\nexit 0\n' > check-app.sh
     chmod +x check-app.sh
     git add -A && git -c user.name=t -c user.email=t@t commit -qm base
@@ -452,6 +454,38 @@ else
     "fix and converge loops stop after three passes, and a retry buys exactly one more"; do
     skip "$name" "specify, check-jsonschema or specify-cli's python"
   done
+fi
+
+# .specify/feature.json is Spec Kit's per-worktree state, which its own
+# .gitignore keeps out of git (seen in the first real run, 2026-10-21: the
+# judge refused it as an ignored path). The run validates the one specify
+# wrote and writes it into the worktree itself, as Spec Kit would; it is
+# never part of a patch or a commit.
+wf_feature_json() {
+  wf_fresh || return 1
+  local out
+  out=$(wf_start)
+  [ "$(wf_state)" = "paused review_spec" ] || {
+    echo "specify did not finish with feature.json ignored: $(wf_state): $out" | tail -5
+    return 1
+  }
+  [ "$(cat "$WF_REPO/.specify/feature.json" 2> /dev/null)" = "{\"feature_directory\": \"$WF_F\"}" ] || {
+    echo "the worktree's .specify/feature.json is not the validated one: $(cat "$WF_REPO/.specify/feature.json" 2> /dev/null)"
+    return 1
+  }
+  [ -z "$(git -C "$WF_REPO" -c core.fsmonitor=false log --all --format=%h -- .specify/feature.json)" ] || {
+    echo ".specify/feature.json went into a commit"
+    return 1
+  }
+  [ -n "$(git -C "$WF_REPO" -c core.fsmonitor=false log --format=%h -- "$WF_F/spec.md")" ] || {
+    echo "specify's spec.md was not committed"
+    return 1
+  }
+}
+if command -v check-jsonschema > /dev/null 2>&1 && command -v specify > /dev/null 2>&1; then
+  check "specify's feature.json stays the worktree's own state: validated, written by the run, never committed" wf_feature_json
+else
+  skip "specify's feature.json stays the worktree's own state: validated, written by the run, never committed" "check-jsonschema or specify"
 fi
 
 # sdd-step's own decisions, without the engine.

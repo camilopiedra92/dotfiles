@@ -47,6 +47,8 @@ e2e() {
     cd "$repo" || exit 1
     git init -q -b main
     printf 'print(1)\n' > src/app.py
+    # As `specify init` leaves it: feature.json is each worktree's own state.
+    printf 'feature.json\n' > .specify/.gitignore
     # A check that never passes: three rounds, then the stop.
     printf '#!/bin/sh\necho "FAIL the probe"\nexit 1\n' > check-app.sh
     chmod +x check-app.sh

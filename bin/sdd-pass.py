@@ -584,9 +584,20 @@ def run_agent(run, phase, implement=None):
         changes = p.changes()
         patch = p.patch() if changes else b""
         writes = row["writes"]
+        local_state = None
         if specify:
             feature = new_feature(p, changes)
             writes = [w.replace("specs/<new>", feature) for w in writes]
+            # Spec Kit keeps .specify/feature.json out of git (its own
+            # .gitignore): each worktree's state, not the repository's. Where
+            # the worktree ignores it, the validated copy leaves the patch and
+            # the run writes it into the worktree after the apply, as Spec Kit
+            # would (seen in the first real run, 2026-10-21).
+            if p.landing(".specify/feature.json") == "an ignored path in the worktree":
+                os.remove(os.path.join(p.export, ".specify", "feature.json"))
+                local_state = {"feature_directory": feature}
+                changes = p.changes()
+                patch = p.patch() if changes else b""
         flagged = p.judge(changes, writes, feature, implement)
         p.scan(changes, [text.encode(), json.dumps(structured).encode()], row["agent"])
         place_outcome = None
@@ -601,6 +612,10 @@ def run_agent(run, phase, implement=None):
         if changes:
             step = "implement" if implement else phase
             commit = p.apply(patch, [c[2] for c in changes], f"{step}: {os.path.basename(feature)} ({served})")
+        if local_state:
+            os.makedirs(os.path.join(run.repo, ".specify"), exist_ok=True)
+            with open(os.path.join(run.repo, ".specify", "feature.json"), "w") as f:
+                json.dump(local_state, f)
         if place_outcome:
             place_outcome(**({"commit": commit} if implement else {}))
         if row.get("result_to"):
