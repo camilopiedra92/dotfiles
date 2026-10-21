@@ -179,6 +179,14 @@ exit "${FW_EXIT:-0}"
 STUB
   chmod +x "$tmp/bin/getent" "$tmp/bin/setpriv" "$tmp/lib/init-firewall.sh"
   echo template > "$tmp/home/.pi/agent/models.json"
+  ln -s rec "$tmp/bin/update-ca-certificates"
+  # The run's authority, as the egress proxy makes one (research R25), and a
+  # certificate that is not an authority, made with the host's openssl.
+  printf '[req]\ndistinguished_name=dn\nprompt=no\n[dn]\nCN=sdd run CA\n[ca]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign\n[leaf]\nbasicConstraints=CA:FALSE\n' > "$tmp/openssl.cnf"
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/ca.key" -out "$tmp/root/bundle/proxy-ca.pem" \
+    -days 1 -config "$tmp/openssl.cnf" -extensions ca > /dev/null 2>&1
+  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$tmp/leaf.key" -out "$tmp/leaf.pem" \
+    -days 1 -config "$tmp/openssl.cnf" -extensions leaf > /dev/null 2>&1
 }
 
 # Runs the entrypoint with a clean environment plus the assignments given
@@ -211,7 +219,9 @@ sdd_ep_firewall_first() {
     echo "failed with a valid proxy and a firewall that succeeds: $(cat "$tmp/out")"
     return 1
   }
-  [ "$(head -1 "$tmp/log")" = "firewall 192.168.70.2 8080" ] || {
+  # Trusting the run's authority is local and comes first (sdd_ep_ca); the
+  # firewall is the first thing after it, before anything could reach out.
+  [ "$(grep -v '^update-ca-certificates' "$tmp/log" | head -1)" = "firewall 192.168.70.2 8080" ] || {
     echo "the firewall is not the first thing run, with the proxy's address and port; calls:"
     cat "$tmp/log"
     return 1
@@ -402,6 +412,63 @@ sdd_ep_cache_and_work() {
   }
 }
 check "the worker entrypoint gives node the cache volume, points every package manager at it, and starts in /work" sdd_ep_cache_and_work
+
+# The run's certificate authority (FR-031, research R25): the egress proxy
+# reads the registries' TLS with it, so the worker must trust it, and only a
+# certificate authority, before anything runs. The entrypoint installs it
+# into the system store before the firewall, points every client that keeps
+# its own trust list at that store, and turns npm's audit off — a POST, the
+# one non-read a registry read would make. A missing file, or a certificate
+# that is not an authority, stops the pass.
+sdd_ep_ca() {
+  local tmp args want
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sdd_ep_setup "$tmp"
+  sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true || {
+    echo "failed with the run's authority in place: $(cat "$tmp/out")"
+    return 1
+  }
+  cmp -s "$tmp/root/bundle/proxy-ca.pem" "$tmp/root/usr/local/share/ca-certificates/sdd-run.crt" || {
+    echo "the authority was not copied to /usr/local/share/ca-certificates/sdd-run.crt"
+    return 1
+  }
+  local ca fw
+  ca=$(sdd_line_of "$tmp/log" '^update-ca-certificates')
+  fw=$(sdd_line_of "$tmp/log" '^firewall ')
+  [ "$ca" -gt 0 ] && [ "$ca" -lt "$fw" ] || {
+    echo "update-ca-certificates did not run before the firewall:"
+    cat "$tmp/log"
+    return 1
+  }
+  args=$(cat "$tmp/args")
+  for want in NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt npm_config_audit=false npm_config_fund=false; do
+    grep -qx -- "$want" <<< "$args" || {
+      echo "the command's environment lacks $want"
+      return 1
+    }
+  done
+  local case
+  for case in missing leaf garbage; do
+    rm -rf "${tmp:?}"/* && sdd_ep_setup "$tmp"
+    case $case in
+      missing) rm "$tmp/root/bundle/proxy-ca.pem" ;;
+      leaf) cp "$tmp/leaf.pem" "$tmp/root/bundle/proxy-ca.pem" ;;
+      garbage) echo "not a certificate" > "$tmp/root/bundle/proxy-ca.pem" ;;
+    esac
+    if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 -- true; then
+      echo "accepted a $case authority"
+      return 1
+    fi
+    ! grep -qE '^(firewall|setpriv|update-ca-certificates)' "$tmp/log" || {
+      echo "went on with a $case authority:"
+      cat "$tmp/log"
+      return 1
+    }
+  done
+}
+check "the worker entrypoint trusts the run's authority before the firewall, and only an authority" sdd_ep_ca
 
 # drift.sh reports each pin of the worker image that upstream has moved past
 # (constitution V): worker_pin_report compares the Containerfile with the
