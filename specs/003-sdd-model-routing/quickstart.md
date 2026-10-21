@@ -27,21 +27,21 @@ offline against stand-ins; the last two need the real services.
    a converge that never converges gives three passes and `converge-stuck`.
 6. **Marking** (FR-006): `sdd-step mark` refuses on a failing verify or a
    blocking review, and marks only the tasks the review lists.
-7. **Patch judgment** (US2 AS3): a stand-in `container` whose agent edits,
+7. **Patch judgment** (US2 AS3): a stand-in container runtime whose agent edits,
    creates or deletes `ruff.toml`, or drops `[tool.ruff]` from
    `pyproject.toml`, makes `implement` exit 1 naming it; the feature's
    worktree is unchanged and no commit is made.
 8. **Failure leaves nothing behind** (US2 AS7): a stand-in agent that crashes
    midway leaves the feature's worktree unchanged and no checkout behind.
 9. **Prerequisites** (US2 AS5, SC-004, FR-011): each missing one stops the
-   step naming it, and the stand-in `container` records no call.
+   step naming it, and the stand-in container runtime records no call.
 10. **sdd-init** (US3): against a stand-in `specify`, a fresh repository gets
     `specify workflow add` in the same commit; one with `.specify/` gets the
     command printed and nothing changed.
 
 ## On this machine
 
-11. **Containment** (US2 AS2, SC-003): with the real `container`, a probe image
+11. **Containment** (US2 AS2, SC-003): with the real container runtime research R5 settled on, a probe image
     tries to read `~/.ssh`, the Keychain and another repository, to write the
     home directory, another repository and the feature's worktree, and to
     reach a host outside `egress.txt` after the firewall is up, and as the

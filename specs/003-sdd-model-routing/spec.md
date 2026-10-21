@@ -400,7 +400,7 @@ step is fixed above 30 minutes),
     arm on a fixture reaches that limit with fewer than three counted runs,
     SC-001 and SC-002 are not met on that fixture, and the counts are
     recorded.
-  - **Recorded per run**: Spec Kit, Claude Code, `container` and pi versions,
+  - **Recorded per run**: Spec Kit, Claude Code, container runtime and pi versions,
     and the dotfiles commit.
   - **Where**: the harness already fixes fixture layout, hermetic setup,
     held-out tests and version matching across arms; it runs single-step
@@ -438,14 +438,14 @@ step is fixed above 30 minutes),
   repository; a retired model or a moved pin surfaces as a failed step naming
   it, not as a silent change. Claude models are therefore named by full model
   id, not by an alias such as `opus` that upstream repoints. Two dependencies
-  are not pinned: the `container` runtime (a Homebrew formula) and the Claude
+  are not pinned: the container runtime (a Homebrew formula) and the Claude
   Code CLI. A changed flag or a missing field in either's output fails the
   step naming it, and a missing usage figure is never read as zero; each run
   records both versions. DeepSeek's id `deepseek-flash` names no version
   either: a pass whose response reports a model other than the one
   configured fails, naming both; if the response reports only the alias
   itself, a repoint behind it cannot be detected, and `deepseek-flash` is
-  accepted as unpinned, like `container` and the Claude Code CLI; pi moves only by an edit to the worker
+  accepted as unpinned, like the container runtime and the Claude Code CLI; pi moves only by an edit to the worker
   image, and a pass whose output lacks a field the run reads fails naming
   it.
 - The routed workflow is an addition: the interactive way of running Spec Kit

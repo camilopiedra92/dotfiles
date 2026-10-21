@@ -45,7 +45,7 @@ config (`sdd.implement`, `sdd.check`), the Keychain item `deepseek-api`.
 
 **Testing**: `./check.sh`; a new `checks/91-sdd-routing.sh` driving `sdd-run`,
 `sdd-step` and the workflow on the real Spec Kit engine, against stand-ins
-for `claude`, `container` and `security` in scratch repositories, never the
+for `claude`, the container runtime and `security` in scratch repositories, never the
 network; CI installs the engine and `check-jsonschema` at their pins. The
 schemas are checked against valid and invalid sample outcomes.
 
@@ -69,7 +69,7 @@ at once in separate worktrees.
 | Principle | How this plan meets it |
 |---|---|
 | I. Declared, never hand-installed | the container runtime (research R5) in the `Brewfile`, `check-jsonschema` in `uv-tools.txt` with a pinned reference; everything in the image from `containers/pi-worker/Containerfile`, pinned (base by digest, pi by version); the workflow, settings and schemas live here and reach repositories through `sdd-init`. Docker Desktop, found installed and undeclared, is reported, not used. |
-| II. One owner per layer | `container` is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
+| II. One owner per layer | the container runtime is a program, so Homebrew; `check-jsonschema` a Python application, so `uv tool`; Node, pi, mise and uv only inside the image; the credential in the Keychain, entering the VM on stdin. |
 | III. One gate, seen red | `sdd-run` and `sdd-step` have logic of their own; each behaviour gets a check in `checks/91-sdd-routing.sh`, seen red with it broken by hand; so do `init-firewall.sh` and `entrypoint.sh`, adapted from Anthropic's reference and owned here, not vendored (research R6). The workflow and the schemas are driven by the same checks. |
 | IV. Apply and report are twins | The machine changes only through the `Brewfile`, `uv-tools.txt`, two links in `install.sh`, and — if T002 finds `container`'s first start leaves state — an apply step in `install.sh` with its report in `./drift.sh`. CI gains `uv` the way it installs its other tools. The worker image and the per-run cache volumes are caches, rebuilt or removed by `sdd-step`. |
 | V. Upstream's files stay upstream's | No file Spec Kit installs is edited, and its run state is never written by our scripts; the workflow reaches a repository only through `specify workflow add`; `config-guard.sh` is reused unchanged. |
@@ -97,7 +97,7 @@ specs/003-sdd-model-routing/
 ### Source Code (repository root)
 
 ```text
-Brewfile                         # + container
+Brewfile                         # + the container runtime (research R5)
 uv-tools.txt                     # + check-jsonschema
 bin/
 ├── sdd-init.sh                  # + installs sdd-routed
@@ -139,7 +139,7 @@ would split them across two release streams.
 ## Phase order
 
 The first tasks settle every "pending" in research.md on this machine before
-anything is built on it: `container`'s macOS requirement, egress control and a
+anything is built on it: which container runtime runs the firewall, and a
 throwaway run (R5); a denied tool in `-p` (R4); gate options other than
 approve (R3); what a failed, resumed and killed run leaves in `state.json`
 (R11, R12); and config-guard on an empty `Write` and a lost `pyproject.toml`
