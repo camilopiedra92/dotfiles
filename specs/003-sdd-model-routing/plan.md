@@ -95,7 +95,6 @@ bin/
 └── sdd-step.sh                  # new
 claude/speckit/
 ├── sdd-routed.yml               # new: the workflow
-├── eval/sdd-baseline.yml        # new: SC-001's baseline arm
 ├── routing-settings.json        # new: allow list for headless Claude steps
 └── schemas/                     # new: one JSON Schema per outcome file
     ├── route.schema.json

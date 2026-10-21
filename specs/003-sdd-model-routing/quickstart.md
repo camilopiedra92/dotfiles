@@ -45,8 +45,6 @@ offline against stand-ins; the last two need the real services.
     home directory, another repository and the feature's worktree, and to
     reach a host outside `egress.txt`. All fail; nothing on the host
     changes.
-12. **SC-001 and SC-002**: in the story-workers repository, the `checkout`
-    fixture run twice with the same prepared clarify answers — `sdd-run
-    start` opted in, and the baseline of SC-001 — then `sdd-run usage <id>`
-    for each and the fixture's held-out tests. Recorded in
-    `docs/sdd-routing.md` as it comes out.
+12. **SC-001 and SC-002**: on story-workers' eval harness, with the routed
+    and baseline arms its own feature adds (spec SC-001); the result is that
+    feature's record, linked from `docs/sdd-routing.md`.

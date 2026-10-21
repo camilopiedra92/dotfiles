@@ -352,47 +352,23 @@ fixed above 30 minutes),
 
 ### Measurable Outcomes
 
-- **SC-001**: On the reference fixture, a routed run, opted in to the
-  external provider, uses at least 40% less Claude subscription usage than the
-  baseline run. Usage counts every attempt of every Claude step, failed and
-  resumed ones included, at list price, as each reports it; an attempt that
-  reports no usage (killed or timed out before its result) is listed as
-  unreported, and an arm with one is run again. The reference fixture is the
-  `checkout` fixture of the story-workers preset's Eval 002 at the commit
-  named in the eval's record. Both arms start from the same description,
-  `claude/speckit/eval/checkout/description.txt`, and answer clarify from the
-  same file beside it, `clarify-answers.md`, keyed by topic; a question it does not
-  cover takes clarify's own recommendation, and is recorded. The baseline is a workflow file of its own, kept with the eval: the
-  routed workflow with every Claude step on the most capable model at the
-  same effort, and its implement-and-verify loop replaced by Spec Kit's own
-  implement command, which marks tasks itself (a measurement arm, not bound
-  by FR-006); review, converge and the gates run as in the routed arm. The
-  repository is set up by `sdd-init` as of dotfiles commit `180490c`
-  (constitution-authoring v1.2.1, story-workers v0.2.0), and each arm's
-  workflow is added from the dotfiles commit recorded with the result. In the
-  baseline, `build` runs as in the routed arm — until converge reports
-  converged, at most three passes — each pass with one Spec Kit implement
-  step on the most capable model in place of the implement-and-verify loop,
-  followed by verify, review and converge; a failing verify goes on to
-  review, there is no `fix-stuck` checkpoint and no separate marking. The
-  baseline workflow is `claude/speckit/eval/sdd-baseline.yml` in this
-  repository, added to the fixture from the same dotfiles commit as the
-  routed one, and started with `sdd-run start --workflow sdd-baseline`, so
-  it gets the same prerequisites, effort, output format, run id and usage
-  record, and the same permissions plus what story-workers' implement runs:
-  the `Agent` tool for its workers, the git commands it stages and commits
-  with, and the repository's check command. A baseline run whose implement
-  shows no usage on the lighter model ran without its workers, and is not a
-  counted run. In both counted runs every review checkpoint is approved,
-  `fix-stuck` and `converge-stuck` are answered `abort`; an arm that reaches
-  either is not a counted run: it is recorded and run once more, and a second
-  such run is the arm's result, recorded as it came out. The one model step not on the most capable model is
-  story-workers' own worker inside that implement command, on the lighter
-  model at `medium` as its decision 0001 sets it; it is part of the
-  baseline as `sdd-init` installs it today. Spec Kit 1.2.2; the Claude Code
-  version recorded with the result. One counted run per
-  arm; recorded as it comes out. Whether the owner
-  moves to the smaller plan is decided afterwards, from a week of real usage.
+- **SC-001**: A routed run, opted in to the external provider, uses at least
+  40% less Claude subscription usage than the baseline run, counting every
+  attempt of every Claude step at list price as each reports it. Both arms are
+  measured from tasks onward on the same committed spec and plan: every phase
+  before tasks runs on the most capable model in both arms, so the routing
+  changes nothing there, and starting after it removes every difference in
+  input between the arms. The baseline is the same phases with every Claude
+  step on the most capable model and implementation by Spec Kit's implement
+  command with the story-workers preset as `sdd-init` installs it today. The
+  measurement runs on the story-workers preset's eval harness and its
+  `checkout` fixture, which already define how a fixture is laid out, which
+  runs count, when a run is repeated, how versions are matched across arms and
+  how held-out tests are applied; the two arms are added to that harness by a
+  feature of its own in that repository, and this criterion is met or not by
+  that feature's recorded result. One counted run per arm; recorded as it
+  comes out. Whether the owner moves to the smaller plan is decided
+  afterwards, from a week of real usage, not here.
 - **SC-002**: In the same comparison, the routed run passes as many of the
   fixture's held-out acceptance tests as the baseline, and its own check
   command passes.

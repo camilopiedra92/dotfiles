@@ -266,6 +266,17 @@ stand-in `claude`: `-p /speckit-specify probe --permission-mode dontAsk
 `state.json` unredacted (upstream's warning), which holds no secret here:
 the credential never reaches a Claude step (FR-009). `sdd-run usage <run_id>` sums every attempt per model, failed and
 resumed ones included, and the provider's tokens from the worker's outcomes.
+**Where SC-001 is measured**: on story-workers' eval harness
+(`tests/eval/run.sh`, `usage.py`, three recorded evals), not by a protocol
+written here. Four review rounds on an ad-hoc protocol in this feature kept
+finding new gaps — the fixture's committed `specs/`, the commands
+story-workers' workers run, failed-run rules — each of which the harness
+already settles (hermetic setup, committed states, counted / not counted /
+refused exits, version matching, held-out tests). Measuring from tasks onward
+is exact rather than a shortcut: every earlier phase runs on Opus in both
+arms. The routed arm starts with `sdd-run start --from`, the fixture's state
+carrying `.sdd/phases.json` with specify and plan done.
+
 **Pending**: that a failed or resumed step's earlier attempt is still in
 `state.json` or `log.jsonl`; the first task observes it, and if it is not,
 `sdd-run` records each attempt's result itself before resuming.
