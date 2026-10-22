@@ -730,14 +730,19 @@ def resume(args):
     if status == "running":
         if alive(load(os.path.join(bundle, "lock.json"))):
             raise Stop(f"run {rid} is running")
-        # The run's own feature, never a pointer an earlier run left: before
-        # specify made one, there is nothing to start from.
-        if not pinned:
-            raise Stop(f"run {rid} died while running (its process is gone), before it made its feature, and "
-                       f"Spec Kit cannot resume it: start it anew, sdd-run start \"<description>\"")
-        left = ", ".join(from_inputs_left(repo, pinned))
+        # The run's own feature, never a pointer an earlier run left. start
+        # --from needs a phase recorded done (from_inputs): a run that died
+        # before that — before specify made its feature, or between specify
+        # making it and specify_done — starts anew, and the directory its
+        # specify made is named, or the new start numbers its feature beside it.
+        left = from_inputs_left(repo, pinned) if pinned else PHASES
+        if len(left) == len(PHASES):
+            made = (f"; its specify left {pinned} behind: remove it first, or the new feature is numbered beside it"
+                    if pinned and os.path.isdir(os.path.join(repo, pinned)) else "")
+            raise Stop(f"run {rid} died while running (its process is gone), before any phase finished, and "
+                       f"Spec Kit cannot resume it: start it anew, sdd-run start \"<description>\"{made}")
         raise Stop(f"run {rid} died while running (its process is gone), and Spec Kit cannot resume it: "
-                   f"sdd-run start --from {pinned} (phases that run again: {left})")
+                   f"sdd-run start --from {pinned} (phases that run again: {', '.join(left)})")
     inputs = []
     if verdict == "retry":
         if not stuck(at):

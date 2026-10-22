@@ -466,6 +466,7 @@ sdd_run_review2() {
   printf '{"status":"running","current_step_id":"specify"}\n' > "$SR_REPO/.specify/workflows/runs/$id/state.json"
   out=$(sr resume "$id") || true
   grep -qF "start --from specs/001-old" <<< "$out" && fail "leftover pointer: a dead run's advice names the earlier feature: $out"
+  grep -qF 'start it anew, sdd-run start "<description>"' <<< "$out" || fail "leftover pointer: a dead run's advice is not to start anew: $out"
   cp "$SR_SA/state.json" "$SR_REPO/.specify/workflows/runs/$id/state.json"
   # As sdd-pass's specify pass does: the pointer, and the run's own record of it.
   cat > "$SR_SA/specify.sh" << 'SH'
@@ -544,10 +545,35 @@ exit 0
 SH
   printf '{"status":"paused","current_step_id":"review-spec"}\n' > "$SR_SA/state.json"
   out=$(sr start "the first") || fail "live run: the first start failed: $out"
-  id=$(sr_last_id)
+  # From the first start's own output: the last specify call here is the
+  # second start's --version, which carries no run id.
+  id=$(sed -n 's/^sdd-run: run \([0-9a-f]*\)$/\1/p' <<< "$out")
   [ "$(cat "$nested.code" 2> /dev/null)" = 1 ] || fail "live run: a second start passed the guard (exit $(cat "$nested.code" 2> /dev/null)): $(tail -2 "$nested.out" 2> /dev/null)"
+  grep -qE "run $id of this worktree is running \(process [0-9]+\)" "$nested.out" 2> /dev/null ||
+    fail "live run: the second start's refusal does not name the live run and its process: $(tail -2 "$nested.out" 2> /dev/null)"
   [ ! -s "$nested.pointer" ] || fail "live run: the second start rewrote the pointer under the first: $(cat "$nested.pointer")"
   [ "$(awk '/"workflow", "run"/ { n++ } END { print n + 0 }' "$SR_SA/specify.jsonl")" -eq 1 ] || fail "live run: Spec Kit ran a second run"
+  rm -rf "$SR"
+
+  # N4 (the third round, MEDIUM). A run that dies after its specify made and
+  # recorded its feature, but before any phase is recorded done (here during
+  # clarify_ask), cannot be taken up by start --from, which needs a finished
+  # phase: the advice is to start anew, naming the directory left behind.
+  sr_fresh || return 1
+  cat > "$SR_SA/specify.sh" << 'SH'
+mkdir -p specs/001-new && echo x > specs/001-new/spec.md
+printf '{"feature_directory":"specs/001-new"}' | tee .specify/feature.json > "$SDD_RUN_DIR/feature.json"
+SH
+  printf '{"status":"failed","current_step_id":"clarify_ask"}\n' > "$SR_SA/state.json"
+  out=$(sr start "a new feature") || true
+  rm "$SR_SA/specify.sh"
+  id=$(sr_last_id)
+  printf '{"status":"running","current_step_id":"clarify_ask"}\n' > "$SR_REPO/.specify/workflows/runs/$id/state.json"
+  out=$(sr resume "$id") && code=0 || code=$?
+  [ "$code" -eq 1 ] || fail "died before a phase finished: resume exit $code, wanted 1: $out"
+  grep -qF "start --from" <<< "$out" && fail "died before a phase finished: the advice is a start --from that refuses: $out"
+  grep -qF 'start it anew, sdd-run start "<description>"' <<< "$out" || fail "died before a phase finished: the advice is not to start anew: $out"
+  grep -qF "specs/001-new" <<< "$out" || fail "died before a phase finished: the directory left behind is not named: $out"
   return "$status"
 }
 check "sdd-run pins only its own feature, refuses a moved pointer, another worktree's abort, gates not its own, and a second start beside a live run" sdd_run_review2

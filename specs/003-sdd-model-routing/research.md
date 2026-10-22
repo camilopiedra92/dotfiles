@@ -927,6 +927,28 @@ before specify.
   outside its row; only the host CLI's version (≥ 1.2.2) is checked, not the
   scripts the repository carries. Not tested.
 
+**Third round** (the review of 8ca7458, 2026-10-22). *Finding* (MEDIUM): the
+dead-run advice split on whether the bundle pinned a feature, but `start
+--from` needs a phase recorded done in `.sdd/phases.json`; a run that died
+between specify's apply and `specify_done` was sent to a `start --from` that
+refuses (reproduced on check 95's stand-ins, dying in `clarify_ask`).
+*Decision*: the advice splits on whether any phase is done
+(`from_inputs_left`, the test `start --from` itself applies); with none, start
+anew, naming the feature directory specify left behind so the owner removes
+it before the new start numbers its feature beside it. Check 95, N4.
+
+*Recorded, not fixed* (same review):
+- Runs started before 8ca7458 resume on their own frozen `sdd-pass`, which
+  never writes the bundle's `feature.json`: they get no `routing.json` in
+  their feature, no moved-pointer refusal, and a dead one is told to start
+  anew even with phases done. Transitional: it ends with those runs.
+- The usage end line is withheld on its JSON-escaped form (`sdd-pass.py`
+  `run_agent`, `run.withhold(..., json.dumps(...))`), so a credential holding
+  a character `json.dumps` escapes (`"`, `\`, a control or non-ASCII one)
+  would not be replaced there; the line is written before the judge, and the
+  judge's `scan` does not cover it either, since it too reads the usage as
+  `json.dumps(usage)` (read in the code at 052c94b, not tested).
+
 ## R29 — What an agent said, withheld of every credential before it is kept
 
 **Finding** (US2's leak check, T044, 2026-10-22, against stand-ins): the judge

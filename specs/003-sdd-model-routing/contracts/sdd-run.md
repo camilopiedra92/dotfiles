@@ -50,7 +50,10 @@ repository's root.
   run is not finished: its process is gone too, but `resume` takes it up.
 - `resume` of a run that died: refused, naming `sdd-run start --from <feature
   dir>` with the run's own feature and the phases that will run again, or, for
-  a run that died before its specify made a feature, starting it anew. `resume` reuses the bundle as it
+  a run that died before any phase was recorded done in its feature's
+  `.sdd/phases.json` — which `start --from` needs — starting it anew; when
+  its specify had made the feature directory, the advice names it, left
+  behind for the owner to remove. `resume` reuses the bundle as it
   is, rewrites only the lock, and refuses when the run's worker image is gone
   or when the worktree's `.specify/feature.json` no longer names the run's
   feature. It checks only Spec Kit's version, the runtime and the token: the

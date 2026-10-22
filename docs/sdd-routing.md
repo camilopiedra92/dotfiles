@@ -93,7 +93,8 @@ Other stops say what answers them:
 - A run whose process died cannot be resumed (Spec Kit refuses a run it still
   reads as running): `sdd-run start --from specs/<feature>` starts a new run
   on that feature, skipping the phases already finished; one that died before
-  its specify made a feature is started anew from its description.
+  any phase finished is started anew from its description, and the feature
+  directory its specify may have made is named, left behind to remove.
 
 One run at a time in a worktree: `start` refuses while another run there is
 paused, stopped or running — still starting included — and names the commands
