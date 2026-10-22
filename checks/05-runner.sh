@@ -14,6 +14,10 @@
 # so it never reads this repository's sections.
 printf '\n%sRunner%s\n' "$DIM" "$OFF"
 
+# What the system's temporary directory holds of check.sh's scratch before
+# the cases, compared after them at the end of this file.
+RUNNER_TEMP_BEFORE=$(system_temp_runs)
+
 # Three fake sections: 10-a covers a/* and checks/fixture/*, 20-b covers b/*,
 # b.txt and checks/[0-9][0-9]-*.sh (as a section that reads every section's
 # text does), 30-c declares nothing. Plus the runner's other inputs, so a
@@ -539,7 +543,9 @@ signals_stop_sections() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true' '20-b:sleep 31.7; check "b ran" true'
-  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  # A TERM that lands before the runner has set its EXIT trap leaves its scratch.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  (cd "$tmp/r" && PATH="$tmp/bin:$PATH" exec ./check.sh > /dev/null 2>&1) &
   pid=$!
   sleep 0.6
   kill -TERM "$pid"
@@ -607,8 +613,10 @@ ctrl_c_stops_sections() {
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   command -v python3 > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true'
+  # Its runner is killed outright when ^C does not stop it.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
   out=$(
-    python3 -I - "$tmp/r" << 'PY'
+    PATH="$tmp/bin:$PATH" python3 -I - "$tmp/r" << 'PY'
 import os, pty, select, signal, subprocess, sys, time
 pid, fd = pty.fork()
 if pid == 0:
@@ -660,7 +668,9 @@ signal_statuses() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   sections_repo "$tmp/r" '10-a:sleep 31.7'
-  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  # As in signals_stop_sections.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  (cd "$tmp/r" && PATH="$tmp/bin:$PATH" exec ./check.sh > /dev/null 2>&1) &
   pid=$!
   sleep 0.6
   kill -TERM "$pid"
@@ -672,3 +682,23 @@ signal_statuses() {
   }
 }
 check "TERM ends the runner with 143" signal_statuses
+
+# Last: no case left a runner's scratch directory in the system's temporary
+# directory. A runner killed outright runs no EXIT trap, and its scratch
+# outlives it. On 2026-10-22 ~180 of this section's were there, nearly all
+# from revisions before 004 merged, which left every fixture's (a clean run
+# of this revision leaves none); four, by their shape, from the ^C case
+# killing a runner that did not stop. The cases that can end a runner
+# without its EXIT trap make its scratch with fixture_mktemp. Compared by
+# name with the list taken before the cases; an unlocked suite of another
+# branch running at the same moment could show here, which the lock (006)
+# rules out once every branch has it.
+runner_temp_untouched() {
+  local new
+  new=$(comm -13 <(printf '%s\n' "$RUNNER_TEMP_BEFORE" | sort) <(system_temp_runs | sort))
+  [ -z "$new" ] || {
+    printf 'left in the system temporary directory:\n%s\n' "$new"
+    return 1
+  }
+}
+check "no case left a run's scratch in the system temporary directory" runner_temp_untouched
