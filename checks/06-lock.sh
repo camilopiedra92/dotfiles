@@ -312,3 +312,27 @@ lock_cannot_be_taken() {
   lock_expect log "no section run" "" "$(lock_log)"
 }
 check "a lock that cannot be taken says where, and runs nothing" lock_cannot_be_taken
+
+# US4 AS1, FR-006: a scratch run whose section starts another copy, which
+# inherits the section's environment as anything a section starts does. The
+# inner copy must neither wait for its parent, which would hang until the
+# watchdog, nor say it waits.
+lock_nested_run_is_part_of_it() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  sections_repo "$tmp/inner" '10-a:check "inner ran" true'
+  sections_repo "$tmp/outer" "10-a:inner_err=\$(cd '$tmp/inner' && ./check.sh 2>&1 > /dev/null)
+check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
+  lock_start "$tmp/outer" "$tmp/outer"
+  within 10 "$LOCK_PID" || {
+    echo "the outer run did not end: its nested run waited for it"
+    return 1
+  }
+  lock_expect outer "exit" 0 "$RC" || {
+    cat "$tmp/outer.out"
+    return 1
+  }
+}
+check "a run started inside a run does not wait for it" lock_nested_run_is_part_of_it
