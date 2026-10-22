@@ -41,7 +41,8 @@ existing directory.
    protected set and config-guard as the judge.
 3. **Check the response** before applying: a response reporting a model other
    than the configured one, or lacking a usage field, fails the pass naming
-   it, with nothing applied.
+   it, with nothing applied. pi reports each response of a pass apart, and
+   the pass's usage is their sum: every one of them must carry its usage.
 4. **Record**: `.sdd/implement.json` — the files, the commit, the pass's usage
    — written only here.
 

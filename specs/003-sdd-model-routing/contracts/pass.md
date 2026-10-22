@@ -174,12 +174,14 @@ and no configuration an agent could have written runs during a run.
      the whole diff; git hooks (the repository's `core.hooksPath` and
      `.husky/`), CI workflows (`.github/`), editor tasks and every file whose
      mode becomes 755 are recorded as automation changes (FR-030);
-   - every changed file's bytes, the result's text and `structured_output`
-     are scanned for the exact value of every credential of the run, failing
-     closed when a credential cannot be read — a second line behind the
-     proxy, since no agent holds one — read from the Keychain into the scanner
-     through a pipe and never written; a match stops the pass, naming the
-     credential, not showing it (FR-009).
+   - every changed file's bytes, the result's text, `structured_output` and
+     its usage are scanned for the exact value of every credential of the
+     run, failing closed when a credential cannot be read — a second line
+     behind the proxy, since no agent holds one — read from the Keychain into
+     the scanner through a pipe and never written; a match stops the pass,
+     naming the credential, not showing it (FR-009). The credentials of the
+     run are Claude's always and DeepSeek's for a pi pass or a run opted in
+     at start: a run not opted in never reads the DeepSeek key.
    A path or entry the judge refuses is named; nothing is applied.
 7. **Apply**: the outcome file — `implement.json` included, its commit
    filled in after — is validated first, and an implement pass's check and
@@ -192,7 +194,11 @@ and no configuration an agent could have written runs during a run.
    bundle lies inside the repository's `.git`.
 8. **Results**: the agent's JSON result is read from the container's stdout:
    `structured_output` to the row's outcome file, the result's text to
-   `result_to`, usage to the run's `usage.jsonl`.
+   `result_to`, usage to the run's `usage.jsonl`. What the agent said reaches
+   no log or file unjudged: the usage line, a failing pass's message and the
+   answer kept in `results/` have the exact value of every credential of the
+   run replaced by its Keychain item's name first, a credential that cannot
+   be read withholding the answer whole (FR-009, research R29).
 9. **Clean up**: both exports and the container removed, whatever happened.
    A pass whose own process was killed cannot clean up; `sdd-run start` and
    `resume` call `sdd-step cleanup` first.

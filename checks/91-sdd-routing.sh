@@ -116,6 +116,108 @@ else
   skip "sdd-step outcome prints each step's token and refuses a missing or invalid file" check-jsonschema
 fi
 
+# The fixture every contained-pass check builds on. The helpers read and set
+# the locals of the check that calls them (bash scopes dynamically): tmp,
+# status, dotfiles, step, claude_secret, deepseek_secret, repo, run, sa, f.
+fresh() {
+  rm -rf "$tmp/case" && mkdir -p "$tmp/case" || return 1
+  local c=$tmp/case
+  repo=$c/repo sa=$c/standins
+  cp -R "$dotfiles/checks/sdd/standins" "$sa"
+  # One stand-in answers for both agents, linked here rather than in git.
+  ln -s agent "$sa/claude" && ln -s agent "$sa/pi"
+  mkdir -p "$sa/secrets" "$sa/fixture" "$c/evil"
+  printf '%s' "$claude_secret" > "$sa/secrets/claude-oauth"
+  printf '%s' "$deepseek_secret" > "$sa/secrets/deepseek-api"
+  local tool
+  for tool in git python3 python tar mise check-jsonschema; do
+    printf '#!/bin/sh\ntouch %s/pwned-%s\nexit 1\n' "$c" "$tool" > "$c/evil/$tool"
+    chmod +x "$c/evil/$tool"
+  done
+  mkdir -p "$repo/.specify" "$repo/$f" "$repo/src" "$repo/githooks"
+  (
+    cd "$repo" || exit 1
+    git init -q -b main
+    printf '{"feature_directory":"%s"}\n' "$f" > .specify/feature.json
+    printf '# Spec\n' > "$f/spec.md"
+    printf -- '- [ ] T001 do it\n' > "$f/tasks.md"
+    printf 'print(1)\n' > src/app.py
+    printf '[lint]\nselect = ["E"]\n' > ruff.toml
+    printf '#!/bin/sh\necho checking; exit 0\n' > check-app.sh
+    chmod +x check-app.sh
+    printf '#!/bin/sh\ntouch %s/pwned-hook\n' "$c" > githooks/pre-commit
+    chmod +x githooks/pre-commit
+    printf '[tools]\npython = "3.12"\n' > mise.toml
+    git add -A && git -c user.name=t -c user.email=t@t commit -qm base
+    git config core.hooksPath githooks
+    git config core.fsmonitor "$c/evil/mise"
+    git config user.name owner && git config user.email owner@example.com
+  ) || return 1
+  run=$(python3 -I "$dotfiles/checks/sdd/bundle.py" "$c" "$dotfiles") || return 1
+  printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"%s"}\n' \
+    "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
+}
+# The agent's result: text, and structured output when given.
+result() {
+  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10}}}\n' \
+    "$1" "${2:-null}" > "$sa/fixture/result.json"
+}
+edit() { # path content
+  mkdir -p "$sa/fixture/edits/$(dirname "$1")"
+  printf '%s' "$2" > "$sa/fixture/edits/$1"
+}
+pass() { # subcommand args...: runs it as the workflow would, from the repository root
+  (cd "$repo" && HOME="${PASS_HOME:-$HOME}" PATH="$tmp/case/evil:$PATH" SDD_RUN_DIR=$run "$step" "$@" 2>&1)
+}
+fail() {
+  echo "$1"
+  status=1
+}
+# The check's own git, with the repository's planted hooks and fsmonitor off,
+# so only a host step of the pass can leave their marks.
+tgit() { git -C "$repo" -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
+commits() { tgit rev-list --count HEAD; }
+# Copies the admissions present while the agent runs, so a case can see
+# what the proxy would have admitted this pass to.
+watch_admissions() {
+  mkdir -p "$tmp/case/seen"
+  printf 'cp "%s"/admissions/*.json "%s/seen/"\n' "$run" "$tmp/case" >> "$sa/fixture/script"
+}
+# Copies what the pass mounted at /bundle/proxy-ca.pem, from inside the
+# container stand-in, to seen-ca.pem.
+watch_ca() {
+  {
+    printf 'seen=%s/seen-ca.pem\n' "$tmp/case"
+    cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+case $m in *:/bundle:ro) cp "${m%%:*}/proxy-ca.pem" "$seen" ;; esac
+done
+SH
+  } >> "$sa/fixture/script"
+}
+admitted() { # want...: the admissions seen are exactly one, admitting these
+  /usr/bin/python3 -I - "$tmp/case/seen" "$@" << 'PY'
+import glob, json, sys
+seen = glob.glob(sys.argv[1] + "/*.json")
+if len(seen) != 1:
+  sys.exit(f"{len(seen)} admissions while the agent ran, wanted one")
+got = json.load(open(seen[0]))["admit"]
+if sorted(got) != sorted(sys.argv[2:]):
+  sys.exit(f"admitted {got}, wanted {sys.argv[2:]}")
+PY
+}
+clean_after() { # case: no exports left, no pwned marks
+  [ -z "$(ls -A "$run/passes" 2> /dev/null)" ] || fail "$1: left $(ls "$run/passes") in the bundle"
+  [ -z "$(ls -A "$run/admissions" 2> /dev/null)" ] || fail "$1: left an admission behind"
+  local mark
+  for mark in "$tmp"/case/pwned-*; do
+    [ -e "$mark" ] && fail "$1: a host step ran $(basename "$mark" | sed 's/^pwned-//') from PATH or repository configuration"
+  done
+  grep -qF -e "$claude_secret" -e "$deepseek_secret" "$sa/agents.jsonl" "$sa/calls.jsonl" 2> /dev/null &&
+    fail "$1: a credential reached the container runtime or an agent"
+  return 0
+}
+
 # The contained pass (contracts/pass.md, FR-028, research R20, R21), run end to
 # end through `sdd-step agent` and `sdd-step verify` against the stand-ins in
 # checks/sdd/standins: a container runtime that runs the command in the export
@@ -132,105 +234,6 @@ sdd_pass() {
   local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
   local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
   local repo run sa f=specs/001-probe out
-
-  fresh() {
-    rm -rf "$tmp/case" && mkdir -p "$tmp/case" || return 1
-    local c=$tmp/case
-    repo=$c/repo sa=$c/standins
-    cp -R "$dotfiles/checks/sdd/standins" "$sa"
-    # One stand-in answers for both agents, linked here rather than in git.
-    ln -s agent "$sa/claude" && ln -s agent "$sa/pi"
-    mkdir -p "$sa/secrets" "$sa/fixture" "$c/evil"
-    printf '%s' "$claude_secret" > "$sa/secrets/claude-oauth"
-    printf '%s' "$deepseek_secret" > "$sa/secrets/deepseek-api"
-    local tool
-    for tool in git python3 python tar mise check-jsonschema; do
-      printf '#!/bin/sh\ntouch %s/pwned-%s\nexit 1\n' "$c" "$tool" > "$c/evil/$tool"
-      chmod +x "$c/evil/$tool"
-    done
-    mkdir -p "$repo/.specify" "$repo/$f" "$repo/src" "$repo/githooks"
-    (
-      cd "$repo" || exit 1
-      git init -q -b main
-      printf '{"feature_directory":"%s"}\n' "$f" > .specify/feature.json
-      printf '# Spec\n' > "$f/spec.md"
-      printf -- '- [ ] T001 do it\n' > "$f/tasks.md"
-      printf 'print(1)\n' > src/app.py
-      printf '[lint]\nselect = ["E"]\n' > ruff.toml
-      printf '#!/bin/sh\necho checking; exit 0\n' > check-app.sh
-      chmod +x check-app.sh
-      printf '#!/bin/sh\ntouch %s/pwned-hook\n' "$c" > githooks/pre-commit
-      chmod +x githooks/pre-commit
-      printf '[tools]\npython = "3.12"\n' > mise.toml
-      git add -A && git -c user.name=t -c user.email=t@t commit -qm base
-      git config core.hooksPath githooks
-      git config core.fsmonitor "$c/evil/mise"
-      git config user.name owner && git config user.email owner@example.com
-    ) || return 1
-    run=$(python3 -I "$dotfiles/checks/sdd/bundle.py" "$c" "$dotfiles") || return 1
-    printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"%s"}\n' \
-      "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
-  }
-  # The agent's result: text, and structured output when given.
-  result() {
-    printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10}}}\n' \
-      "$1" "${2:-null}" > "$sa/fixture/result.json"
-  }
-  edit() { # path content
-    mkdir -p "$sa/fixture/edits/$(dirname "$1")"
-    printf '%s' "$2" > "$sa/fixture/edits/$1"
-  }
-  pass() { # subcommand args...: runs it as the workflow would, from the repository root
-    (cd "$repo" && HOME="${PASS_HOME:-$HOME}" PATH="$tmp/case/evil:$PATH" SDD_RUN_DIR=$run "$step" "$@" 2>&1)
-  }
-  fail() {
-    echo "$1"
-    status=1
-  }
-  # The check's own git, with the repository's planted hooks and fsmonitor off,
-  # so only a host step of the pass can leave their marks.
-  tgit() { git -C "$repo" -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
-  commits() { tgit rev-list --count HEAD; }
-  # Copies the admissions present while the agent runs, so a case can see
-  # what the proxy would have admitted this pass to.
-  watch_admissions() {
-    mkdir -p "$tmp/case/seen"
-    printf 'cp "%s"/admissions/*.json "%s/seen/"\n' "$run" "$tmp/case" >> "$sa/fixture/script"
-  }
-  # Copies what the pass mounted at /bundle/proxy-ca.pem, from inside the
-  # container stand-in, to seen-ca.pem.
-  watch_ca() {
-    {
-      printf 'seen=%s/seen-ca.pem\n' "$tmp/case"
-      cat << 'SH'
-for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
-  case $m in *:/bundle:ro) cp "${m%%:*}/proxy-ca.pem" "$seen" ;; esac
-done
-SH
-    } >> "$sa/fixture/script"
-  }
-  admitted() { # want...: the admissions seen are exactly one, admitting these
-    /usr/bin/python3 -I - "$tmp/case/seen" "$@" << 'PY'
-import glob, json, sys
-seen = glob.glob(sys.argv[1] + "/*.json")
-if len(seen) != 1:
-    sys.exit(f"{len(seen)} admissions while the agent ran, wanted one")
-got = json.load(open(seen[0]))["admit"]
-if sorted(got) != sorted(sys.argv[2:]):
-    sys.exit(f"admitted {got}, wanted {sys.argv[2:]}")
-PY
-  }
-  clean_after() { # case: no exports left, no pwned marks
-    [ -z "$(ls -A "$run/passes" 2> /dev/null)" ] || fail "$1: left $(ls "$run/passes") in the bundle"
-    [ -z "$(ls -A "$run/admissions" 2> /dev/null)" ] || fail "$1: left an admission behind"
-    local mark
-    for mark in "$tmp"/case/pwned-*; do
-      [ -e "$mark" ] && fail "$1: a host step ran $(basename "$mark" | sed 's/^pwned-//') from PATH or repository configuration"
-    done
-    grep -qF -e "$claude_secret" -e "$deepseek_secret" "$sa/agents.jsonl" "$sa/calls.jsonl" 2> /dev/null &&
-      fail "$1: a credential reached the container runtime or an agent"
-    return 0
-  }
 
   # 1. A plan pass writing what its row allows: exported, judged, applied, one commit.
   fresh || return 1
@@ -575,61 +578,6 @@ sys.exit("\n".join(bad) or 0)
     clean_after "no-op, verify exit $verdict"
   done
 
-  # 13. Implement on DeepSeek, opted in at start and now: pi gets the worker's
-  # models.json pointed at the proxy with the placeholder as its key, and the
-  # pass is admitted to DeepSeek and the registries, not to Anthropic.
-  fresh || return 1
-  mkdir -p "$repo/$f/.sdd"
-  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"deepseek"}\n' > "$repo/$f/.sdd/route.json"
-  tgit config sdd.implement deepseek
-  # pi's models come from the bundle, frozen at start (its prices too).
-  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["providers"]["deepseek"]["models"][0]["name"]="FROZEN-IN-BUNDLE"; json.dump(d,open(p,"w"))' "$run/pi-models.json"
-  # Two responses in one pass: pi reports each message_end's own usage (pi
-  # 1.3.0 docs/json.md), so the pass's usage is their sum.
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"reading"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' \
-    '{"type":"message_end","message":{"role":"user","content":"tool result"}}' \
-    '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":20,"cacheRead":1,"output":4}}}' > "$sa/fixture/result.json"
-  edit src/app.py "print(3)"
-  watch_admissions
-  # Inside the agent, the stand-in's mounts name where /bundle is.
-  {
-    printf 'seen=%s/seen-models.json\n' "$tmp/case"
-    cat << 'SH'
-for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
-  case $m in *:/bundle:ro) cp "${m%%:*}/models.json" "$seen" ;; esac
-done
-SH
-  } >> "$sa/fixture/script"
-  out=$(pass implement) || fail "deepseek: failed: $out"
-  [ "$(cat "$repo/src/app.py")" = "print(3)" ] || fail "deepseek: not applied"
-  out=$(admitted deepseek registries 2>&1) || fail "deepseek: $out"
-  /usr/bin/python3 -I -c '
-import json, sys
-agent = [json.loads(l) for l in open(sys.argv[1])][-1]
-m = json.load(open(sys.argv[2]))["providers"]["deepseek"]
-tok = agent["env"].get("SDD_PASS_TOKEN")
-name, argv, base, key = agent["agent"], agent["argv"], m["baseUrl"], m["apiKey"]
-bad = []
-# pi runs the Spec Kit implement command, in the pi spelling, alone; the
-# brief goes to its system prompt.
-if argv[-1] != "/speckit.implement specs/001-probe":
-    bad.append("deepseek: pi was not given /speckit.implement alone: %r" % argv[-1][:80])
-if "--append-system-prompt" not in argv or "Brief" not in argv[argv.index("--append-system-prompt") + 1]:
-    bad.append("deepseek: the brief is not appended to the system prompt of pi")
-if name != "pi" or "deepseek/deepseek-flash" not in argv:
-    bad.append(f"deepseek: pi not run on deepseek/deepseek-flash: {name} {argv}")
-if m["models"][0]["name"] != "FROZEN-IN-BUNDLE":
-    bad.append("deepseek: the models.json pi got is not the bundle copy")
-if base != "http://192.0.2.10:8080" or key != tok:
-    bad.append(f"deepseek: models.json not pointed at the proxy with the placeholder: {base}")
-if "CLAUDE_CODE_OAUTH_TOKEN" in agent["env"]:
-    bad.append("deepseek: a Claude placeholder reached the pi pass")
-sys.exit("\n".join(bad) or 0)
-' "$sa/agents.jsonl" "$tmp/case/seen-models.json" || status=1
-  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d["agent"]=="deepseek" and d["usage"]=={"input":30,"cached":6,"output":7} else f"deepseek: implement.json {d}")' \
-    "$repo/$f/.sdd/implement.json" || status=1
-  clean_after deepseek
-
   # Review of Phase 2 (2026-10-21): each case below got through before.
   sonnet_route() {
     mkdir -p "$repo/$f/.sdd"
@@ -859,6 +807,377 @@ if command -v check-jsonschema > /dev/null 2>&1; then
   check "the contained pass exports, judges, applies and cleans up, and no credential or repository configuration reaches a host step" sdd_pass
 else
   skip "the contained pass exports, judges, applies and cleans up, and no credential or repository configuration reaches a host step" check-jsonschema
+fi
+
+# The route an implement pass reads, as `sdd-step route` writes it.
+route_to() { # sonnet|deepseek
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"%s"}\n' "$1" > "$repo/$f/.sdd/route.json"
+}
+# pi's JSON event stream (pi 1.3.0 docs/json.md): one assistant message_end
+# per response, each with the model pi reports and its own usage, or none
+# when the usage argument is "-".
+pi_says() { # model usage-json text [model usage-json text ...]
+  : > "$sa/fixture/result.json"
+  while [ $# -ge 3 ]; do
+    local usage=,\"usage\":$2
+    [ "$2" = - ] && usage=
+    printf '{"type":"message_end","message":{"role":"assistant","model":"%s","content":[{"type":"text","text":"%s"}]%s}}\n' \
+      "$1" "$3" "$usage" >> "$sa/fixture/result.json"
+    shift 3
+  done
+}
+# The run's egress proxy, started as sdd-run starts it, against the stand-in
+# runtime; sets pid. Its heartbeat file is sdd-run's, not a pass's admission,
+# and goes when the proxy is stopped.
+start_proxy() { # case
+  (cd "$repo" && SDD_RUN_DIR=$run "$step" egress-proxy > "$tmp/proxy.out" 2>&1) &
+  pid=$!
+  local waited=0
+  until grep -q 127.0.0.1 "$run/proxy.json" 2> /dev/null; do
+    if [ $waited -ge 100 ] || ! kill -0 "$pid" 2> /dev/null; then
+      fail "$1: the egress proxy did not start: $(cat "$tmp/proxy.out")"
+      return 1
+    fi
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+}
+stop_proxy() { # case
+  "$sa/container" stop sdd-run1-proxy
+  wait "$pid" || fail "$1: the egress proxy exited non-zero: $(cat "$tmp/proxy.out")"
+  rm -f "$run/admissions/heartbeat"
+}
+# Nothing of an implement pass reached the worktree: no implement commit,
+# the file it edited as it was, no implement.json.
+nothing_applied() { # case
+  tgit log --format=%s | grep -q '^implement:' && fail "$1: an implement commit was made"
+  [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "$1: src/app.py was changed"
+  [ ! -e "$repo/$f/.sdd/implement.json" ] || fail "$1: implement.json was written"
+  return 0
+}
+
+# DeepSeek's prerequisites (quickstart 9, SC-004, FR-010, contracts/sdd-step.md
+# "implement" step 1): with the route at deepseek, a Keychain without the
+# `deepseek-api` item, or with a blank one, stops implement with exit 1
+# naming it, before the container runtime is called at all; a repository
+# opted out since the run started gets a Sonnet pass that says so, records
+# `agent: sonnet` and gives pi nothing.
+sdd_deepseek_prereqs() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code key
+
+  for key in missing blank; do
+    fresh || return 1
+    route_to deepseek
+    tgit config sdd.implement deepseek
+    case $key in
+      missing) rm "$sa/secrets/deepseek-api" ;;
+      blank) printf ' \n' > "$sa/secrets/deepseek-api" ;;
+    esac
+    pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":1}' "implemented"
+    edit src/app.py "print(2)"
+    out=$(pass implement)
+    code=$?
+    [ "$code" -eq 1 ] || fail "deepseek-api $key: exit $code, wanted 1: $out"
+    printf '%s' "$out" | grep -qF "deepseek-api" || fail "deepseek-api $key: the Keychain item is not named: $out"
+    grep -qF '["container"' "$sa/calls.jsonl" 2> /dev/null &&
+      fail "deepseek-api $key: the container runtime was called: $(grep -F '["container"' "$sa/calls.jsonl" | head -3)"
+    nothing_applied "deepseek-api $key"
+    clean_after "deepseek-api $key"
+  done
+
+  # Opted in at start (the bundle's optin.json) and out now.
+  fresh || return 1
+  route_to deepseek
+  result "implemented"
+  edit src/app.py "print(2)"
+  watch_admissions
+  out=$(pass implement) || fail "opted out since start: failed: $out"
+  printf '%s' "$out" | grep -qi "not opted in.*sonnet" || fail "opted out since start: the pass does not say it runs on Sonnet: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(2)" ] || fail "opted out since start: not applied"
+  tgit log -1 --format=%s | grep -qxF "implement: 001-probe (claude-sonnet-5-5)" ||
+    fail "opted out since start: commit subject '$(tgit log -1 --format=%s)'"
+  out=$(admitted anthropic registries 2>&1) || fail "opted out since start: $out"
+  /usr/bin/python3 -I - "$sa/agents.jsonl" "$repo/$f/.sdd/implement.json" << 'PY' || status=1
+import json, sys
+agents = [json.loads(l) for l in open(sys.argv[1])]
+d = json.load(open(sys.argv[2]))
+bad = []
+if [a["agent"] for a in agents] != ["claude"]:
+    bad.append("opted out since start: the agents run were %s, wanted claude alone" % [a["agent"] for a in agents])
+if (d["agent"], d["model"], d["pi_version"]) != ("sonnet", "claude-sonnet-5-5", None):
+    bad.append("opted out since start: implement.json records %s, %s, pi %s" % (d["agent"], d["model"], d["pi_version"]))
+sys.exit("\n".join(bad) or 0)
+PY
+  clean_after "opted out since start"
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "an opted-in implement without its DeepSeek key stops before any container; one opted out since start runs on Sonnet and says so" sdd_deepseek_prereqs
+else
+  skip "an opted-in implement without its DeepSeek key stops before any container; one opted out since start runs on Sonnet and says so" check-jsonschema
+fi
+
+# The pi pass (contracts/pass.md, contracts/routing.md, contracts/sdd-step.md
+# "implement" steps 2-4). That the worker runs every command as `node`
+# behind a firewall that reaches the proxy alone is check 92's
+# (sdd_ep_runs_as_node, sdd_fw_allows_only_proxy), and that the proxy holds a
+# pass to its admission is check 93's; here, that the pi pass goes through
+# that entrypoint and asks for DeepSeek and the registries only.
+sdd_pi_pass() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code
+
+  # Implement on DeepSeek, opted in at start and now: pi gets the worker's
+  # models.json pointed at the proxy with the placeholder as its key, and the
+  # pass is admitted to DeepSeek and the registries, not to Anthropic. The
+  # row's effort and pi's version are set apart from the defaults here, so
+  # what pi is given and what implement.json records are seen to come from
+  # the bundle.
+  fresh || return 1
+  route_to deepseek
+  tgit config sdd.implement deepseek
+  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["phases"]["implement-deepseek"]["effort"]["value"]="xhigh"; d["versions"]["pi"]="9.8.7"; json.dump(d,open(p,"w"))' "$run/routing.json"
+  # pi's models come from the bundle, frozen at start (its prices too).
+  /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["providers"]["deepseek"]["models"][0]["name"]="FROZEN-IN-BUNDLE"; json.dump(d,open(p,"w"))' "$run/pi-models.json"
+  # Two responses in one pass: pi reports each message_end's own usage (pi
+  # 1.3.0 docs/json.md), so the pass's usage is their sum.
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"reading"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' \
+    '{"type":"message_end","message":{"role":"user","content":"tool result"}}' \
+    '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":20,"cacheRead":1,"output":4}}}' > "$sa/fixture/result.json"
+  edit src/app.py "print(3)"
+  watch_admissions
+  # Inside the agent, the stand-in's mounts name where /bundle is.
+  {
+    printf 'seen=%s/seen-models.json\n' "$tmp/case"
+    cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+  case $m in *:/bundle:ro) cp "${m%%:*}/models.json" "$seen" ;; esac
+done
+SH
+  } >> "$sa/fixture/script"
+  out=$(pass implement) || fail "deepseek: failed: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(3)" ] || fail "deepseek: not applied"
+  out=$(admitted deepseek registries 2>&1) || fail "deepseek: $out"
+  /usr/bin/python3 -I -c '
+import json, sys
+agent = [json.loads(l) for l in open(sys.argv[1])][-1]
+m = json.load(open(sys.argv[2]))["providers"]["deepseek"]
+tok = agent["env"].get("SDD_PASS_TOKEN")
+name, argv, base, key = agent["agent"], agent["argv"], m["baseUrl"], m["apiKey"]
+bad = []
+# pi runs the Spec Kit implement command, in the pi spelling, alone; the
+# brief goes to its system prompt.
+if argv[-1] != "/speckit.implement specs/001-probe":
+    bad.append("deepseek: pi was not given /speckit.implement alone: %r" % argv[-1][:80])
+if "--append-system-prompt" not in argv or "Brief" not in argv[argv.index("--append-system-prompt") + 1]:
+    bad.append("deepseek: the brief is not appended to the system prompt of pi")
+want = ["-p", "--mode", "json", "--no-session", "--model", "deepseek/deepseek-flash", "--thinking", "xhigh"]
+if name != "pi" or argv[:len(want)] != want:
+    bad.append("deepseek: pi not run as %s: %s %s" % (" ".join(want), name, argv[:len(want)]))
+if m["models"][0]["name"] != "FROZEN-IN-BUNDLE":
+    bad.append("deepseek: the models.json pi got is not the bundle copy")
+if base != "http://192.0.2.10:8080" or key != tok:
+    bad.append(f"deepseek: models.json not pointed at the proxy with the placeholder: {base}")
+if "CLAUDE_CODE_OAUTH_TOKEN" in agent["env"]:
+    bad.append("deepseek: a Claude placeholder reached the pi pass")
+sys.exit("\n".join(bad) or 0)
+' "$sa/agents.jsonl" "$tmp/case/seen-models.json" || status=1
+  # implement.json: the model pi reported, pi's version as the run recorded
+  # it, and the tokens of every response.
+  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if (d["agent"], d["model"], d["pi_version"], d["usage"])==("deepseek", "deepseek-flash", "9.8.7", {"input":30,"cached":6,"output":7}) else f"deepseek: implement.json {d}")' \
+    "$repo/$f/.sdd/implement.json" || status=1
+  # The pass runs through the worker's entrypoint, which brings the firewall
+  # up and drops to node (check 92), on the run's network: no entrypoint or
+  # user of its own.
+  /usr/bin/python3 -I -c '
+import json, sys
+run = [c for c in map(json.loads, open(sys.argv[1])) if c[:2] == ["container", "run"]][-1]
+head = run[:run.index("sdd-worker:0123456789ab")]
+bad = [f for f in ("--entrypoint", "-u", "--user") if f in head]
+if "--network" not in head or head[head.index("--network") + 1] != "sdd-run1":
+    bad.append("not on the network sdd-run1")
+sys.exit("deepseek: the pi container %s: %s" % (", ".join(bad), run) if bad else 0)
+' "$sa/calls.jsonl" || status=1
+  clean_after deepseek
+
+  # A response pi reports from another model, or without usage, fails the
+  # pass naming it, with nothing applied (contracts/sdd-step.md, step 3).
+  local bad
+  for bad in "another model" "no usage" "one response without usage"; do
+    fresh || return 1
+    route_to deepseek
+    tgit config sdd.implement deepseek
+    case $bad in
+      "another model") pi_says deepseek-v4-pro '{"input":1,"cacheRead":0,"output":1}' "done" ;;
+      "no usage") pi_says deepseek-flash - "done" ;;
+      "one response without usage") pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":1}' "reading" deepseek-flash - "done" ;;
+    esac
+    edit src/app.py "print(3)"
+    out=$(pass implement)
+    code=$?
+    [ "$code" -eq 1 ] || fail "pi $bad: exit $code, wanted 1: $out"
+    case $bad in
+      "another model") printf '%s' "$out" | grep -qF "deepseek-v4-pro" || fail "pi $bad: the model is not named: $out" ;;
+      *) printf '%s' "$out" | grep -qi "usage" || fail "pi $bad: the missing usage is not named: $out" ;;
+    esac
+    nothing_applied "pi $bad"
+    clean_after "pi $bad"
+  done
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "the pi pass runs the row's model and effort through the worker, and a response from another model or without usage applies nothing" sdd_pi_pass
+else
+  skip "the pi pass runs the row's model and effort through the worker, and a response from another model or without usage applies nothing" check-jsonschema
+fi
+
+# No credential leaks (FR-009). An agent that returns a credential's exact
+# value — in a file, its result's text, its structured output, its usage or
+# what it prints on failing — is refused with nothing applied and the value shown
+# nowhere, results/ included. After a run of full passes — the egress proxy
+# started and stopped, a plan, a DeepSeek implementation, a review and a
+# verify — neither credential is in any recorded argument, in the
+# environment of any host tool the run started or of any container, or in
+# any file under the scratch repository and its bundle, the stand-ins'
+# records or the temporary directories. A run not opted in never reads the
+# DeepSeek key from the Keychain.
+sdd_no_leak() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code where agent secret service
+
+  for where in "pi file deepseek-api" "pi result deepseek-api" "pi file claude-oauth" "sonnet result claude-oauth" \
+    "sonnet file deepseek-api" "review structured deepseek-api" "sonnet usage claude-oauth" "sonnet failure claude-oauth" \
+    "pi failure deepseek-api"; do
+    read -r agent where service <<< "$where"
+    secret=$claude_secret
+    [ "$service" = deepseek-api ] && secret=$deepseek_secret
+    fresh || return 1
+    tgit config sdd.implement deepseek
+    case $agent in
+      pi) route_to deepseek ;;
+      sonnet) route_to sonnet ;;
+    esac
+    [ "$agent" = review ] || edit src/app.py "print(2)"
+    case $agent/$where in
+      pi/file)
+        edit src/app.py "key = '$secret'"
+        pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":1}' "done"
+        ;;
+      pi/result) pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":1}' "the key is $secret" ;;
+      pi/failure)
+        printf 'pi: the key %s was refused\n' "$secret" > "$sa/fixture/say"
+        echo 1 > "$sa/fixture/exit"
+        ;;
+      sonnet/file)
+        edit src/app.py "key = '$secret'"
+        result "implemented"
+        ;;
+      sonnet/result) result "the token is $secret" ;;
+      sonnet/usage)
+        printf '{"type":"result","is_error":false,"result":"implemented","permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"%s":{"inputTokens":1}}}\n' "$secret" > "$sa/fixture/result.json"
+        ;;
+      sonnet/failure)
+        printf '{"type":"result","is_error":true,"result":"401 for %s","permission_denials":[]}\n' "$secret" > "$sa/fixture/result.json"
+        ;;
+      review/structured) result "reviewed" "{\"findings\":[{\"severity\":\"LOW\",\"text\":\"$secret\"}],\"done\":[]}" ;;
+    esac
+    if [ "$agent" = review ]; then
+      out=$(pass agent review)
+    else
+      out=$(pass implement)
+    fi
+    code=$?
+    [ "$code" -ne 0 ] || fail "$agent $where $service: succeeded"
+    case $where in
+      failure) ;;
+      *) printf '%s' "$out" | grep -qF "$service" || fail "$agent $where $service: the credential is not named: $out" ;;
+    esac
+    grep -qF "$secret" <<< "$out" && fail "$agent $where $service: the value was shown"
+    grep -rqF "$secret" "$run" "$repo" 2> /dev/null && fail "$agent $where $service: the value is in $(grep -rlF "$secret" "$run" "$repo" | head -3)"
+    nothing_applied "$agent $where $service"
+    [ ! -e "$repo/$f/.sdd/review.json" ] || fail "$agent $where $service: review.json was written"
+    clean_after "$agent $where $service"
+  done
+
+  # Full passes, opted in. A marker dates what the run wrote in the
+  # temporary directories.
+  local marker=$tmp/marker pid
+  fresh || return 1
+  : > "$marker"
+  tgit config sdd.implement deepseek
+  route_to deepseek
+  start_proxy "full passes" || return 1
+  mkdir -p "$sa/fixture/by/speckit-plan/edits/$f" "$sa/fixture/by/speckit/edits/src" "$sa/fixture/by/speckit-review"
+  printf '# Plan\n' > "$sa/fixture/by/speckit-plan/edits/$f/plan.md"
+  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' > "$sa/fixture/by/speckit-plan/result.json"
+  printf 'print(4)\n' > "$sa/fixture/by/speckit/edits/src/app.py"
+  printf '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":1,"cacheRead":0,"output":1}}}\n' > "$sa/fixture/by/speckit/result.json"
+  printf '{"type":"result","is_error":false,"result":"reviewed","structured_output":{"findings":[],"done":["T001"]},"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' > "$sa/fixture/by/speckit-review/result.json"
+  {
+    out=$(pass agent plan) || fail "full passes: plan failed: $out"
+    printf '%s\n' "$out"
+    out=$(pass implement) || fail "full passes: implement failed: $out"
+    printf '%s\n' "$out"
+    out=$(pass agent review) || fail "full passes: review failed: $out"
+    printf '%s\n' "$out"
+    out=$(pass verify) || fail "full passes: verify failed: $out"
+    printf '%s\n' "$out"
+  } > "$tmp/passes.out"
+  stop_proxy "full passes"
+  [ "$(cat "$repo/src/app.py")" = "print(4)" ] || fail "full passes: the implementation was not applied"
+  # Every host tool the run started records its environment (the stand-ins'
+  # host-env.txt); every container its environment, arguments and stdin
+  # (agents.jsonl); every call its arguments (calls.jsonl). The stand-in
+  # Keychain's own store, secrets/, is the one place the values belong.
+  [ -s "$sa/host-env.txt" ] || fail "full passes: no host tool recorded its environment"
+  local leaks
+  local tmpdir=${TMPDIR:-/tmp}
+  leaks=$(
+    {
+      find "$tmp" -path "$sa/secrets" -prune -o -type f -print0
+      find "${tmpdir%/}" /private/tmp -path "$tmp" -prune -o -type f -newer "$marker" -user "$(id -u)" -print0 2> /dev/null
+    } | xargs -0 grep -lF -e "$claude_secret" -e "$deepseek_secret" 2> /dev/null
+  )
+  [ -z "$leaks" ] || fail "full passes: a credential is in $(printf '%s' "$leaks" | head -5 | tr '\n' ' ')"
+  clean_after "full passes"
+
+  # Not opted in: the DeepSeek key is never read, by the proxy or the judge.
+  fresh || return 1
+  printf '{"implement":null}\n' > "$run/optin.json"
+  route_to sonnet
+  start_proxy "not opted in" || return 1
+  mkdir -p "$sa/fixture/by/speckit-plan/edits/$f" "$sa/fixture/by/speckit-implement/edits/src"
+  printf '# Plan\n' > "$sa/fixture/by/speckit-plan/edits/$f/plan.md"
+  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' |
+    tee "$sa/fixture/by/speckit-plan/result.json" > "$sa/fixture/by/speckit-implement/result.json"
+  printf 'print(5)\n' > "$sa/fixture/by/speckit-implement/edits/src/app.py"
+  out=$(pass agent plan) || fail "not opted in: plan failed: $out"
+  out=$(pass implement) || fail "not opted in: implement failed: $out"
+  stop_proxy "not opted in"
+  grep -F '["security"' "$sa/calls.jsonl" | grep -qF '"deepseek-api"' &&
+    fail "not opted in: the DeepSeek key was read: $(grep -F '["security"' "$sa/calls.jsonl" | grep -F deepseek-api | head -2)"
+  grep -F '["security"' "$sa/calls.jsonl" | grep -qF '"claude-oauth"' || fail "not opted in: no Keychain read was recorded at all"
+  clean_after "not opted in"
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "no credential leaks: an agent returning one is refused unseen, full passes leave none anywhere, and a run not opted in never reads the DeepSeek key" sdd_no_leak
+else
+  skip "no credential leaks: an agent returning one is refused unseen, full passes leave none anywhere, and a run not opted in never reads the DeepSeek key" check-jsonschema
 fi
 
 # The run's own machinery (contracts/sdd-step.md): prepare-worker builds the

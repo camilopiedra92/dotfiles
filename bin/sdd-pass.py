@@ -121,6 +121,25 @@ class Run:
             raise PassFailed(f"the Keychain item {service} is missing or blank")
         return value
 
+    def credentials(self, agent):
+        """The Keychain items of the credentials this run uses: Claude's
+        always, DeepSeek's for a pi pass or a run opted in at start, whose
+        egress proxy holds it (FR-009)."""
+        services = ["claude-oauth"]
+        if agent == "pi" or load(os.path.join(self.dir, "optin.json")).get("implement") == "deepseek":
+            services.append("deepseek-api")
+        return services
+
+    def withhold(self, agent, text):
+        """Text an agent produced, with the exact value of every credential of
+        the run replaced by its item's name, before it is shown or kept: what
+        a pass prints on failing, its answer in results/ and its usage line
+        are never judged, and no credential may reach a log or a file
+        (FR-009). Fails closed: a credential that cannot be read raises."""
+        for service in self.credentials(agent):
+            text = text.replace(self.secret(service), f"<the credential {service}>")
+        return text
+
     def usage(self, record):
         with open(os.path.join(self.dir, "usage.jsonl"), "a") as f:
             f.write(json.dumps({"run": self.id, "at": now(), **record}) + "\n")
@@ -450,15 +469,12 @@ class Pass:
         file's bytes as the agent left them (a patch encodes binaries) and in
         what the agent returned. Fails closed: a credential that cannot be
         read cannot be looked for."""
-        services = {"claude-oauth"}
-        if agent == "pi" or load(os.path.join(self.run.dir, "optin.json")).get("implement") == "deepseek":
-            services.add("deepseek-api")
         files = []
         for status, _, path in changes:
             if status != "D":
                 with open(os.path.join(self.export, path), "rb") as f:
                     files.append(f.read())
-        for service in sorted(services):
+        for service in self.run.credentials(agent):
             value = self.run.secret(service).encode()
             if any(value in blob for blob in files + blobs):
                 raise PassFailed(f"the output holds the exact value of the credential {service}; nothing applied")
@@ -542,7 +558,12 @@ def parse_result(agent, stdout):
         m = e.get("message") or {}
         if e.get("type") == "message_end" and m.get("role") == "assistant":
             last = m
-            u = m.get("usage") or {}
+            u = m.get("usage")
+            # The pass's usage is the sum of every response's: one without
+            # its own would be counted as free (contracts/sdd-step.md,
+            # implement step 3).
+            if not isinstance(u, dict):
+                raise PassFailed("pi reported a response without its usage; nothing applied")
             total["input"] += u.get("input", 0)
             total["cached"] += u.get("cacheRead", 0)
             total["output"] += u.get("output", 0)
@@ -645,16 +666,21 @@ def run_agent(run, phase, implement=None):
         run.usage({"event": "start", "phase": phase, "model": row["model"], "effort": row["effort"]})
         started = time.time()
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
-        parsed = parse_result(row["agent"], out)
-        text, structured, usage = parsed[0], parsed[1], parsed[2]
-        p.answer = text
-        served = parsed[3] if len(parsed) > 3 else row["model"]
-        run.usage({"event": "end", "phase": phase, "model": served, "effort": row["effort"], "usage": usage,
-                   "exit": code})
-        if code != 0:
-            raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
-        if row["agent"] == "pi" and served != row["model"]:
-            raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
+        try:
+            parsed = parse_result(row["agent"], out)
+            text, structured, usage = parsed[0], parsed[1], parsed[2]
+            p.answer = text
+            served = parsed[3] if len(parsed) > 3 else row["model"]
+            run.usage(json.loads(run.withhold(row["agent"], json.dumps(
+                {"event": "end", "phase": phase, "model": served, "effort": row["effort"], "usage": usage,
+                 "exit": code}))))
+            if code != 0:
+                raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
+            if row["agent"] == "pi" and served != row["model"]:
+                raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
+        except PassFailed as e:
+            # These messages carry what the agent said, unjudged.
+            raise PassFailed(run.withhold(row["agent"], str(e))) from None
         changes = p.changes()
         if p.drop_ignored(changes) | (bool(implement) and p.take_back_ticks(feature)):
             changes = p.changes()
@@ -675,7 +701,7 @@ def run_agent(run, phase, implement=None):
                 changes = p.changes()
                 patch = p.patch() if changes else b""
         flagged = p.judge(changes, writes, feature, implement)
-        p.scan(changes, [text.encode(), json.dumps(structured).encode()], row["agent"])
+        p.scan(changes, [text.encode(), json.dumps(structured).encode(), json.dumps(usage).encode()], row["agent"])
         place_outcome = None
         if structured is not None and row.get("schema"):
             place_outcome = stage_outcome(run, feature, row["schema"], structured)
@@ -712,8 +738,12 @@ def run_agent(run, phase, implement=None):
         # why a pass did what it did (seen in the real run, 2026-10-21).
         if p.answer is not None:
             os.makedirs(os.path.join(run.dir, "results"), exist_ok=True)
+            try:
+                answer = run.withhold(row["agent"], p.answer)
+            except PassFailed as e:
+                answer = f"(withheld: it could not be scanned for the run's credentials: {e})"
             with open(os.path.join(run.dir, "results", p.id + ".md"), "w") as f:
-                f.write(p.answer)
+                f.write(answer)
         p.cleanup()
 
 

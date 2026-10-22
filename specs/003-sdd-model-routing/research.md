@@ -927,6 +927,32 @@ before specify.
   outside its row; only the host CLI's version (≥ 1.2.2) is checked, not the
   scripts the repository carries. Not tested.
 
+## R29 — What an agent said, withheld of every credential before it is kept
+
+**Finding** (US2's leak check, T044, 2026-10-22, against stand-ins): the judge
+scanned an agent's files, result text and `structured_output`, but what the
+run keeps or prints of an agent was never scanned: the answer in `results/`
+(written whatever happened, so the owner can read why), the usage line in
+`usage.jsonl` (written before the judge, so a failed attempt still counts),
+and the messages of a failing pass, which quote the agent — an `is_error`
+result, a denied command, its stderr. A sentinel credential in a result's text
+was refused as a patch and then kept in `results/`; one in an error result was
+printed.
+
+**Decision**: every sink of agent text — the `results/` answer, the usage line,
+the failing pass's message — goes through one function that replaces the exact
+value of every credential of the run with its Keychain item's name, reading
+them as the scanner does and failing closed: an answer that cannot be scanned
+is withheld whole. The usage reported by an agent is also scanned by the
+judge, since `implement.json` records it.
+
+**Alternatives**: scanning once, early, in the result's parser — the error
+paths raise before any scan, and each sink added later would have to remember
+it; dropping a pass's answer whenever it holds a credential — loses the one
+record of why the pass failed, which is what `results/` is for (R27);
+refusing the pass alone — the refusal was already there, and the leak was in
+what the run kept after refusing.
+
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 
 **Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the

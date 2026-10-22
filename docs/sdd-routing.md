@@ -106,7 +106,10 @@ the frozen routing table, profiles and brief, the code the run executes
 (`code/`: a change to dotfiles mid-run does not reach it), `usage.jsonl`, and
 `results/`,
 every agent's final answer — the first place to look when a pass did something
-unexpected.
+unexpected. A credential's value an agent put in its answer shows there, as in
+every message and usage line, as `<the credential claude-oauth>` (or
+`deepseek-api`): no log or file keeps one (observed 2026-10-22 against
+stand-ins, check 91).
 
 ## Cost
 

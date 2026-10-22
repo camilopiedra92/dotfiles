@@ -16,6 +16,12 @@ set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 record() { /usr/bin/python3 -I -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@" >>"$here/calls.jsonl"; }
 record container "$@"
+# The environment the host step gave it, which check 91's leak case reads:
+# no credential may be in a host process's environment (FR-009).
+{
+  printf -- '--- container %s\n' "${1:-}"
+  /usr/bin/env
+} >>"$here/host-env.txt"
 case "${1:-}" in
 run)
   shift
