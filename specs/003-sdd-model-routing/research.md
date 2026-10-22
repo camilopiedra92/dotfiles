@@ -822,6 +822,23 @@ worker); the user prompt is the command alone. `.pi/` joins the protected set,
 as `.claude/` is: both instruct a later agent. `sdd-run` refuses a run opted in
 to DeepSeek whose pi integration is not committed.
 
+**Observed** (the real run, 2026-10-21, after the shell opened): plan,
+checklist and analyze ran, then tasks and three build rounds, and the run
+stopped, correctly, at converge_stuck — but two faults of the workflow showed.
+analyze ran before tasks and found nothing to analyze (Spec Kit's analyze
+compares spec, plan and tasks). And each Sonnet implement pass changed nothing
+in about 14 seconds: Spec Kit's implement **STOP**s to ask whether to proceed
+when checklist items are unchecked (31 were), and in `-p` mode nobody answers;
+the pass counted "no change" as success, and nothing kept what the agent said.
+**Decision**: Spec Kit's order, with the owner's process from the global
+instructions: plan, checklist, a fresh review of each checklist marking what it
+verifies (`checklist-review`), tasks, analyze, then the plan checkpoint, which
+shows the unchecked items and whose approval answers implement's question —
+the owner's to answer — as the brief tells the implementer. A change-less
+implement pass fails where it cannot be progress (the run's first
+implementation, a fix round), showing what the agent said; every agent's answer
+is kept in the bundle's `results/`.
+
 **Alternatives**: the brief and pi's models inside the image — every edit
 would rebuild it and they would not be frozen per run; git in the image — a
 push client with no use; build-essential — only projects with native

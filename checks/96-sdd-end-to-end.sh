@@ -75,11 +75,17 @@ e2e() {
   writes speckit-plan "$f/plan.md" "# Plan"
   answer speckit-checklist "checked"
   writes speckit-checklist "$f/checklists/quality.md" "- [x] ok"
+  answer checklist-review "reviewed"
   answer speckit-analyze "the analysis"
   answer speckit-tasks "tasked"
   writes speckit-tasks "$f/tasks.md" "- [ ] T001 do it"
-  answer speckit-implement "implemented"
-  writes speckit-implement src/app.py "print(2)"
+  # An implementer that tries something different each round and never
+  # satisfies the check (one that changed nothing would fail at once).
+  local round
+  for round in 1 2 3 4 5; do
+    answer "speckit-implement.$round" "implemented"
+    writes "speckit-implement.$round" src/app.py "print($round + 1)"
+  done
 
   sr() { (cd "$repo" && HOME="$tmp/home" PATH="$sa:$tmp/dbin:/usr/bin:/bin:/usr/sbin:/sbin" sdd-run "$@" 2>&1); }
 

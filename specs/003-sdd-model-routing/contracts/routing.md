@@ -100,6 +100,7 @@ exactly one new directory under `specs/`):
 | `clarify-apply` | claude | claude-opus-5-5 | medium | author | `<f>/spec.md`, `<f>/clarify-questions.md` | — |
 | `plan` | claude | claude-opus-5-5 | medium | author | `<f>/plan.md`, `<f>/research.md`, `<f>/data-model.md`, `<f>/quickstart.md`, `<f>/contracts/**` | — |
 | `checklist` | claude | claude-opus-5-5 | medium | author | `<f>/checklists/**` | — |
+| `checklist-review` | claude | claude-opus-5-5 | medium | author | `<f>/checklists/**` | — |
 | `analyze` | claude | claude-opus-5-5 | medium | reader | — | — |
 | `tasks` | claude | claude-sonnet-5-5 | medium | author | `<f>/tasks.md` | — |
 | `implement-deepseek` (prompt `/speckit.implement`, pi's spelling of Spec Kit's command) | pi | deepseek-flash | high | — | everything but the protected set (contracts/pass.md) | — |

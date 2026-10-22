@@ -105,17 +105,11 @@ steps:
         type: shell
         run: '"$SDD_STEP" agent checklist'
         timeout: 7500
-      - id: analyze
+      # The owner's fresh review of each checklist, before tasks.
+      - id: checklist_review
         type: shell
-        run: '"$SDD_STEP" agent analyze'
+        run: '"$SDD_STEP" agent checklist-review'
         timeout: 7500
-      - id: review_plan
-        type: gate
-        message: "Review the plan and analysis.md, then: sdd-run resume <run id> approve (or reject)."
-        show_file: analysis.md
-        options: [approve, reject]
-        on_reject: abort
-        verdict_input: plan_verdict
       - id: plan_done
         type: shell
         run: '"$SDD_STEP" phase-done plan'
@@ -128,6 +122,21 @@ steps:
         type: shell
         run: '"$SDD_STEP" agent tasks'
         timeout: 3900
+      # Spec Kit's order: analyze compares spec, plan and tasks.
+      - id: analyze
+        type: shell
+        run: '"$SDD_STEP" agent analyze'
+        timeout: 7500
+      # The checkpoint before any code: the plan, the tasks, the analysis and
+      # every checklist item left unchecked. Approving answers implement's
+      # unchecked-items question (the owner's process, research R27).
+      - id: review_plan
+        type: gate
+        message: "Review the plan, tasks, analysis.md and the unchecked checklist items, then: sdd-run resume <run id> approve (or reject)."
+        show_file: analysis.md
+        options: [approve, reject]
+        on_reject: abort
+        verdict_input: plan_verdict
       - id: tasks_done
         type: shell
         run: '"$SDD_STEP" phase-done tasks'

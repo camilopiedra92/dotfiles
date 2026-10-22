@@ -47,6 +47,15 @@ phases:
     writes: ["<f>/checklists/**"]
     timeout: 3600
     max_timeout: 7200
+  checklist-review:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "Checklist-review: mark what you verify"
+    writes: ["<f>/checklists/**"]
+    timeout: 3600
+    max_timeout: 7200
   analyze:
     agent: claude
     model: claude-opus-5-5

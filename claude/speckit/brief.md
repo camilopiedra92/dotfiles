@@ -13,6 +13,11 @@ changes, and where the two differ, this brief wins.
   refused; no other host is reachable.
 - Nothing you write reaches the repository until the run judges it.
 
+## What the owner already answered
+
+- Whether to proceed with checklist items left unchecked: the owner saw them
+  at the run's checkpoint before implementation and approved. Proceed.
+
 ## What the run does, not you
 
 - Do not mark tasks done in `tasks.md`: the run marks them after its review.

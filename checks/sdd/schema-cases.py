@@ -44,7 +44,7 @@ PI_ROW = {
     "max_timeout": 3600,
 }
 PHASES = [
-    "specify", "clarify-ask", "clarify-apply", "plan", "checklist", "analyze",
+    "specify", "clarify-ask", "clarify-apply", "plan", "checklist", "checklist-review", "analyze",
     "tasks", "implement-deepseek", "implement-sonnet", "review", "converge",
 ]
 TABLE = {"phases": {p: copy.deepcopy(PI_ROW if p == "implement-deepseek" else ROW) for p in PHASES}}

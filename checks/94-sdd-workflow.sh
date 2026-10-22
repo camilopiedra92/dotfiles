@@ -115,7 +115,9 @@ wf_fresh() {
   wf_result speckit-plan "planned"
   wf_edit speckit-plan "$WF_F/plan.md" "# Plan"
   wf_result speckit-checklist "checked"
-  wf_edit speckit-checklist "$WF_F/checklists/quality.md" "- [x] ok"
+  wf_edit speckit-checklist "$WF_F/checklists/quality.md" "- [ ] ok"
+  wf_result checklist-review "reviewed"
+  wf_edit checklist-review "$WF_F/checklists/quality.md" "- [x] ok (verified in spec.md)"
   wf_result speckit-analyze "the analysis"
   wf_result speckit-tasks "tasked"
   wf_edit speckit-tasks "$WF_F/tasks.md" "- [ ] T001 do it
@@ -182,8 +184,10 @@ def key(a):
     p = argv[argv.index("-p") + 1] if a["agent"] == "claude" else argv[-1]
     return re.match(r"\W*([A-Za-z0-9-]+)", p).group(1).lower()
 order = [key(a) for a in agents]
-want = ["speckit-specify", "speckit-clarify", "speckit-plan", "speckit-checklist", "speckit-analyze",
-        "speckit-tasks", "speckit-implement", "review", "speckit-converge"]
+# Spec Kit's own order (analyze compares spec, plan and tasks, so it follows
+# tasks), with the owner's fresh review of each checklist before tasks.
+want = ["speckit-specify", "speckit-clarify", "speckit-plan", "speckit-checklist", "checklist-review",
+        "speckit-tasks", "speckit-analyze", "speckit-implement", "review", "speckit-converge"]
 if order != want:
     bad.append("agent calls %s, wanted %s (verify makes none)" % (order, want))
 models = {"speckit-tasks": "claude-sonnet-5-5", "speckit-implement": "claude-sonnet-5-5"}
@@ -244,7 +248,7 @@ if "- [X] T001" not in tasks or "- [ ] T002" not in tasks:
 lines = [json.loads(l) for l in open(usage)]
 starts = [l for l in lines if l["event"] == "start"]
 ends = [l for l in lines if l["event"] == "end"]
-if len(starts) != 9 or len(ends) != 9 or any(l["run"] != "run1" for l in lines):
+if len(starts) != 10 or len(ends) != 10 or any(l["run"] != "run1" for l in lines):
     bad.append("usage.jsonl: %d starts, %d ends, runs %s" % (len(starts), len(ends), sorted({l["run"] for l in lines})))
 print("\n".join(bad))
 sys.exit(1 if bad else 0)
@@ -379,7 +383,10 @@ wf_loops() {
   wf_fresh || return 1
   printf '#!/bin/sh\ngrep -q "print(1)" src/app.py && exit 1\nexit 0\n' > "$WF_REPO/check-app.sh"
   git -C "$WF_REPO" -c core.hooksPath=/dev/null commit -qam "a check the second pass passes"
+  # The first pass changes something that does not satisfy the check (a pass
+  # that changed nothing would itself fail, research R27); the second fixes it.
   mkdir -p "$(wf_fx speckit-implement.1)" && cp "$WF_SA/fixture/by/speckit-implement/result.json" "$(wf_fx speckit-implement.1)/"
+  wf_edit speckit-implement.1 src/notes.py "# a first attempt"
   wf_result speckit-converge.1 "open" '{"outcome":"tasks_appended","findings":[{"severity":"MEDIUM","text":"more"}]}'
   out=$(wf_start -i spec_verdict=approve -i plan_verdict=approve -i done_verdict=approve)
   case "$(wf_state)" in "completed "*) ;; *)
@@ -394,6 +401,14 @@ wf_loops() {
   }
   wf_fresh || return 1
   printf '#!/bin/sh\necho failing\nexit 1\n' > "$WF_REPO/check-app.sh"
+  # An implementer that tries something different each round and never
+  # satisfies the check (one that changed nothing would fail at once).
+  local round
+  for round in 1 2 3 4 5; do
+    mkdir -p "$(wf_fx speckit-implement.$round)"
+    cp "$WF_SA/fixture/by/speckit-implement/result.json" "$(wf_fx speckit-implement.$round)/"
+    wf_edit "speckit-implement.$round" src/app.py "print($round + 1)"
+  done
   git -C "$WF_REPO" -c core.hooksPath=/dev/null commit -qam "a failing check"
   out=$(wf_start -i spec_verdict=approve -i plan_verdict=approve -i done_verdict=approve)
   n=$(wf_calls | grep -c '^speckit-implement$')

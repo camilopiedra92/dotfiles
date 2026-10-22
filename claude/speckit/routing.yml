@@ -67,6 +67,24 @@ phases:
     writes: [<f>/checklists/**]
     timeout: 3600
     max_timeout: 7200
+  checklist-review:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    # The owner's process: a fresh context reviews each checklist before
+    # tasks, marking what it verifies; what stays unchecked the owner sees at
+    # the plan checkpoint, which answers implement's unchecked-items question
+    # (research R27). No Spec Kit command does this; this is its whole brief.
+    prompt: >-
+      Checklist-review: as someone who did not write them, review every
+      checklist in the feature directory against its spec.md and plan.md.
+      Mark [x] each item you verify is met, citing where; leave each item you
+      cannot verify unchecked, with a one-line note saying why. Change no
+      other file.
+    writes: [<f>/checklists/**]
+    timeout: 3600
+    max_timeout: 7200
   analyze:
     agent: claude
     model: claude-opus-5-5

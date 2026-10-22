@@ -596,6 +596,11 @@ def run_agent(run, phase, implement=None):
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         parsed = parse_result(row["agent"], out)
         text, structured, usage = parsed[0], parsed[1], parsed[2]
+        # Every agent's answer stays in the bundle, so the owner can read why
+        # a pass did what it did (seen in the real run, 2026-10-21).
+        os.makedirs(os.path.join(run.dir, "results"), exist_ok=True)
+        with open(os.path.join(run.dir, "results", p.id + ".md"), "w") as f:
+            f.write(text)
         served = parsed[3] if len(parsed) > 3 else row["model"]
         run.usage({"event": "end", "phase": phase, "model": served, "effort": row["effort"], "usage": usage,
                    "exit": code})
@@ -649,7 +654,7 @@ def run_agent(run, phase, implement=None):
         if row.get("result_to"):
             with open(os.path.join(run.repo, feature, row["result_to"]), "w") as f:
                 f.write(text)
-        return {"changes": changes, "commit": commit, "usage": usage, "served": served, "flagged": flagged,
+        return {"changes": changes, "commit": commit, "usage": usage, "served": served, "flagged": flagged, "text": text,
                 "seconds": round(time.time() - started, 1), "row": row}
     finally:
         p.cleanup()
@@ -682,6 +687,12 @@ def new_feature(p, changes):
     if named != {"feature_directory": made[0]}:
         raise PassFailed(f".specify/feature.json must name {made[0]} and nothing else")
     return made[0]
+
+
+def implemented_before(run):
+    """Whether an implement pass of this run already committed a change."""
+    log = run.git("log", "--format=%s", f"{run.lock['base']}..HEAD").stdout.decode()
+    return any(line.startswith("implement: ") for line in log.splitlines())
 
 
 def fix_round(run, feature):
@@ -839,7 +850,18 @@ def implement(run):
         raise PassFailed(f"{phase}: timeout {row['timeout']} is outside 1..{row['max_timeout']}")
     run.secret("deepseek-api" if agent == "deepseek" else "claude-oauth")
     pi_version = load(os.path.join(run.dir, "routing.json"))["versions"].get("pi") if agent == "deepseek" else None
+    fix = fix_round(run, feature)
     r = run_agent(run, phase, implement={"agent": agent, "pi_version": pi_version})
+    # Changing nothing is a failed pass where it cannot be progress: the run's
+    # first implementation, or a fix round after a failed verify. Three rounds
+    # of nothing once passed for progress, with nobody able to see why (the
+    # real run, 2026-10-21). After a converge round, nothing left to change
+    # stays a valid answer. (Open tasks are no signal: the run, not the
+    # implementer, marks them.)
+    if not r["changes"] and (fix or not implemented_before(run)):
+        raise PassFailed("the implementer changed nothing, on %s; it said:\n  "
+                         % ("a fix round" if fix else "the run's first implementation")
+                         + "\n  ".join(r["text"].strip().splitlines()[-12:]))
     print(f"{phase}: {len(r['changes'])} files changed" + (f", commit {r['commit'][:12]}" if r["commit"] else ", no change"))
 
 

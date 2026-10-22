@@ -466,6 +466,37 @@ sys.exit("\n".join(bad) or 0)
 ' "$sa/agents.jsonl" || status=1
   clean_after implement
 
+  # 12b. An implementer that changes nothing while tasks remain open has
+  # failed, whatever it says; what it said is shown and kept in the bundle,
+  # as every agent's answer is (seen in the real run, 2026-10-21: three
+  # rounds of nothing, with nobody able to see why).
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "STOPPED: some checklists are incomplete, proceed?"
+  if out=$(pass implement); then fail "no-op implement: succeeded with tasks open"; fi
+  printf '%s' "$out" | grep -qF "STOPPED: some checklists are incomplete" || fail "no-op implement: the agent's answer is not shown: $out"
+  grep -rqF "STOPPED: some checklists are incomplete" "$run/results" 2> /dev/null || fail "no-op implement: the agent's answer is not kept in the bundle"
+  clean_after "no-op implement"
+  # After an implementation, a fix round (verify failed) that changes nothing
+  # fails too; with verify passing, nothing left to change is a valid answer.
+  local verdict
+  for verdict in 1 0; do
+    fresh || return 1
+    mkdir -p "$repo/$f/.sdd"
+    printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+    printf 'print(2)\n' > "$repo/src/app.py" && tgit commit -qam "implement: 001-probe (claude-sonnet-5-5)"
+    printf '{"schema":"urn:dotfiles:sdd:verify:1","step":"verify","at":"2026-10-21T14:00:00Z","command":"./check-app.sh","exit":%s,"tail":"","check_changes":[],"automation_changes":[]}\n' "$verdict" > "$repo/$f/.sdd/verify.json"
+    result "nothing more to change"
+    if [ "$verdict" = 1 ]; then
+      if out=$(pass implement); then fail "no-op fix round: succeeded"; fi
+      printf '%s' "$out" | grep -qF "a fix round" || fail "no-op fix round: not named as one: $out"
+    else
+      out=$(pass implement) || fail "no-op after a passing verify: refused: $out"
+    fi
+    clean_after "no-op, verify exit $verdict"
+  done
+
   # 13. Implement on DeepSeek, opted in at start and now: pi gets the worker's
   # models.json pointed at the proxy with the placeholder as its key, and the
   # pass is admitted to DeepSeek and the registries, not to Anthropic.

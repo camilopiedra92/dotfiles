@@ -23,6 +23,9 @@
         "checklist": {
           "$ref": "#/$defs/row"
         },
+        "checklist-review": {
+          "$ref": "#/$defs/row"
+        },
         "analyze": {
           "$ref": "#/$defs/row"
         },
@@ -48,6 +51,7 @@
         "clarify-apply",
         "plan",
         "checklist",
+        "checklist-review",
         "analyze",
         "tasks",
         "implement-deepseek",

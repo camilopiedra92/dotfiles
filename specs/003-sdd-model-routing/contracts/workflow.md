@@ -58,9 +58,10 @@ and limit.
 | 6 | `review-spec` | gate | owner | — | `spec_verdict`, reject aborts; then `sdd-step phase-done specify` |
 | 7 | `plan` | agent | `plan` | plan artifacts | |
 | 8 | `checklist` | agent | `checklist` | `checklists/` | |
-| 9 | `analyze` | agent | `analyze` | `analysis.md` | Spec Kit's analyze is read-only; the dispatcher writes its report, the result's text, to the file the row names |
-| 10 | `review-plan` | gate | owner | — | `plan_verdict`, shows `analysis.md`, reject aborts; then `sdd-step phase-done plan` |
-| 11 | `tasks` | agent | `tasks` | `tasks.md` | then `sdd-step phase-done tasks` |
+| 8.1 | `checklist_review` | agent | `checklist-review` | `checklists/` | the owner's process: a fresh context marks each item it verifies met, citing where, and leaves the rest unchecked with why; then `sdd-step phase-done plan` |
+| 9 | `tasks` | agent | `tasks` | `tasks.md` | |
+| 10 | `analyze` | agent | `analyze` | `analysis.md` | Spec Kit's analyze is read-only; the dispatcher writes its report, the result's text, to the file the row names; Spec Kit's order: it compares spec, plan and tasks, so it follows tasks |
+| 11 | `review-plan` | gate | owner | — | `plan_verdict`, shows `analysis.md`, reject aborts; also shows the checklist items left unchecked: approving answers `/speckit-implement`'s unchecked-items question (research R27); then `sdd-step phase-done tasks` |
 | 12 | `route` | shell `sdd-step route` | — | `.sdd/route.json` | records `deepseek`/`sonnet` for `implement` |
 | 13 | `convergence` | `do-while`, `max_iterations: 50` (a safety bound) | — | — | while `converge_stuck` prints other than `clear`; body 13.1–13.4 |
 | 13.1 | `fix_loop` | `do-while`, `max_iterations: 50` (a safety bound) | — | — | while `fix_stuck` prints other than `clear`; body 13.1.1–13.1.3 |
@@ -73,7 +74,7 @@ and limit.
 | 15 | `review_done` | gate | owner | — | `done_verdict`: shows `review.json`, the check changes (FR-029) and the automation changes (FR-030) the implement passes recorded; approve runs 16 |
 | 16 | `mark` | shell `sdd-step mark` | — | `tasks.md` | marks `[X]` the tasks review passed, only if verify = pass and review has nothing blocking (FR-006); then `sdd-step phase-done build` |
 
-Same-model steps are adjacent — 1–9 on Opus, 11 on Sonnet, 13.1.1 on the
+Same-model steps are adjacent — 1–8.1 on Opus, 9 on Sonnet, 10 on Opus, 13.1.1 on the
 implementing agent, 13.3–13.4 on Opus — so each step after the first of a
 group reads its prefix from the prompt cache (research R16).
 
