@@ -112,6 +112,17 @@ lock_start() {
   echo "$LOCK_PID" >> "$LOCK_TMP/pids"
 }
 
+# lock_start_int <dir> <out-prefix>: lock_start, with INT as a terminal
+# leaves it. Started with & by a non-interactive shell, as here, a run ignores
+# INT from its first instruction, and bash cannot trap a signal ignored on
+# entry; python puts the default back and execs the run, so LOCK_PID is
+# still the runner's.
+lock_start_int() {
+  (cd "$1" && exec env -u CHECK_SH_RUN PATH="$LOCK_TMP/bin:$PATH" python3 -I -c 'import os, signal; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execv("./check.sh", ["./check.sh"])') > "$2.out" 2> "$2.err" &
+  LOCK_PID=$!
+  echo "$LOCK_PID" >> "$LOCK_TMP/pids"
+}
+
 # within <seconds> <pid>: waits for a child up to the bound and sets RC to its
 # exit status; past the bound it kills the child and what it started and
 # returns 1. bash 3.2 has no `timeout`, and a case that hangs must fail, not
@@ -380,15 +391,17 @@ check "a lock that cannot be taken says where, and runs nothing" lock_cannot_be_
 # US4 AS1, FR-006: a scratch run whose section starts another copy, which
 # inherits the section's environment as anything a section starts does. The
 # inner copy must neither wait for its parent, which would hang until the
-# watchdog, nor say it waits.
+# watchdog, nor say it waits, and must run as it runs alone: its status and
+# its output are compared with the same copy run alone afterwards.
 lock_nested_run_is_part_of_it() {
   local tmp
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
   sections_repo "$tmp/inner" '10-a:check "inner ran" true'
-  sections_repo "$tmp/outer" "10-a:inner_err=\$(cd '$tmp/inner' && ./check.sh 2>&1 > /dev/null)
-check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
+  sections_repo "$tmp/outer" "10-a:rc=0
+(cd '$tmp/inner' && ./check.sh > '$tmp/nested.out' 2> '$tmp/nested.err') || rc=\$?
+echo \$rc > '$tmp/nested.rc'"
   lock_start "$tmp/outer" "$tmp/outer"
   within 3 "$LOCK_PID" || {
     echo "the outer run did not end: its nested run waited for it"
@@ -398,6 +411,11 @@ check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
     cat "$tmp/outer.out"
     return 1
   }
+  lock_expect "the nested run's stderr" "nothing" "" "$(cat "$tmp/nested.err")" || return 1
+  lock_start "$tmp/inner" "$tmp/alone"
+  within 2 "$LOCK_PID" || return 1
+  lock_expect "the nested run" "the exit status alone" "$RC" "$(cat "$tmp/nested.rc")" || return 1
+  lock_expect "the nested run" "the output alone" "$(cat "$tmp/alone.out")" "$(cat "$tmp/nested.out")"
 }
 check "a run started inside a run does not wait for it" lock_nested_run_is_part_of_it
 
@@ -506,15 +524,53 @@ lock_term_while_waiting() {
 }
 check "TERM while waiting ends the run without its turn" lock_term_while_waiting
 
+# FR-005: INT to a waiting run alone, the runner and not what it waits
+# through, as `kill -INT` sends it; ^C, below, reaches both. The lockf must go
+# with the runner just the same.
+lock_int_while_waiting() {
+  local tmp a b waiter
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A hold
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  lock_await "A start" || return 1
+  lock_start_int "$tmp/b" "$tmp/B"
+  b=$LOCK_PID
+  lock_await_waiting "$tmp/B" || return 1
+  waiter=$(pgrep -P "$b" -x lockf)
+  [ -n "$waiter" ] || {
+    echo "B waits through no lockf of its own"
+    return 1
+  }
+  kill -INT "$b"
+  within 1 "$b" || {
+    echo "B did not end within 1 s of INT"
+    return 1
+  }
+  lock_expect B "exit" 130 "$RC" || return 1
+  ! kill -0 "$waiter" 2> /dev/null || {
+    echo "B's lockf ($waiter) outlived B"
+    return 1
+  }
+  lock_release
+  within 3 "$a" && lock_expect A "exit" 0 "$RC" || return 1
+  lock_expect log "A whole, nothing of B" "A start|A end|" "$(lock_log)"
+}
+check "INT to a waiting run alone ends it with 130, without its turn" lock_int_while_waiting
+
 # US3 AS2: ^C from a terminal, which sends INT to the whole foreground group,
 # the runner and whatever it waits through. The pattern of 05-runner's
-# ctrl_c_stops_sections: python's pty.fork gives the run a terminal.
+# ctrl_c_stops_sections: python's pty.fork gives the run a terminal. python3
+# is not looked for first: macOS ships /usr/bin/python3, and a missing one
+# fails the case rather than passing it unrun.
 lock_ctrl_c_while_waiting() {
   local tmp out
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  command -v python3 > /dev/null || return 0
   lock_repo "$tmp/a" R 0.1
   lockf -k "$LOCK_FILE" sleep 5 &
   echo "$!" >> "$tmp/pids"
