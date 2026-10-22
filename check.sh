@@ -328,13 +328,24 @@ done
 # 100 ms the runner's own checks, ~30 runs of instant fake sections, took 2.4 s
 # longer (measured 2026-10-22). Waiting on the oldest section instead would
 # leave CPUs idle behind a slow one.
+#
+# The EXIT trap goes in before the scratch directory is made, so a signal
+# landing once RUN holds its path still removes it; with the trap after
+# mktemp, one landing between the two left it (05-runner, "TERM right after
+# the scratch directory is made", red that way 2026-10-22). What stays open is
+# a signal inside mktemp itself: bash dies before assigning RUN, and the
+# directory, made but never named, stays. RUN is emptied first so a value
+# from the environment is never what the trap removes (05-runner, "TERM
+# before the scratch directory spares a RUN from the environment", red
+# without the emptying 2026-10-22). The run's record goes
+# with it too (One run at a time, above). A run that stops before this trap
+# leaves it, as a run killed outright does.
+RUN=''
+trap '[ -z "$RUN" ] || rm -rf "$RUN"; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
 RUN=$(mktemp -d) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
 }
-# The run's record goes with it too (One run at a time, above). A run that
-# stops before this line leaves it, as a run killed outright does.
-trap 'rm -rf "$RUN"; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
 JOBS=$(sysctl -n hw.ncpu) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the

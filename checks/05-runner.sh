@@ -684,6 +684,59 @@ signal_statuses() {
 }
 check "TERM ends the runner with 143" signal_statuses
 
+# A signal right after the runner's scratch directory exists, before anything
+# else runs, still takes the directory with it. Landed there by a DEBUG trap
+# from BASH_ENV, which bash runs before each command of the runner's own shell
+# (its subshells do not inherit it): the first command once RUN is set sends
+# TERM to the runner itself. From outside, a signal lands either inside
+# mktemp, where bash dies before the assignment and no order of the trap
+# helps, or there by timing alone (both probed 2026-10-22). Red with the EXIT
+# trap set after mktemp, as 004 had it.
+signal_after_scratch_removes_it() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:check "a ran" true'
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  # shellcheck disable=SC2016  # expanded by the runner, not here
+  printf '%s\n' 'trap '\''[ -z "${RUN:-}" ] || [ -n "${fired:-}" ] || { fired=1; kill -TERM $$; }'\'' DEBUG' > "$tmp/env.sh"
+  RC=0
+  (cd "$tmp/r" && BASH_ENV="$tmp/env.sh" PATH="$tmp/bin:$PATH" ./check.sh > /dev/null 2>&1) || RC=$?
+  [ "$RC" -eq 143 ] || {
+    echo "TERM right after the scratch directory: exit $RC, not 143"
+    return 1
+  }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM right after the scratch directory was made left it behind"
+    return 1
+  }
+}
+check "TERM right after the scratch directory is made removes it" signal_after_scratch_removes_it
+
+# The trap is in before RUN is the runner's own, so a RUN from the
+# environment must never be what it removes: TERM just before mktemp, landed
+# the same way, with RUN naming a directory the run did not make.
+signal_before_scratch_spares_inherited_run() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:check "a ran" true'
+  mkdir "$tmp/inherited"
+  # shellcheck disable=SC2016  # expanded by the runner, not here
+  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(mktemp -d)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
+  RC=0
+  (cd "$tmp/r" && RUN="$tmp/inherited" BASH_ENV="$tmp/env.sh" ./check.sh > /dev/null 2>&1) || RC=$?
+  [ "$RC" -eq 143 ] || {
+    echo "TERM just before the scratch directory: exit $RC, not 143"
+    return 1
+  }
+  [ -d "$tmp/inherited" ] || {
+    echo "TERM just before the scratch directory removed the RUN it inherited"
+    return 1
+  }
+}
+check "TERM before the scratch directory spares a RUN from the environment" signal_before_scratch_spares_inherited_run
+
 # Last: no case left a runner's scratch directory in the system's temporary
 # directory. A runner killed outright runs no EXIT trap, and its scratch
 # outlives it. On 2026-10-22 ~180 of this section's were there, nearly all
