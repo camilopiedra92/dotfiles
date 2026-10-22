@@ -3,6 +3,11 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# Step 3 links every tree below into a scratch HOME from a copy of the
+# repository, and the other steps read the manifests.
+# covers: install.sh claude/* zsh/* git/* ssh/* launchd/* mise/* ghostty/*
+# covers: vscode/* bin/* macos/* starship.toml uv-tools.txt Brewfile drift.sh
 
 # ── install.sh ───────────────────────────────────────────────────────────────
 # The whole promise of this repo is that install.sh rebuilds a machine. Running
@@ -243,21 +248,8 @@ check "install.sh is idempotent" install_is_idempotent
 #
 # A fixture rather than the real manifest, because the real one has a single
 # well-formed line and would exercise none of the shapes worth getting wrong.
-# Every extraction below ends at the header of the next step, and this is the
-# check that it took exactly one. A step extracted up to a prose comment once
-# swallowed the step added after it: that step ran for real, against this
-# machine's HOME and the real CLI, inside a test that had stubbed only `uv`.
-one_step_only() {
-  local steps=$1 n
-  # The range is inclusive, so its last line is the next step's header (or the
-  # closing log line): that one is the boundary, not a step that was taken.
-  n=$(sed '$d' "$steps" | grep -c '^# --- [0-9]')
-  [ "$n" -eq 1 ] || {
-    echo "extraction took $n steps from install.sh, not one:"
-    sed '$d' "$steps" | grep '^# --- [0-9]'
-    return 1
-  }
-}
+# Each extraction below is held to exactly one step by one_step_only, in
+# checks/lib/fixtures.sh.
 
 uv_tools_step() {
   local tmp steps

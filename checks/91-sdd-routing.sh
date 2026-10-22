@@ -3,6 +3,9 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: bin/sdd-step.sh bin/sdd-pass.py bin/sdd-egress-proxy.py claude/speckit/*
+# covers: containers/worker/* checks/sdd/bundle.py checks/sdd/schema-cases.py checks/sdd/standins/*
 
 # ── Routed Spec Kit ──────────────────────────────────────────────────────────
 printf '\n%sRouted Spec Kit%s\n' "$DIM" "$OFF"

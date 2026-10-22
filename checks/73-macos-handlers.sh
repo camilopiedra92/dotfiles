@@ -3,6 +3,8 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: macos/handlers.sh macos/handlers.txt macos/machine.sh macos/machines/*
 
 # ── macOS file handlers ──────────────────────────────────────────────────────
 # macos/handlers.sh sets the default app per file extension through duti. The

@@ -76,11 +76,11 @@ claude/skills/<name>/           personal skills, each linked into ~/.claude/skil
                                 `/brainstorm` (shape an open idea), `/diagnose` (root cause of a bug),
                                 `/wrap-up` (close a session and hand off), `/wp` (shortcut for it)
 install.sh             symlinks + full installation
-check.sh               runs every check, by you, the hook and CI: arguments, strict mode, shared helpers, the verdict
-checks/                the checks themselves, one file per area, sourced by check.sh in file-name order
+check.sh               the runner, for you, the hook and CI: arguments, strict mode, which sections run (`--staged`), the verdict
+checks/                the checks themselves, one file per area, each run by check.sh in a shell of its own, printed in file-name order
 drift.sh               what this machine has that the Brewfile does not say
 bump-tools.sh          moves the CI tool pins to their latest releases
-githooks/pre-commit    runs check.sh before each commit
+githooks/pre-commit    runs the sections the staged files select (`check.sh --staged`) before each commit
 githooks/pre-push      refuses to rewrite or delete main
 .editorconfig          formatting, read by shfmt and by the editor
 .taplo.toml            which schema validates which TOML, for taplo and the editor

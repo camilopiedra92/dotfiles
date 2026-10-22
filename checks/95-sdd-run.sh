@@ -3,6 +3,10 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: bin/sdd-run.sh bin/sdd-run.py bin/sdd-step.sh bin/sdd-pass.py bin/sdd-egress-proxy.py
+# covers: claude/speckit/* claude/config-guard.sh containers/worker/* checks/sdd/run-fixture/*
+# covers: checks/sdd/standins/*
 
 # ── sdd-run ──────────────────────────────────────────────────────────────────
 printf '\n%ssdd-run%s\n' "$DIM" "$OFF"

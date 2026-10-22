@@ -3,6 +3,8 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: claude/config-guard.sh claude/settings.json install.sh
 
 # ── Config guard ─────────────────────────────────────────────────────────────
 # Changing a lint, format or test config is the cheapest way to turn a red
