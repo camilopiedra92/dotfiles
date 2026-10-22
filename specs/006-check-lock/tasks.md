@@ -115,7 +115,7 @@ they never touch the real lock nor wait on the run executing them.
 - [X] T031 [P] Update docs/checks.md "How a run executes": one run at a time per user on the machine across worktrees and clones; a second run waits and says for whom on stderr; the kernel frees the turn when the runner dies, and nothing a section leaves running holds it; INT/TERM while waiting; nested runs through `CHECK_SH_RUN` (and that exporting it by hand bypasses the lock); where the lock file lives; CI unaffected (FR-009)
 - [X] T032 [P] Check README.md and CLAUDE.md for text the lock makes false (a claim that runs are independent of each other, or about running several suites at once) and correct it in the same commit
 - [X] T033 Measure after for SC-004 as T001 did and record both in specs/006-check-lock/research.md "Measurements"; run the full suite once alone, compare its verdict and `git status --porcelain` (amended 2026-10-22 by the owner, from five runs to one: machine load, and the repetition lives in checks/06-lock.sh's own overlap cases; five had already run when the amendment arrived). quickstart.md steps 2–4 by hand are not run: each is one or more full suites, and checks/06-lock.sh drives the same behaviour on scratch copies
-- [ ] T034 Run speckit-converge until a pass finds nothing above LOW, implementing its tasks last
+- [X] T034 Run speckit-converge until a pass finds nothing above LOW, implementing its tasks last
 
 ## Dependencies & Execution Order
 
@@ -136,3 +136,7 @@ because nested runs pass through. US4 then proves the nesting, US2 makes a
 dead or leaky run harmless, US3 makes the wait cancellable. Each story ends
 with its cases green, its hand-breaks seen red, the whole suite green, a
 commit naming the red runs, and a review by a fresh context.
+
+## Phase 8: Convergence
+
+- [X] T035 In checks/06-lock.sh "a run killed outright frees the turn", assert B logs its start within 1 s of being started, not only that it ends within 2 s, per SC-002 (partial)
