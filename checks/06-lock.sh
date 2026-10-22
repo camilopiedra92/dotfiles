@@ -49,17 +49,45 @@ lock_env() {
   chmod +x "$LOCK_TMP/bin/getconf"
 }
 
-# lock_repo <dir> <name> <seconds> [<extra section body>]: a scratch repository
-# whose one section logs `<name> start`, sleeps, and logs `<name> end`. The
-# sleep records its own pid (sh's $$, kept by exec), so lock_cleanup can end
-# it even when the run that started it was killed and it lost its parent.
+# lock_repo <dir> <name> <seconds|hold> [<extra section body>]: a scratch
+# repository whose one section logs `<name> start`, sleeps, and logs `<name>
+# end`. The sleep records its own pid (sh's $$, kept by exec), so lock_cleanup
+# can end it even when the run that started it was killed and it lost its
+# parent. `hold` sleeps instead until the case calls lock_release, at most
+# 10 s: a holder that ends once its waiters are seen waiting, not after a
+# guess at how long they take to start, which under load could run out first
+# and costs its length on an idle machine.
 lock_repo() {
-  local dir=$1 name=$2 seconds=$3 extra=${4:-}
+  local dir=$1 name=$2 seconds=$3 extra=${4:-} pause
+  if [ "$seconds" = hold ]; then
+    pause="n=0; until [ -e '$LOCK_TMP/release' ] || [ \$n -ge 200 ]; do sleep 0.05; n=\$((n + 1)); done"
+  else
+    pause="sh -c 'echo \$\$ >> \"$LOCK_TMP/pids\"; exec sleep $seconds'"
+  fi
   sections_repo "$dir" "10-a:echo '$name start' >> '$LOCK_TMP/log'
-sh -c 'echo \$\$ >> \"$LOCK_TMP/pids\"; exec sleep $seconds'
+$pause
 echo '$name end' >> '$LOCK_TMP/log'
 check '$name ran' true
 $extra"
+}
+
+# Ends the pause of every `hold` section of the case.
+lock_release() {
+  : > "$LOCK_TMP/release"
+}
+
+# lock_await_waiting <prefix>: waits, up to 5 s, for the run writing
+# <prefix>.err to say it is waiting.
+lock_await_waiting() {
+  local tries=0
+  until grep -q '^check.sh: waiting' "$1.err" 2> /dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 100 ] || {
+      echo "$1 never said it was waiting"
+      return 1
+    }
+    sleep 0.05
+  done
 }
 
 # lock_start <dir> <out-prefix> [<flags>...]: starts the copy in <dir> in the
@@ -139,7 +167,7 @@ lock_waits_across_repositories() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" A 1
+  lock_repo "$tmp/a" A hold
   lock_repo "$tmp/b" B 0.1
   lock_start "$tmp/a" "$tmp/A"
   a=$LOCK_PID
@@ -149,6 +177,8 @@ lock_waits_across_repositories() {
   }
   lock_start "$tmp/b" "$tmp/B"
   b=$LOCK_PID
+  lock_await_waiting "$tmp/B" || return 1
+  lock_release
   within 3 "$a" && lock_expect A "exit" 0 "$RC" || return 1
   within 2 "$b" && lock_expect B "exit" 0 "$RC" || return 1
   lock_expect log "no overlap" "A start|A end|B start|B end|" "$(lock_log)" || return 1
@@ -164,20 +194,19 @@ lock_waited_output_is_unchanged() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" A 1
+  lock_repo "$tmp/a" A hold
   for verdict in true false; do
-    rm -rf "$tmp/b"
+    rm -rf "$tmp/b" "$tmp/release"
     lock_repo "$tmp/b" B 0.1 "check 'B verdict' $verdict"
     : > "$tmp/log"
     lock_start "$tmp/a" "$tmp/A"
     lock_await "A start" || return 1
     lock_start "$tmp/b" "$tmp/B-waited"
+    # Unless B waited, there is nothing to compare.
+    lock_await_waiting "$tmp/B-waited" || return 1
+    lock_release
     within 3 "$LOCK_PID" || return 1
     waited_rc=$RC
-    [ -s "$tmp/B-waited.err" ] || {
-      echo "$verdict: B did not wait, so nothing is compared"
-      return 1
-    }
     lock_start "$tmp/b" "$tmp/B-alone"
     within 2 "$LOCK_PID" || return 1
     lock_expect "$verdict" "the exit status alone" "$RC" "$waited_rc" || return 1
@@ -192,12 +221,14 @@ lock_is_the_machines() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" R 1
+  lock_repo "$tmp/a" R hold
   lock_start "$tmp/a" "$tmp/first"
   a=$LOCK_PID
   lock_await "R start" || return 1
   lock_start "$tmp/a" "$tmp/second"
   b=$LOCK_PID
+  lock_await_waiting "$tmp/second" || return 1
+  lock_release
   within 3 "$a" && lock_expect first "exit" 0 "$RC" || return 1
   within 2 "$b" && lock_expect second "exit" 0 "$RC" || return 1
   lock_expect log "no overlap" "R start|R end|R start|R end|" "$(lock_log)" || return 1
@@ -230,8 +261,8 @@ lock_waiters_go_one_at_a_time() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/h" H 1
-  for n in 1 2 3; do lock_repo "$tmp/w$n" "W$n" 0.3; done
+  lock_repo "$tmp/h" H hold
+  for n in 1 2 3; do lock_repo "$tmp/w$n" "W$n" 0.2; done
   lock_start "$tmp/h" "$tmp/H"
   pids+=("$LOCK_PID")
   lock_await "H start" || return 1
@@ -239,6 +270,8 @@ lock_waiters_go_one_at_a_time() {
     lock_start "$tmp/w$n" "$tmp/W$n"
     pids+=("$LOCK_PID")
   done
+  for n in 1 2 3; do lock_await_waiting "$tmp/W$n" || return 1; done
+  lock_release
   for pid in "${pids[@]}"; do
     within 3 "$pid" && lock_expect "$pid" "exit" 0 "$RC" || return 1
   done
@@ -259,7 +292,7 @@ lock_usage_error_does_not_wait() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" A 3
+  lock_repo "$tmp/a" A hold
   lock_start "$tmp/a" "$tmp/A"
   lock_await "A start" || return 1
   lock_start "$tmp/a" "$tmp/bogus" --bogus
@@ -279,7 +312,7 @@ lock_unrecorded_holder() {
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
   lock_repo "$tmp/a" R 0.1
-  lockf -k "$LOCK_FILE" sh -c "sleep 1; echo 'H end' >> '$tmp/log'" &
+  lockf -k "$LOCK_FILE" sh -c "n=0; until [ -e '$tmp/release' ] || [ \$n -ge 200 ]; do sleep 0.05; n=\$((n + 1)); done; echo 'H end' >> '$tmp/log'" &
   echo "$!" >> "$tmp/pids"
   while :; do
     rc=0
@@ -293,6 +326,8 @@ lock_unrecorded_holder() {
     sleep 0.05
   done
   lock_start "$tmp/a" "$tmp/R"
+  lock_await_waiting "$tmp/R" || return 1
+  lock_release
   within 3 "$LOCK_PID" && lock_expect R "exit" 0 "$RC" || return 1
   lock_expect "R's stderr" "the line without details" \
     "check.sh: waiting for another run to finish" "$(cat "$tmp/R.err")" || return 1
@@ -416,17 +451,6 @@ lock_old_record_is_not_a_lock() {
 }
 check "an old record is not a lock" lock_old_record_is_not_a_lock
 
-# lock_await_waiting <prefix>: waits, up to 5 s, for the run writing
-# <prefix>.err to say it is waiting.
-lock_await_waiting() {
-  local tries=0
-  until grep -q '^check.sh: waiting' "$1.err" 2> /dev/null; do
-    tries=$((tries + 1))
-    [ "$tries" -lt 100 ] || return 1
-    sleep 0.05
-  done
-}
-
 # US3 AS1 and AS3, FR-005, SC-003: TERM to a waiting run, as an agent's tool
 # sends it to the runner alone. The lockf it waits through must go with it:
 # left behind, it would take the turn when the holder ends.
@@ -435,7 +459,7 @@ lock_term_while_waiting() {
   tmp=$(mktemp -d) || return 1
   lock_env "$tmp"
   trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" A 1.5
+  lock_repo "$tmp/a" A hold
   lock_repo "$tmp/b" B 0.1
   lock_repo "$tmp/c" C 0.1
   lock_start "$tmp/a" "$tmp/A"
@@ -443,10 +467,7 @@ lock_term_while_waiting() {
   lock_await "A start" || return 1
   lock_start "$tmp/b" "$tmp/B"
   b=$LOCK_PID
-  lock_await_waiting "$tmp/B" || {
-    echo "B never said it was waiting"
-    return 1
-  }
+  lock_await_waiting "$tmp/B" || return 1
   waiter=$(pgrep -P "$b" -x lockf)
   [ -n "$waiter" ] || {
     echo "B waits through no lockf of its own"
@@ -462,6 +483,7 @@ lock_term_while_waiting() {
     echo "B's lockf ($waiter) outlived B"
     return 1
   }
+  lock_release
   within 3 "$a" && lock_expect A "exit" 0 "$RC" || return 1
   lock_expect log "A whole, nothing of B" "A start|A end|" "$(lock_log)" || return 1
   lock_start "$tmp/c" "$tmp/C"

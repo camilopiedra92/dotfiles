@@ -257,4 +257,20 @@ not counted, then ten runs, each `/usr/bin/time -p env -u CHECK_SH_RUN
 
 - Before, `check.sh` from c3819e5 (`main`): 0.05 0.04 0.05 0.05 0.05 0.05
   0.05 0.05 0.05 0.05 s — median 0.05, mean 0.049.
-- After: pending (T033).
+- After, this feature's `check.sh` (8cd7ec2's lock, run as a top-level run
+  on the real lock, nobody else holding it): 0.05 s each of the ten — median
+  0.05, mean 0.05. Indistinguishable at this resolution, so also:
+- Twenty back-to-back runs timed as one (`/usr/bin/time -p` around the loop,
+  same scratch repository), alternating, three rounds: before 1.02, 1.03,
+  1.02 s; after 1.10, 1.10, 1.11 s. About 0.004 s added per run, under
+  SC-004's 0.1 s.
+
+The full suite, `./check.sh --strict` alone (T014, T019, T033): 12.9 s and
+12.8 s once 06-lock had its US1 and US4 cases; 16–17 s in each of five runs
+once the US3 cases joined, all "All checks passed", exit 0, `git status
+--porcelain` unchanged. 06-lock had then outgrown 05-runner and become the
+run's floor, against R8's premise. Its holders slept a fixed time; they now
+hold until the case has seen their waiters waiting, which is also
+deterministic under load: the section alone went from about 17.5 s to 9.8 s
+(two runs, 9.76 and 9.85 s, in a scratch runner holding only it). The full
+suite was not rerun after that change (the owner's limit on full runs).
