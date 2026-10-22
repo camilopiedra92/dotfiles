@@ -54,13 +54,13 @@ exists, and each must fail for the reason its case predicts.
 
 ### Tests for User Story 2
 
-- [ ] T012 [US2] Add to checks/05-runner.sh: sections finishing in reverse order print in file order, whole, ending "All checks passed" exit 0 (AS1); one failing section exits 1 with its output in place (AS2); a section calling a function only an earlier section defines fails (AS3); a section that exits early or hits an unset variable counts as failed with the "stopped before its last line" line (AS4, FR-008); a skip fails under --strict and not without (AS5); with `sysctl` stubbed to answer 2, never more than 2 sections run at once, and 2 do (FR-006)
-- [ ] T013 [US2] Run the suite and record that each new case fails for its predicted reason
+- [x] T012 [US2] Add to checks/05-runner.sh: sections finishing in reverse order print in file order, whole, ending "All checks passed" exit 0 (AS1); one failing section exits 1 with its output in place (AS2); a section calling a function only an earlier section defines fails (AS3); a section that exits early or hits an unset variable counts as failed with the "stopped before its last line" line (AS4, FR-008); a skip fails under --strict and not without (AS5); with `sysctl` stubbed to answer 2, never more than 2 sections run at once, and 2 do (FR-006)
+- [x] T013 [US2] Run the suite and record that each new case fails for its predicted reason
 
 ### Implementation for User Story 2
 
-- [ ] T014 [US2] Implement the parallel runner in check.sh (research R5): each section in its own subshell with a done-marker, output and status in one `mktemp -d`, at most `sysctl -n hw.ncpu` at once, polling, in-order printing, removed on exit
-- [ ] T015 [US2] Break the ordering, the verdict, the done-marker and the cap by hand once each and see their cases go red; restore; full suite green; fresh review of the story
+- [x] T014 [US2] Implement the parallel runner in check.sh (research R5): each section in its own subshell with a done-marker, output and status in one `mktemp -d`, at most `sysctl -n hw.ncpu` at once, polling, in-order printing, removed on exit
+- [x] T015 [US2] Break the ordering, the verdict, the done-marker and the cap by hand once each and see their cases go red; restore; full suite green; fresh review of the story
 
 ## Phase 5: User Story 3 - Coverage declarations stay honest (P3)
 

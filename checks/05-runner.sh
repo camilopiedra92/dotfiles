@@ -249,3 +249,131 @@ staged_failure_fails() {
   }
 }
 check "--staged fails when a selected section fails, and only then" staged_failure_fails
+
+# A repository of fake sections for how a run executes them. Each argument is
+# "<name>:<body>", written to checks/<name>.sh; every run starts from its own.
+sections_repo() {
+  local dir=$1 spec
+  shift
+  git init -q "$dir"
+  cp -p check.sh "$dir/"
+  mkdir -p "$dir/checks/lib"
+  echo 'helper() { :; }' > "$dir/checks/lib/helpers.sh"
+  for spec in "$@"; do
+    printf '%s\n' "${spec#*:}" > "$dir/checks/${spec%%:*}.sh"
+  done
+}
+
+# Sections finishing in the reverse of file order: each prints a header and
+# two lines with a pause between, so output written as it happens would
+# interleave. A sequential run's output is the reference.
+parallel_output_in_order() {
+  local tmp lines
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" \
+    '10-a:printf "\nA\n"; sleep 0.6; check a1 true; sleep 0.1; check a2 true' \
+    '20-b:printf "\nB\n"; sleep 0.3; check b1 true; sleep 0.1; check b2 true' \
+    '30-c:printf "\nC\n"; check c1 true; sleep 0.1; check c2 true'
+  runner_run "$tmp/r"
+  lines=$(printf '%s\n' "$OUT" | grep -E '^(A|B|C)$|^  ok   [abc][12]$' | tr -s ' ' | tr '\n' '|')
+  [ "$lines" = "A| ok a1| ok a2|B| ok b1| ok b2|C| ok c1| ok c2|" ] || {
+    echo "expected each section whole, in file order; got: $lines"
+    printf '%s\n' "$OUT"
+    return 1
+  }
+  [ "$RC" -eq 0 ] || {
+    echo "exit $RC from passing sections"
+    return 1
+  }
+  expect_line "passing" "All checks passed" || return 1
+
+  # One failing section: the run fails, its output whole in its place.
+  printf '%s\n' 'printf "\nB\n"; sleep 0.3; check b1 false; sleep 0.1; check b2 true' > "$tmp/r/checks/20-b.sh"
+  runner_run "$tmp/r"
+  lines=$(printf '%s\n' "$OUT" | grep -E '^(A|B|C)$|^  (ok|FAIL) [ abc]*[abc][12]$' | tr -s ' ' | tr '\n' '|')
+  [ "$lines" = "A| ok a1| ok a2|B| FAIL b1| ok b2|C| ok c1| ok c2|" ] || {
+    echo "one failing section: expected its output whole in place; got: $lines"
+    return 1
+  }
+  [ "$RC" -eq 1 ] || {
+    echo "one failing section: exit $RC, not 1"
+    return 1
+  }
+  expect_line "failing" "Some checks failed" || return 1
+}
+check "a run prints each section whole and in file order, whatever finishes first, with one verdict" parallel_output_in_order
+
+# Each section runs in a shell of its own: a function another section defines
+# is not there, and a section that stops early is a failed section, not a
+# dead or a green run.
+sections_stand_alone() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  # shellcheck disable=SC2016  # expanded by the fake section, not here
+  sections_repo "$tmp/r" \
+    '10-a:a_only() { :; }; check "a ran" true' \
+    '20-b:check "b uses a_only" a_only' \
+    '30-c:check "c ran" true; exit 0; check "c after exit" true' \
+    '40-d:check "d ran" true; echo "$NOT_SET_ANYWHERE"; check "d after unset" true' \
+    '50-e:check "e ran" true'
+  runner_run "$tmp/r"
+  expect_line "hidden dependency" "  FAIL b uses a_only" || return 1
+  expect_line "exit" "  FAIL 30-c stopped before its last line (exit 0)" || return 1
+  expect_line "unset variable" "  FAIL 40-d stopped before its last line (exit" || return 1
+  expect_line "after them" "  ok   e ran" || return 1
+  case "$OUT" in *"after exit"* | *"after unset"*)
+    echo "a section went on past its own stop: $OUT"
+    return 1
+    ;;
+  esac
+  [ "$RC" -eq 1 ] || {
+    echo "exit $RC, not 1"
+    return 1
+  }
+}
+check "each section runs alone: another's function is not there, and stopping early fails it" sections_stand_alone
+
+strict_skip_still_fails() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:skip "tool" "brew install tool"' '20-b:check "b ran" true'
+  CI='' runner_run "$tmp/r"
+  [ "$RC" -eq 0 ] || {
+    echo "a skip by hand: exit $RC, not 0"
+    return 1
+  }
+  CI='' runner_run "$tmp/r" --strict
+  [ "$RC" -eq 1 ] || {
+    echo "a skip under --strict: exit $RC, not 1"
+    return 1
+  }
+  expect_line "strict skip" "  FAIL tool (not installed: brew install tool)" || return 1
+}
+check "a skip fails the run under --strict, and only then" strict_skip_still_fails
+
+# At most as many sections at once as sysctl reports CPUs, here a stub
+# answering 2: each section registers itself in $LIVE under its own file name
+# (a subshell's $$ is its parent's, so every section would collide), records
+# how many are registered, and leaves. Two at once proves they overlap; three, the cap broken.
+sections_capped_at_cpus() {
+  local tmp body max
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  mkdir -p "$tmp/bin" "$tmp/live"
+  printf '#!/bin/sh\necho 2\n' > "$tmp/bin/sysctl"
+  chmod +x "$tmp/bin/sysctl"
+  # shellcheck disable=SC2016  # expanded by the fake section, not here
+  body='me=$LIVE/${BASH_SOURCE[0]##*/}; mkdir "$me"; ls "$LIVE" | wc -l >> "$LIVE.counts"; sleep 0.4; rmdir "$me"'
+  sections_repo "$tmp/r" "10-a:$body" "20-b:$body" "30-c:$body" "40-d:$body" "50-e:$body"
+  LIVE=$tmp/live PATH="$tmp/bin:$PATH" runner_run "$tmp/r"
+  max=$(sort -n "$tmp/live.counts" | tail -n1 | tr -d ' ')
+  [ "$max" = 2 ] || {
+    echo "with 2 CPUs, expected at most and at least 2 sections at once, saw ${max:-none}:"
+    printf '%s\n' "$OUT"
+    return 1
+  }
+}
+check "sections run at the same time, no more at once than the CPUs" sections_capped_at_cpus

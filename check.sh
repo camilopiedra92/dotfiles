@@ -220,19 +220,73 @@ else
 fi
 
 # ── Sections ─────────────────────────────────────────────────────────────────
-# The helpers more than one section uses, then the sections, in file-name
-# order, sourced into this shell so they share FAILED, STRICT and the helpers
-# above: one verdict, one strictness, one summary. The files are linted
-# directly (see Lint), so shellcheck has nothing to follow here.
+# The helpers more than one section uses are sourced here, once; then each
+# section runs in a subshell of its own, so it sees STRICT, the helpers above
+# and those in checks/lib/, and nothing another section defines -- a section
+# that leaned on another's function would pass only in file order, and did
+# (three of them, found 2026-10-21). The files are linted directly (see
+# Lint), so shellcheck has nothing to follow here.
 # shellcheck source=/dev/null
 for lib in checks/lib/*.sh; do
   . "$lib"
 done
+
+# Several sections at once, one per CPU, because the slow ones are slow on
+# waiting rather than on computing: the run takes about as long as its
+# slowest section instead of their sum. Each section's output goes to a file
+# and is printed whole once it and every section before it have finished, so
+# what you read is a sequential run's output, in file order; FAILED is the OR
+# of the sections' statuses, so the verdict and strictness are a sequential
+# run's too. bash 3.2 has no `wait -n`, so the loop polls; waiting on the
+# oldest section instead would leave CPUs idle behind a slow one.
+RUN=$(mktemp -d) || exit 1
+trap 'rm -rf "$RUN"' EXIT
+JOBS=$(sysctl -n hw.ncpu) || JOBS=1
+
+# The done marker is written after the section's last line: without it, the
+# section stopped early -- an `exit`, an unset variable under set -u -- which
+# is a failure even when the status says 0.
+run_section() {
+  (
+    FAILED=0
+    # shellcheck source=/dev/null
+    . "${SECTIONS[$1]}"
+    : > "$RUN/$1.done"
+    exit "$FAILED"
+  ) > "$RUN/$1.out" 2>&1
+  echo "$?" > "$RUN/$1.status"
+  mv "$RUN/$1.status" "$RUN/$1.rc"
+}
+
+ORDER=()
 for i in "${!SECTIONS[@]}"; do
-  [ -n "$ALL" ] || [ -n "${PICKED[i]:-}" ] || continue
-  # shellcheck source=/dev/null
-  . "${SECTIONS[i]}"
+  if [ -n "$ALL" ] || [ -n "${PICKED[i]:-}" ]; then ORDER+=("$i"); fi
 done
+started=0
+shown=0
+while [ "$shown" -lt "${#ORDER[@]}" ]; do
+  finished=$(find "$RUN" -name '*.rc' | wc -l)
+  while [ "$started" -lt "${#ORDER[@]}" ] && [ $((started - finished)) -lt "$JOBS" ]; do
+    run_section "${ORDER[started]}" &
+    started=$((started + 1))
+  done
+  i=${ORDER[shown]}
+  if [ ! -e "$RUN/$i.rc" ]; then
+    sleep 0.1
+    continue
+  fi
+  cat "$RUN/$i.out"
+  status=$(cat "$RUN/$i.rc")
+  if [ ! -e "$RUN/$i.done" ]; then
+    name=${SECTIONS[i]#checks/}
+    printf '  %sFAIL%s %s stopped before its last line (exit %s)\n' "$RED" "$OFF" "${name%.sh}" "$status"
+    FAILED=1
+  elif [ "$status" -ne 0 ]; then
+    FAILED=1
+  fi
+  shown=$((shown + 1))
+done
+wait
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then
