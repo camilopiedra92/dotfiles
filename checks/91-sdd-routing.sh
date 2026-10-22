@@ -586,13 +586,29 @@ sys.exit("\n".join(bad) or 0)
   clean_after "worktree symlink"
   fresh || return 1
   sonnet_route
-  printf '.venv/\n' > "$repo/.gitignore"
+  # What the repository ignores is not its content (git's own rule): a pass's
+  # writes there — a cache its tests left, a planted .pth — are dropped, never
+  # written into the worktree, and the rest of the patch goes on (the real
+  # run, 2026-10-21: a review's test run left __pycache__ behind).
+  printf '.venv/\n__pycache__/\n' > "$repo/.gitignore"
   tgit add .gitignore && tgit commit -qm ignore
   result "implemented"
   edit .venv/lib/evil.pth "import os"
-  if out=$(pass implement); then fail "ignored path: succeeded"; fi
-  [ ! -e "$repo/.venv/lib/evil.pth" ] || fail "ignored path: written"
+  edit src/__pycache__/app.cpython-311.pyc "bytecode"
+  edit src/app.py "print(7)"
+  out=$(pass implement) || fail "ignored path: refused the whole patch: $out"
+  [ ! -e "$repo/.venv/lib/evil.pth" ] && [ ! -e "$repo/src/__pycache__/app.cpython-311.pyc" ] || fail "ignored path: written"
+  [ "$(cat "$repo/src/app.py")" = "print(7)" ] || fail "ignored path: the rest of the patch was not applied"
+  printf '%s' "$out" | grep -qF ".venv/lib/evil.pth" || fail "ignored path: the dropped path is not named: $out"
   clean_after "ignored path"
+  # A reading phase whose test run left an ignored cache still writes nothing.
+  fresh || return 1
+  printf '__pycache__/\n' > "$repo/.gitignore"
+  tgit add .gitignore && tgit commit -qm ignore
+  result "reviewed" '{"findings":[],"done":[]}'
+  edit src/__pycache__/app.cpython-311.pyc "bytecode"
+  out=$(pass agent review) || fail "reader cache: refused: $out"
+  clean_after "reader cache"
   # 17. The credential scan fails closed, and reads binary files as bytes.
   fresh || return 1
   mv "$sa/secrets/claude-oauth" "$sa/secrets/claude-oauth.gone"

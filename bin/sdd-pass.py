@@ -290,6 +290,25 @@ class Pass:
                     raise PassFailed(f"judge: {os.path.relpath(full, self.export)} is not a regular file")
         return out
 
+    def drop_ignored(self, changes):
+        """Drops from the export every path the repository ignores — a cache
+        a test run left, a .venv — so it is neither judged nor applied: what
+        git ignores is not the repository's content, and it never reaches
+        the owner's worktree (the real run, 2026-10-21: a review's tests left
+        __pycache__). Spec Kit's feature.json has its own handling. Returns
+        whether anything was dropped."""
+        dropped = []
+        for status, _, path in changes:
+            if status == "D" or path == ".specify/feature.json":
+                continue
+            if self.landing(path) == "an ignored path in the worktree":
+                os.remove(os.path.join(self.export, path))
+                dropped.append(path)
+        if dropped:
+            print("sdd-step: dropped, as the repository ignores them: " + ", ".join(dropped[:20])
+                  + (" and %d more" % (len(dropped) - 20) if len(dropped) > 20 else ""), file=sys.stderr)
+        return bool(dropped)
+
     def same_local_state(self):
         """Spec Kit's scripts rewrite .specify/feature.json on each run, in
         their own format (pretty-printed, a trailing newline): the same
@@ -610,6 +629,8 @@ def run_agent(run, phase, implement=None):
             raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
         p.same_local_state()
         changes = p.changes()
+        if p.drop_ignored(changes):
+            changes = p.changes()
         patch = p.patch() if changes else b""
         writes = row["writes"]
         local_state = None

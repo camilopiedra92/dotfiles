@@ -134,6 +134,9 @@ env=(
   # (telemetry, error reports), outside ANTHROPIC_BASE_URL; the proxy refuses
   # them, so they are only noise (seen in the first real pass, 2026-10-21).
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+  # No bytecode next to the sources a pass's tests import: it would only show
+  # up as files the pass wrote (seen in the real run, 2026-10-21).
+  PYTHONDONTWRITEBYTECODE=1
   # Registries are reached by CONNECT through the proxy, the placeholder as
   # the proxy user, which is how the proxy knows the pass; the proxy itself
   # is reached directly, as the API gateway it also is.

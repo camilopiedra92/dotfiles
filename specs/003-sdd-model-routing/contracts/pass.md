@@ -146,9 +146,12 @@ and no configuration an agent could have written runs during a run.
      through a pattern;
    - every path matches the row's `writes` (contracts/routing.md); for the
      implement rows, `writes` is everything;
-   - no path lands, in the owner's worktree, through a symlink on its way,
-     on an untracked symlink, or in an ignored path (`git apply` follows the
-     one and writes into the other); a tracked symlink may be replaced or
+   - a path the repository ignores (a cache a test run left, a `.venv`) is
+     dropped from the patch, named, and never written: what git ignores is
+     not the repository's content (research R27); Spec Kit's
+     `.specify/feature.json` has its own handling;
+   - no path lands, in the owner's worktree, through a symlink on its way or
+     on an untracked symlink (`git apply` follows them); a tracked symlink may be replaced or
      deleted, and a tracked file an ignore rule matches changed, as git does.
      The no-index diffs set `core.precomposeUnicode`, so a decomposed name
      reaches the index as the owner's git would write it;
