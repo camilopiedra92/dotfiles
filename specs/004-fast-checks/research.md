@@ -227,4 +227,22 @@ Before (`main` at 889a751, in a scratch clone):
 
 Each section alone, sequential sum: 18.6 s; the slowest, `10-lint`, 2.7 s.
 
-After: pending.
+After (this branch at a9db298 plus a 20 ms poll, scratch clone, 2026-10-22,
+`./check.sh --strict`, hw.ncpu as sysctl reports it):
+
+| case | wall |
+|---|---|
+| full run | 11.6-12.0 s (five runs, all rc 0, `git status --porcelain` empty after each) |
+| hook, docs-only change staged | 4.9 s |
+| hook, one covered file staged (`macos/touchid.sh`) | 4.9 s |
+
+Each section alone: `05-runner` 11.0 s, `10-lint` 4.7 s, `80-git-guard` 3.0 s,
+`50-install` 2.9 s, the rest at most 2.5 s. The full run is bounded by the
+section this feature added: ~30 runs of a scratch copy of check.sh, one
+`git init` and commit each. Polling at 20 ms instead of 100 ms took it from
+10.8 s to 8.4 s; the rest is spread across its cases (1-2 s each), none
+dominant. The hook's 4.9 s floor is `10-lint`, which declares nothing and so
+runs for every commit (gitleaks reads the whole history). Splitting either is
+not done: neither is the cost this feature was opened for (before: 21.8-24.7 s
+for every commit), and a section nobody waits on is not worth a second runner
+concept.

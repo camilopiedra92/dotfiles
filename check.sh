@@ -242,8 +242,10 @@ done
 # and is printed whole once it and every section before it have finished, so
 # what you read is a sequential run's output, in file order; FAILED is the OR
 # of the sections' statuses, so the verdict and strictness are a sequential
-# run's too. bash 3.2 has no `wait -n`, so the loop polls; waiting on the
-# oldest section instead would leave CPUs idle behind a slow one.
+# run's too. bash 3.2 has no `wait -n`, so the loop polls, every 20 ms: at
+# 100 ms the runner's own checks, ~30 runs of instant fake sections, took 2.4 s
+# longer (measured 2026-10-22). Waiting on the oldest section instead would
+# leave CPUs idle behind a slow one.
 RUN=$(mktemp -d) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
@@ -280,7 +282,7 @@ while [ "$shown" -lt "${#ORDER[@]}" ]; do
   done
   i=${ORDER[shown]}
   if [ ! -e "$RUN/$i.rc" ]; then
-    sleep 0.1
+    sleep 0.02
     continue
   fi
   cat "$RUN/$i.out"

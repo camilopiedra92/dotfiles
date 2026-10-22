@@ -77,8 +77,8 @@ exists, and each must fail for the reason its case predicts.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T019 [P] Update docs/checks.md (the tiers, the declaration, the selection rule, the parallel run, no pre-push tier), README.md and CLAUDE.md where they say the hook runs every check or the sections are sourced into one shell
-- [ ] T020 Measure after: the hook on a docs-only change, on one covered file, the full run; run the full suite five times and compare verdicts and `git status --porcelain`; record in specs/004-fast-checks/research.md
+- [x] T019 [P] Update docs/checks.md (the tiers, the declaration, the selection rule, the parallel run, no pre-push tier), README.md and CLAUDE.md where they say the hook runs every check or the sections are sourced into one shell
+- [x] T020 Measure after: the hook on a docs-only change, on one covered file, the full run; run the full suite five times and compare verdicts and `git status --porcelain`; record in specs/004-fast-checks/research.md
 - [ ] T021 Run speckit-converge until a pass finds nothing above LOW, implementing its tasks
 
 ## Dependencies & Execution Order
