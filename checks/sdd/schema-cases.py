@@ -74,7 +74,7 @@ CASES = {
     "implement": (
         outcome(
             "implement", agent="deepseek", model="deepseek-flash", pi_version="1.3.0",
-            commit="4e52f7c0000000000000000000000000000000aa", files=["src/parse.py"],
+            commit="4e52f7c0000000000000000000000000000000aa", files=["src/parse.py"], dropped=[".venv/x.pth"],
             usage={"input": 1200, "cached": 800, "output": 300}, seconds=42.5,
         ),
         ["model"],

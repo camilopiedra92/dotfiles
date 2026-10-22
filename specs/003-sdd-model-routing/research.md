@@ -839,6 +839,23 @@ implement pass fails where it cannot be progress (the run's first
 implementation, a fix round), showing what the agent said; every agent's answer
 is kept in the bundle's `results/`.
 
+**Review of US1** (2026-10-21), the pass's side, each a check seen red: the
+implementer may not mark tasks — Spec Kit's implement tells it to, the brief
+says not to, and the judge decides: checkbox changes in `tasks.md` go back to
+the baseline's, named, and the rest of the patch goes on (refusing a whole
+legitimate pass over a tick would cost more than it protects), so a tick never
+skips `mark`'s conditions and a tick-only pass is no change; pi's usage is the
+sum over every assistant message, each carrying its own (pi 1.3.0
+docs/json.md); the review reads the feature's own commits as a patch series,
+not the repository since the feature began, which let unrelated work in;
+dropped ignored paths are recorded in `implement.json`, and only the
+repository's ignore rules count (git read the owner's `~/.config/git/ignore`
+even with no global config); every pass keeps its answer, raw output
+included when there is no result. Outside specify the pass sets
+`SPECIFY_FEATURE_NO_PERSIST=1`, Spec Kit's own switch for orchestrators
+(issue #4128), so its scripts no longer rewrite `feature.json`; the export's
+copy of it and the comparison by meaning are gone with the rewrite.
+
 **Alternatives**: the brief and pi's models inside the image — every edit
 would rebuild it and they would not be frozen per run; git in the image — a
 push client with no use; build-essential — only projects with native

@@ -29,7 +29,7 @@ fields below; anything else is refused (`additionalProperties: false`).
 | `phases.json` | `done`: ordered list of `{phase: specify/plan/tasks/build, at}` | — (read by `sdd-run start --from`, FR-022) |
 | `route.json` | `agent`: `deepseek`/`sonnet` | — (read by `implement`) |
 | `clarify.json` | `questions`: integer 0–5 | `yes` when > 0, else `no` |
-| `implement.json` (written only by `sdd-step implement`) | `agent` (`deepseek`/`sonnet`), `model` (the id served), `pi_version` or null, `commit` or null, `files`: list of paths, `usage`: pi's `{input, cached, output}` tokens or Claude's `{total_cost_usd, modelUsage}`, `seconds` | — (read by `usage`) |
+| `implement.json` (written only by `sdd-step implement`) | `agent` (`deepseek`/`sonnet`), `model` (the id served), `pi_version` or null, `commit` or null, `files`: list of paths, `dropped` (optional): the paths the pass wrote that the repository ignores, dropped from its patch, `usage`: pi's `{input, cached, output}` tokens or Claude's `{total_cost_usd, modelUsage}`, `seconds` | — (read by `usage`) |
 | `verify.json` | `command`, `exit`: integer, `tail`: string, `check_changes` and `automation_changes`: lists of paths (FR-029, FR-030) | `pass` when `exit` is 0, else `fail` |
 | `review.json` | `findings`: list of `{severity: CRITICAL/HIGH/MEDIUM/LOW, text, path?}`, `done`: list of task ids | `blocking` when any finding is above LOW, else `clear` |
 | `converge.json` | `outcome`: `converged`/`tasks_appended`, `findings`: as in review | `converged` only when `outcome` is `converged` and no finding is above LOW, else `open` (FR-014) |

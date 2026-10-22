@@ -178,7 +178,7 @@ sdd_pass() {
     printf '%s' "$2" > "$sa/fixture/edits/$1"
   }
   pass() { # subcommand args...: runs it as the workflow would, from the repository root
-    (cd "$repo" && PATH="$tmp/case/evil:$PATH" SDD_RUN_DIR=$run "$step" "$@" 2>&1)
+    (cd "$repo" && HOME="${PASS_HOME:-$HOME}" PATH="$tmp/case/evil:$PATH" SDD_RUN_DIR=$run "$step" "$@" 2>&1)
   }
   fail() {
     echo "$1"
@@ -379,7 +379,10 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
   # run implemented it — and not the run's own records under .sdd/ (the real
   # run, 2026-10-21: the reviewer saw only metadata and marked nothing done).
   fresh || return 1
+  # Unrelated work interleaved with the feature's own stays out of it.
+  printf 'other\n' > "$repo/src/other.py" && tgit add src/other.py && tgit commit -qm "unrelated work"
   printf 'print(2)\n' > "$repo/src/app.py" && tgit commit -qam "implement: 001-probe (claude-sonnet-5-5)"
+  printf 'later\n' > "$repo/src/later.py" && tgit add src/later.py && tgit commit -qm "more unrelated work"
   printf '{"run_id":"run1","pid":%s,"started":"x","base":"%s"}\n' "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
   mkdir -p "$repo/$f/.sdd" && printf '{}\n' > "$repo/$f/.sdd/route.json"
   # Inside the agent, the stand-in's mounts name where /input is.
@@ -395,6 +398,7 @@ SH
   out=$(pass agent review) || fail "review diff: failed: $out"
   grep -qF "+print(2)" "$tmp/case/seen-diff.patch" 2> /dev/null || fail "review diff: the feature's implementation before this run is not in it"
   grep -qF ".sdd/" "$tmp/case/seen-diff.patch" 2> /dev/null && fail "review diff: the run's own .sdd records are in it"
+  grep -qE "src/(other|later)\.py" "$tmp/case/seen-diff.patch" 2> /dev/null && fail "review diff: unrelated commits are in it"
   clean_after "review diff"
   # 8. Results: structured output to the row's outcome file with the common
   # fields, the result's text to result_to, a start and an end usage line.
@@ -423,6 +427,13 @@ SH
   [ ! -e "$repo/$f/plan.md" ] || fail "timeout: applied"
   clean_after "timeout"
 
+  # 10a. An answer that is no JSON result still lands in results/, where the
+  # owner looks first.
+  fresh || return 1
+  printf 'the agent printed this instead of JSON\n' > "$sa/fixture/result.json"
+  if out=$(pass agent plan); then fail "no JSON: succeeded"; fi
+  grep -rqF "the agent printed this instead of JSON" "$run/results" 2> /dev/null || fail "no JSON: the answer is not kept in results/"
+  clean_after "no JSON"
   # 10. An agent error, or a denied tool, fails the step naming the cause.
   fresh || return 1
   printf '{"type":"result","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash","tool_input":{"command":"mkdir -p specs/002-x"}}]}\n' > "$sa/fixture/result.json"
@@ -488,6 +499,31 @@ sys.exit("\n".join(bad) or 0)
 ' "$sa/agents.jsonl" || status=1
   clean_after implement
 
+  # 12a. Only the run marks tasks (FR-006): checkbox changes in tasks.md by
+  # an implement pass are taken back, named, and the rest of the patch goes
+  # on; a pass that only ticked boxes changed nothing. (Spec Kit's implement
+  # tells its agent to mark tasks; the brief says not to; the judge decides.)
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "implemented and marked"
+  edit "$f/tasks.md" "- [X] T001 do it
+"
+  edit src/app.py "print(9)"
+  out=$(pass implement) || fail "ticks: failed: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(9)" ] || fail "ticks: the rest of the patch was not applied"
+  grep -qxF -- "- [ ] T001 do it" "$repo/$f/tasks.md" || fail "ticks: the implementer's tick reached tasks.md: $(cat "$repo/$f/tasks.md")"
+  printf '%s' "$out" | grep -qF "tasks.md" || fail "ticks: the taken-back ticks are not named: $out"
+  clean_after ticks
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  result "only marked"
+  edit "$f/tasks.md" "- [x] T001 do it
+"
+  if out=$(pass implement); then fail "tick only: a first implementation that only ticked boxes succeeded"; fi
+  clean_after "tick only"
+
   # 12b. An implementer that changes nothing while tasks remain open has
   # failed, whatever it says; what it said is shown and kept in the bundle,
   # as every agent's answer is (seen in the real run, 2026-10-21: three
@@ -539,7 +575,11 @@ sys.exit("\n".join(bad) or 0)
   tgit config sdd.implement deepseek
   # pi's models come from the bundle, frozen at start (its prices too).
   /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["providers"]["deepseek"]["models"][0]["name"]="FROZEN-IN-BUNDLE"; json.dump(d,open(p,"w"))' "$run/pi-models.json"
-  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' > "$sa/fixture/result.json"
+  # Two responses in one pass: pi reports each message_end's own usage (pi
+  # 1.3.0 docs/json.md), so the pass's usage is their sum.
+  printf '%s\n' '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"reading"}],"usage":{"input":10,"cacheRead":5,"output":3}}}' \
+    '{"type":"message_end","message":{"role":"user","content":"tool result"}}' \
+    '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":20,"cacheRead":1,"output":4}}}' > "$sa/fixture/result.json"
   edit src/app.py "print(3)"
   watch_admissions
   # Inside the agent, the stand-in's mounts name where /bundle is.
@@ -577,7 +617,7 @@ if "CLAUDE_CODE_OAUTH_TOKEN" in agent["env"]:
     bad.append("deepseek: a Claude placeholder reached the pi pass")
 sys.exit("\n".join(bad) or 0)
 ' "$sa/agents.jsonl" "$tmp/case/seen-models.json" || status=1
-  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d["agent"]=="deepseek" and d["usage"]=={"input":10,"cached":5,"output":3} else f"deepseek: implement.json {d}")' \
+  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d["agent"]=="deepseek" and d["usage"]=={"input":30,"cached":6,"output":7} else f"deepseek: implement.json {d}")' \
     "$repo/$f/.sdd/implement.json" || status=1
   clean_after deepseek
 
@@ -633,6 +673,8 @@ sys.exit("\n".join(bad) or 0)
   [ ! -e "$repo/.venv/lib/evil.pth" ] && [ ! -e "$repo/src/__pycache__/app.cpython-311.pyc" ] || fail "ignored path: written"
   [ "$(cat "$repo/src/app.py")" = "print(7)" ] || fail "ignored path: the rest of the patch was not applied"
   printf '%s' "$out" | grep -qF ".venv/lib/evil.pth" || fail "ignored path: the dropped path is not named: $out"
+  /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if ".venv/lib/evil.pth" in d.get("dropped", []) else "ignored path: implement.json does not record what was dropped: %s" % d.get("dropped"))' \
+    "$repo/$f/.sdd/implement.json" || status=1
   clean_after "ignored path"
   # A reading phase whose test run left an ignored cache still writes nothing.
   fresh || return 1
@@ -642,6 +684,17 @@ sys.exit("\n".join(bad) or 0)
   edit src/__pycache__/app.cpython-311.pyc "bytecode"
   out=$(pass agent review) || fail "reader cache: refused: $out"
   clean_after "reader cache"
+  # Only the repository's own ignore rules count: git also reads the owner's
+  # ~/.config/git/ignore, which says nothing about this repository.
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd" "$tmp/case/home/.config/git"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  printf 'generated.py\n' > "$tmp/case/home/.config/git/ignore"
+  result "implemented"
+  edit src/generated.py "print(8)"
+  out=$(PASS_HOME=$tmp/case/home pass implement) || fail "global excludes: failed: $out"
+  [ "$(cat "$repo/src/generated.py" 2> /dev/null)" = "print(8)" ] || fail "global excludes: a file only the owner's own excludes match was dropped"
+  clean_after "global excludes"
   # 17. The credential scan fails closed, and reads binary files as bytes.
   fresh || return 1
   mv "$sa/secrets/claude-oauth" "$sa/secrets/claude-oauth.gone"

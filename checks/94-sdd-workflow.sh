@@ -507,14 +507,20 @@ wf_feature_json() {
     return 1
   }
   # Spec Kit's setup-plan.sh rewrites feature.json each time it runs (seen in
-  # the real run, 2026-10-21): the export carries the worktree's copy, so the
-  # same content is no change; another feature named there is refused.
-  wf_edit speckit-plan .specify/feature.json "{\"feature_directory\": \"$WF_F\"}"
+  # the real run, 2026-10-21). After specify, every phase runs with Spec Kit's
+  # own switch for orchestrators, SPECIFY_FEATURE_NO_PERSIST=1 (issue #4128),
+  # so its scripts write nothing there; an agent that still points it at
+  # another feature is refused.
   out=$(wf_resume -i spec_verdict=approve)
-  [ "$(wf_state)" = "paused review_plan" ] || {
-    echo "plan rewriting the same feature.json did not go through: $(wf_state): $(printf '%s' "$out" | tail -3)"
-    return 1
-  }
+  /usr/bin/python3 -I -c '
+import json, sys
+calls = [json.loads(l) for l in open(sys.argv[1])]
+def key(a):
+    argv = a["argv"]
+    return argv[argv.index("-p") + 1].split()[0].lstrip("/")
+bad = [key(a) for a in calls if (a["env"].get("SPECIFY_FEATURE_NO_PERSIST") == "1") == (key(a) == "speckit-specify")]
+sys.exit("SPECIFY_FEATURE_NO_PERSIST is wrong for: %s" % bad if bad else 0)
+' "$WF_SA/agents.jsonl" || return 1
   wf_fresh || return 1
   wf_edit speckit-plan .specify/feature.json '{"feature_directory": "specs/009-elsewhere"}'
   out=$(wf_start)

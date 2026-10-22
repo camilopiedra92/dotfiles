@@ -156,6 +156,12 @@ if [ -n "${SPECIFY_FEATURE_DIRECTORY:-}" ]; then
     fail "SPECIFY_FEATURE_DIRECTORY must be /work/specs/<nnn>-<slug>"
   env+=(SPECIFY_FEATURE_DIRECTORY="$SPECIFY_FEATURE_DIRECTORY")
 fi
+# Spec Kit's switch that keeps its scripts from rewriting feature.json
+# (issue #4128); "1" or nothing.
+if [ -n "${SPECIFY_FEATURE_NO_PERSIST:-}" ]; then
+  [ "$SPECIFY_FEATURE_NO_PERSIST" = 1 ] || fail "SPECIFY_FEATURE_NO_PERSIST must be 1"
+  env+=(SPECIFY_FEATURE_NO_PERSIST=1)
+fi
 
 # A cache volume is created by the runtime owned by root; node gets it, and
 # every package manager in the image keeps its cache there.

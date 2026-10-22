@@ -136,7 +136,7 @@ phases:
     # (FR-019).
     prompt: >-
       Review, as someone who did not write it, the change in /input/diff.patch
-      (the feature's whole change since it began, without the run's own
+      (the commits made for this feature, oldest first, without the run's own
       records under .sdd/) against the feature's spec,
       plan and tasks. Report each finding with its severity — CRITICAL, HIGH,
       MEDIUM or LOW — and its path; a deleted or weakened test, or a weakened
