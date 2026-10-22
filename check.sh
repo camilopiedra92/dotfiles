@@ -276,17 +276,26 @@ run_section() {
   mv "$RUN/$1.status" "$RUN/$1.rc"
 }
 
-# INT or TERM stop the sections too, each as a process group of its own (set
-# -m), because the subshell, the checks it runs and what those started would
-# otherwise outlive the runner and write into a scratch directory that is gone.
-set -m
+# INT or TERM stop the sections too, and what each started: a section's
+# subshell, the checks it runs and their children would otherwise outlive the
+# runner and write into a scratch directory that is gone. They are found
+# through their parent pids, not a process group: `set -m` gave each section
+# its own group, which took the terminal's ^C away from the runner and stopped
+# any section that read stdin (SIGTTIN; without job control a background
+# job's stdin is /dev/null); both seen 2026-10-22 in a pty.
+kill_tree() {
+  local child
+  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  kill -TERM "$1" 2> /dev/null
+}
 stop_sections() {
   local job
   trap '' INT TERM
-  for job in $(jobs -p); do kill -TERM -- "-$job" 2> /dev/null; done
-  exit 130
+  for job in $(jobs -p); do kill_tree "$job"; done
+  exit "$1"
 }
-trap stop_sections INT TERM
+trap 'stop_sections 130' INT
+trap 'stop_sections 143' TERM
 
 ORDER=()
 for i in "${!SECTIONS[@]}"; do

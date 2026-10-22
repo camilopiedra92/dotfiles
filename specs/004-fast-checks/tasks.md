@@ -101,3 +101,8 @@ hand-breaks, a commit, and a review by a fresh context.
 - [x] T024 Add the red cases for the early-stop verdict being the only failure, a bad flag exiting 2, the scratch directory removed after a run, and a staged `D` of a section that still exists in the tree, per constitution III (partial)
 - [x] T025 Kill every running section, and what it started, when check.sh receives INT or TERM, per FR-006 (partial)
 - [x] T026 Correct the text that no longer matches the code: SC-002 and quickstart step 3 (a section whose pattern also covers the path runs too), research.md R7 and the 0.1 s poll, and the garbled comment in checks/05-runner.sh (partial)
+
+## Phase 8: Convergence
+
+- [x] T027 Run the sections without `set -m` and stop them by process tree, so ^C from a terminal reaches the runner and a section reading stdin does not stop, per FR-006/FR-007 (contradicts)
+- [x] T028 Red cases for stdin under a terminal, ^C through a pty, and the 143 status (partial)

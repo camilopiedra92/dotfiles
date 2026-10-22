@@ -547,25 +547,23 @@ check "--staged selects every section when a section leaves the index but not th
 # with it: they would otherwise go on writing into a scratch directory that
 # is gone. The sleeps carry a length nothing else uses, to find them by.
 signals_stop_sections() {
-  local tmp pid sig left
+  local tmp pid left
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true' '20-b:sleep 31.7; check "b ran" true'
-  for sig in TERM INT; do
-    (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
-    pid=$!
-    sleep 0.6
-    kill -"$sig" "$pid"
-    wait "$pid" 2> /dev/null
-    sleep 0.3
-    left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
-    [ "$left" -eq 0 ] || {
-      echo "after $sig to the runner, $left sleeps from its sections are still running"
-      return 1
-    }
-  done
+  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  pid=$!
+  sleep 0.6
+  kill -TERM "$pid"
+  wait "$pid" 2> /dev/null
+  sleep 0.3
+  left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
+  [ "$left" -eq 0 ] || {
+    echo "after TERM to the runner, $left sleeps from its sections are still running"
+    return 1
+  }
 }
-check "INT or TERM to the runner stops its sections and what they started" signals_stop_sections
+check "TERM to the runner stops its sections and what they started" signals_stop_sections
 
 # The declaration check is its own section, declaring nothing, so it runs in
 # every commit. Inside 05-runner, which declares check.sh, a commit that renamed
@@ -588,3 +586,72 @@ declarations_run_in_the_hook() {
   }
 }
 check "a staged rename that strands a declared pattern fails the hook's tier" declarations_run_in_the_hook
+
+# What the second review found (2026-10-22): `set -m` gave each section the
+# terminal as stdin, so one that reads it stopped on SIGTTIN, and gave each
+# foreground child of the runner the terminal's SIGINT, so ^C missed the
+# runner. Both need a terminal: `script` and a pty from python provide one.
+section_stdin_is_not_the_terminal() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  command -v script > /dev/null || return 0
+  sections_repo "$tmp/r" '10-a:check "stdin is not a terminal" test ! -t 0'
+  out=$(cd "$tmp/r" && script -q /dev/null ./check.sh < /dev/null 2>&1 | tr -d '\r')
+  case "$out" in *"ok"*"stdin is not a terminal"*) ;; *)
+    echo "a section run from a terminal has the terminal as stdin: $out"
+    return 1
+    ;;
+  esac
+}
+check "a section run from a terminal does not get the terminal as stdin" section_stdin_is_not_the_terminal
+
+# ^C reaches the runner as the terminal sends it, to its foreground group.
+# One attempt hits the runner between two children about one time in six
+# (measured 2026-10-22 on the broken runner), so three go in, 0.4 s apart.
+ctrl_c_stops_sections() {
+  local tmp left
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
+  command -v python3 > /dev/null || return 0
+  sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true'
+  python3 -I - "$tmp/r" << 'PY'
+import os, pty, sys, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(sys.argv[1])
+    os.execv('/bin/bash', ['bash', './check.sh'])
+time.sleep(1.0)
+for _ in range(3):
+    os.write(fd, b'\x03')
+    time.sleep(0.4)
+PY
+  sleep 0.3
+  left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
+  [ "$left" -eq 0 ] || {
+    echo "after ^C from a terminal, $left sleeps from the sections are still running"
+    return 1
+  }
+}
+check "^C from a terminal stops the sections" ctrl_c_stops_sections
+
+# The status is the shell's: 128 plus the signal. TERM only: a process started
+# with & by a non-interactive shell ignores INT, so only a terminal's ^C (the
+# case above) reaches the runner's INT trap.
+signal_statuses() {
+  local tmp pid
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
+  sections_repo "$tmp/r" '10-a:sleep 31.7'
+  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  pid=$!
+  sleep 0.6
+  kill -TERM "$pid"
+  RC=0
+  wait "$pid" 2> /dev/null || RC=$?
+  [ "$RC" -eq 143 ] || {
+    echo "TERM to the runner: exit $RC, not 143"
+    return 1
+  }
+}
+check "TERM ends the runner with 143" signal_statuses
