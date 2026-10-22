@@ -91,6 +91,14 @@
     "seconds": {
       "type": "number",
       "minimum": 0
+    },
+    "dropped": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "paths the pass wrote that the repository ignores: dropped from its patch, never written (research R27)"
     }
   },
   "required": [

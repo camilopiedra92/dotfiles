@@ -179,13 +179,16 @@ class Pass:
         # entrypoint accepts only this shape (containers/worker/entrypoint.sh).
         self.token = "sdd-pass-" + secrets.token_urlsafe(32)
         self.admission = os.path.join(run.dir, "admissions", self.token + ".json")
+        self.answer = None
+        self.dropped = []
 
     # 1. Export
     def prepare(self, feature):
-        # The image is built by the workflow's first step, outside every
-        # pass's limit; a pass never builds it (FR-028).
+        # The image is built and checked by prepare-worker, which sdd-run
+        # start runs before the workflow, outside every pass's limit; a pass
+        # never builds it (FR-028).
         if not os.path.exists(os.path.join(self.run.dir, "worker.json")):
-            raise PassFailed("no worker image is recorded for this run; the workflow's prepare-worker step builds it first")
+            raise PassFailed("no worker image is recorded for this run; sdd-run start runs prepare-worker first")
         # The authority the egress proxy inspects registry traffic with: the
         # worker trusts it, or no registry is reachable (FR-031). Checked
         # before anything is committed or started.
@@ -209,15 +212,6 @@ class Pass:
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
             if r.returncode != 0:
                 raise PassFailed("extracting the export failed: " + r.stderr.decode(errors="replace").strip())
-        # Spec Kit's per-worktree state, which git archive leaves out since
-        # Spec Kit's own .gitignore ignores it: its scripts rewrite it on
-        # every run, so both trees carry the worktree's copy and the same
-        # content is no change (seen in the real run, 2026-10-21).
-        state = os.path.join(self.run.repo, ".specify", "feature.json")
-        if os.path.isfile(state) and self.landing(".specify/feature.json") == "an ignored path in the worktree":
-            for target in (self.baseline, self.export):
-                os.makedirs(os.path.join(target, ".specify"), exist_ok=True)
-                shutil.copy(state, os.path.join(target, ".specify", "feature.json"))
 
     # 3, 4. Container and limit
     def container(self, command, env, mounts, timeout):
@@ -241,8 +235,11 @@ class Pass:
             subprocess.run([rt, "stop", self.name], env=HOST_ENV, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, cwd=self.dir)
             proc.kill()
-            proc.communicate()
+            out, err = proc.communicate()
+            self.answer = ((out or b"") + (err or b"")).decode(errors="replace")[-20000:]
             raise PassFailed(f"{self.phase or self.kind}: stopped at its {timeout}-second limit; nothing applied")
+        # Until a result is parsed, the raw output is the answer to keep.
+        self.answer = (out + err).decode(errors="replace")[-20000:]
         return proc.returncode, out.decode(errors="replace"), err.decode(errors="replace")
 
     def proxy_url(self):
@@ -304,24 +301,45 @@ class Pass:
             if self.landing(path) == "an ignored path in the worktree":
                 os.remove(os.path.join(self.export, path))
                 dropped.append(path)
+        self.dropped += dropped
         if dropped:
             print("sdd-step: dropped, as the repository ignores them: " + ", ".join(dropped[:20])
                   + (" and %d more" % (len(dropped) - 20) if len(dropped) > 20 else ""), file=sys.stderr)
         return bool(dropped)
 
-    def same_local_state(self):
-        """Spec Kit's scripts rewrite .specify/feature.json on each run, in
-        their own format (pretty-printed, a trailing newline): the same
-        feature, written differently, is no change, so the export takes the
-        baseline's bytes back; another feature named there stays a change,
-        which the judge refuses (seen in the real run, 2026-10-21)."""
-        before = os.path.join(self.baseline, ".specify", "feature.json")
-        after = os.path.join(self.export, ".specify", "feature.json")
-        try:
-            if load(before) == load(after):
-                shutil.copy(before, after)
-        except (OSError, ValueError):
-            pass
+    def take_back_ticks(self, feature):
+        """Only the run marks tasks (FR-006): an implement pass's checkbox
+        changes in tasks.md go back to the baseline's, so a tick never skips
+        mark()'s conditions and a pass that only ticked boxes changed nothing.
+        The rest of the patch, tasks.md's other lines included, goes on: Spec
+        Kit's implement tells its agent to mark tasks, and refusing a whole
+        legitimate pass for it would be the wrong cost (US1 review, 2026-10-21).
+        Returns whether any checkbox was taken back."""
+        rel = os.path.join(feature, "tasks.md")
+        before, after = os.path.join(self.baseline, rel), os.path.join(self.export, rel)
+        if not os.path.isfile(after):
+            return False
+        task = re.compile(r"^(\s*-\s*\[)([ xX])(\]\s*(T\d+)\b.*)$")
+        states = {}
+        if os.path.isfile(before):
+            for line in open(before, encoding="utf-8", errors="surrogateescape").read().splitlines():
+                m = task.match(line)
+                if m:
+                    states[m.group(4)] = m.group(2)
+        text = open(after, encoding="utf-8", errors="surrogateescape").read()
+        lines, taken = text.split("\n"), []
+        for i, line in enumerate(lines):
+            m = task.match(line)
+            if m and m.group(2) != states.get(m.group(4), " "):
+                lines[i] = m.group(1) + states.get(m.group(4), " ") + m.group(3)
+                taken.append(m.group(4))
+        if not taken:
+            return False
+        with open(after, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write("\n".join(lines))
+        print("sdd-step: took back checkbox changes in %s (%s): only the run marks tasks" % (rel, ", ".join(taken)),
+              file=sys.stderr)
+        return True
 
     def isolated_env(self):
         # The bundle lives in the repository's .git, so a no-index diff run
@@ -415,7 +433,11 @@ class Pass:
         # Without --no-index, a tracked file an ignore rule matches is not
         # ignored, as it is not to git; "./" keeps a name like ":(exclude)x"
         # a name rather than pathspec magic.
-        r = subprocess.run([GIT, "-C", self.run.repo, *GIT_OFF, "check-ignore", "-q", "--", "./" + path],
+        # core.excludesFile empty: git still reads the owner's
+        # ~/.config/git/ignore with no global config, and that file says
+        # nothing about this repository (US1 review, proved).
+        r = subprocess.run([GIT, "-C", self.run.repo, *GIT_OFF, "-c", "core.excludesFile=",
+                            "check-ignore", "-q", "--", "./" + path],
                            env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.run.dir)
         if r.returncode == 0:
             return "an ignored path in the worktree"
@@ -509,7 +531,9 @@ def parse_result(agent, stdout):
             raise PassFailed("the agent was denied what its profile does not allow:\n  " + "\n  ".join(denied))
         return result.get("result", ""), result.get("structured_output"), {
             "total_cost_usd": result.get("total_cost_usd", 0), "modelUsage": result.get("modelUsage", {})}
-    last = None
+    # Each assistant message_end carries that response's own usage (pi 1.3.0
+    # docs/json.md): a pass's usage is their sum, its answer the last one's.
+    last, total = None, {"input": 0, "cached": 0, "output": 0}
     for line in stdout.splitlines():
         try:
             e = json.loads(line)
@@ -518,11 +542,14 @@ def parse_result(agent, stdout):
         m = e.get("message") or {}
         if e.get("type") == "message_end" and m.get("role") == "assistant":
             last = m
+            u = m.get("usage") or {}
+            total["input"] += u.get("input", 0)
+            total["cached"] += u.get("cacheRead", 0)
+            total["output"] += u.get("output", 0)
     if not last:
         raise PassFailed("pi returned no assistant message")
-    u = last.get("usage") or {}
     text = " ".join(c.get("text", "") for c in last.get("content", []) if c.get("type") == "text")
-    return text, None, {"input": u.get("input", 0), "cached": u.get("cacheRead", 0), "output": u.get("output", 0)}, last.get("model")
+    return text, None, total, last.get("model")
 
 
 def stage_outcome(run, feature, step, fields):
@@ -598,6 +625,11 @@ def run_agent(run, phase, implement=None):
             # Spec Kit's scripts name the feature from this, since the export
             # has no git branch to name it (contracts/pass.md, Steps 3).
             env["SPECIFY_FEATURE_DIRECTORY"] = "/work/" + feature
+            # Spec Kit's own switch for orchestrators (issue #4128): its
+            # scripts then write nothing into .specify/feature.json, which
+            # they otherwise rewrite on every run (seen in the real run,
+            # 2026-10-21). Only specify, which makes the feature, records it.
+            env["SPECIFY_FEATURE_NO_PERSIST"] = "1"
         hosts = ["anthropic" if row["agent"] == "claude" else "deepseek"]
         if implement:
             shutil.copy(os.path.join(run.dir, "check.json"), os.path.join(p.inputs, "check.json"))
@@ -615,11 +647,7 @@ def run_agent(run, phase, implement=None):
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         parsed = parse_result(row["agent"], out)
         text, structured, usage = parsed[0], parsed[1], parsed[2]
-        # Every agent's answer stays in the bundle, so the owner can read why
-        # a pass did what it did (seen in the real run, 2026-10-21).
-        os.makedirs(os.path.join(run.dir, "results"), exist_ok=True)
-        with open(os.path.join(run.dir, "results", p.id + ".md"), "w") as f:
-            f.write(text)
+        p.answer = text
         served = parsed[3] if len(parsed) > 3 else row["model"]
         run.usage({"event": "end", "phase": phase, "model": served, "effort": row["effort"], "usage": usage,
                    "exit": code})
@@ -627,9 +655,8 @@ def run_agent(run, phase, implement=None):
             raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
         if row["agent"] == "pi" and served != row["model"]:
             raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
-        p.same_local_state()
         changes = p.changes()
-        if p.drop_ignored(changes):
+        if p.drop_ignored(changes) | (bool(implement) and p.take_back_ticks(feature)):
             changes = p.changes()
         patch = p.patch() if changes else b""
         writes = row["writes"]
@@ -643,12 +670,7 @@ def run_agent(run, phase, implement=None):
             # the run writes it into the worktree after the apply, as Spec Kit
             # would (seen in the first real run, 2026-10-21).
             if p.landing(".specify/feature.json") == "an ignored path in the worktree":
-                before = os.path.join(p.baseline, ".specify", "feature.json")
-                after = os.path.join(p.export, ".specify", "feature.json")
-                if os.path.exists(before):
-                    shutil.copy(before, after)
-                else:
-                    os.remove(after)
+                os.remove(os.path.join(p.export, ".specify", "feature.json"))
                 local_state = {"feature_directory": feature}
                 changes = p.changes()
                 patch = p.patch() if changes else b""
@@ -659,7 +681,7 @@ def run_agent(run, phase, implement=None):
             place_outcome = stage_outcome(run, feature, row["schema"], structured)
         if implement:
             place_outcome = stage_outcome(run, feature, "implement", dict(
-                implement, model=served, commit=None, files=[c[2] for c in changes], usage=usage,
+                implement, model=served, commit=None, files=[c[2] for c in changes], dropped=p.dropped, usage=usage,
                 seconds=round(time.time() - started, 1)))
             keep_flags(run, flagged)
         commit = None
@@ -678,6 +700,13 @@ def run_agent(run, phase, implement=None):
         return {"changes": changes, "commit": commit, "usage": usage, "served": served, "flagged": flagged, "text": text,
                 "seconds": round(time.time() - started, 1), "row": row}
     finally:
+        # Every agent's answer stays in the bundle — its result's text, or
+        # whatever it printed when there was no result — so the owner can read
+        # why a pass did what it did (seen in the real run, 2026-10-21).
+        if p.answer is not None:
+            os.makedirs(os.path.join(run.dir, "results"), exist_ok=True)
+            with open(os.path.join(run.dir, "results", p.id + ".md"), "w") as f:
+                f.write(p.answer)
         p.cleanup()
 
 
@@ -711,21 +740,19 @@ def new_feature(p, changes):
 
 
 def feature_diff(run, feature):
-    """The feature's whole change, for the review: from the commit before the
-    feature first appeared — not this run's base, which `sdd-run start
-    --from` sets after an earlier run implemented it — to HEAD, without the
-    run's own records under .sdd/ (the real run, 2026-10-21: the reviewer saw
-    only metadata and marked nothing done)."""
-    first = run.git("log", "--reverse", "--format=%H", "--", feature).stdout.decode().split()
-    if first and run.git("rev-parse", "--verify", "-q", first[0] + "^", check=False).returncode == 0:
-        base = first[0] + "^"
-    else:
-        # The feature arrived with the root commit: diff from the empty tree.
-        base = run.git("hash-object", "-t", "tree", "/dev/null").stdout.decode().strip()
+    """The feature's own change, for the review: the commits the run made for
+    it — `<phase>: <feature> (`, `sdd: <feature> before `, `mark: <feature> (`
+    — as a patch series, oldest first, without the run's records under
+    <f>/.sdd/. Not a diff of the whole repository since the feature began:
+    unrelated commits interleaved with it, and other features, stay out (US1
+    review); and not this run's alone, since `sdd-run start --from` continues
+    a feature an earlier run implemented (the real run, 2026-10-21)."""
+    name = re.escape(os.path.basename(feature))
     # An exclude needs pathspec magic, which the run otherwise turns off.
     env = {k: v for k, v in HOST_ENV.items() if k != "GIT_LITERAL_PATHSPECS"}
-    r = subprocess.run([GIT, "-C", run.repo, *GIT_OFF, "diff", "--no-ext-diff", "--no-textconv", "--binary",
-                        base, "HEAD", "--", ".", f":(exclude){feature}/.sdd"],
+    r = subprocess.run([GIT, "-C", run.repo, *GIT_OFF, "log", "--reverse", "-p", "--binary", "--no-ext-diff",
+                        "--no-textconv", "-E", f"--grep=^[a-z-]+: {name} (\\(|before )",
+                        "--format=commit %H%n%s%n", "HEAD", "--", ".", f":(exclude){feature}/.sdd"],
                        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=run.dir)
     if r.returncode != 0:
         raise PassFailed("the review's diff failed: " + r.stderr.decode(errors="replace").strip())

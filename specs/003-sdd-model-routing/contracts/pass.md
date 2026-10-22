@@ -104,13 +104,16 @@ and no configuration an agent could have written runs during a run.
    (every pass, verify included: the authority the worker trusts for the
    registries; a pass refuses to start without it), `/bundle/profile.json` (the
    row's profile), `/bundle/check.json` (the implementer only) and,
-   for the review row, `/input/diff.patch`: the feature's whole change, from the
-   commit before the feature first appeared to `HEAD`, without the run's own
-   records under `<f>/.sdd/` (an earlier run may have implemented it: `sdd-run
-   start --from`), made on the host (Host git), which the export, having no
-   history, cannot show (FR-019).
-3. **Container**: the worker image (built by `prepare-worker`, the
-   workflow's first step), the export mounted alone at `/work`, the inputs
+   for the review row, `/input/diff.patch`: the feature's own change, the
+   commits the run made for it (`<phase>: <feature> (`, `sdd: <feature> before `,
+   `mark: <feature> (`) as a patch series, oldest first, without
+   `<f>/.sdd/` — unrelated commits and other features stay out, and an
+   earlier run's implementation (`sdd-run start --from`) is in — made on the
+   host (Host git), which the export, having no history, cannot show
+   (FR-019).
+3. **Container**: the worker image (built and checked by `prepare-worker`,
+   which `sdd-run start` runs before the workflow), the export mounted alone
+   at `/work`, the inputs
    above, a cache volume of the pass's own kind — `sdd-cache-implement-<run_id>`
    for implement passes, `sdd-cache-verify-<run_id>` for verify, never shared
    between the two, so nothing an implementer leaves in a cache is run by
@@ -126,7 +129,10 @@ and no configuration an agent could have written runs during a run.
    directory exists yet: Spec Kit's `create-new-feature.sh` numbers one in the
    export, and the judge accepts exactly one new directory under `specs/`
    (contracts/routing.md); for the other rows `SPECIFY_FEATURE_DIRECTORY` names
-   the feature, so Spec Kit's scripts need no git.
+   the feature, so Spec Kit's scripts need no git. Those rows also run with
+   `SPECIFY_FEATURE_NO_PERSIST=1`, Spec Kit's switch for orchestrators
+   (issue #4128): its scripts then leave `.specify/feature.json`, the
+   worktree's own state, alone; only specify records the feature there.
 4. **Limit**: the row's `timeout` bounds the agent's container (step 3); at
    the limit the container is stopped and the pass fails with nothing
    applied. The host steps around it, which run no agent, are bounded by the

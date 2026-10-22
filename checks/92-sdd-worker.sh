@@ -259,7 +259,7 @@ sdd_ep_runs_as_node() {
   sdd_ep_setup "$tmp"
   sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 \
     ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=$SDD_EP_TOKEN \
-    SPECIFY_FEATURE_DIRECTORY=/work/specs/001-x \
+    SPECIFY_FEATURE_DIRECTORY=/work/specs/001-x SPECIFY_FEATURE_NO_PERSIST=1 \
     ANTHROPIC_API_KEY=$secret DEEPSEEK_API_KEY=$secret GITHUB_TOKEN=$secret \
     -- claude -p "say hi" || {
     echo "failed with a valid environment: $(cat "$tmp/out")"
@@ -293,7 +293,7 @@ sdd_ep_runs_as_node() {
   }
   for want in ANTHROPIC_BASE_URL=http://192.168.70.2:8080 CLAUDE_CODE_OAUTH_TOKEN=$SDD_EP_TOKEN \
     HTTPS_PROXY="http://$SDD_EP_TOKEN@192.168.70.2:8080" HOME="$tmp/home" USER=node \
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 SPECIFY_FEATURE_DIRECTORY=/work/specs/001-x PYTHONDONTWRITEBYTECODE=1; do
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 SPECIFY_FEATURE_DIRECTORY=/work/specs/001-x PYTHONDONTWRITEBYTECODE=1 SPECIFY_FEATURE_NO_PERSIST=1; do
     grep -qx -- "$want" <<< "$args" || {
       echo "the command's environment lacks $want; setpriv got:"
       printf '%s\n' "$args"
@@ -318,7 +318,7 @@ sdd_ep_refuses() {
   sdd_ep_setup "$tmp"
   for case in CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-planted ANTHROPIC_BASE_URL=https://api.anthropic.com \
     ANTHROPIC_BASE_URL=http://192.168.70.3:8080 SDD_PASS_TOKEN=sk-ant-oat01-planted SDD_PASS_TOKEN= \
-    SPECIFY_FEATURE_DIRECTORY=/etc SPECIFY_FEATURE_DIRECTORY=/work/specs/../../etc \
+    SPECIFY_FEATURE_DIRECTORY=/etc SPECIFY_FEATURE_DIRECTORY=/work/specs/../../etc SPECIFY_FEATURE_NO_PERSIST=yes \
     CLAUDE_CODE_OAUTH_TOKEN=sdd-pass-anotherPASS0123456789; do
     if sdd_ep_run "$tmp" SDD_PROXY=192.168.70.2:8080 "$case" -- true; then
       echo "accepted $case"

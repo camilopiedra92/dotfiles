@@ -47,6 +47,7 @@ Spec Kit with the routed workflow (until `sdd-init` installs it, T050):
 specify init --here --integration claude
 specify workflow add <dotfiles>/claude/speckit/sdd-routed.yml
 git config --local sdd.check './check.sh'      # what verify runs, in the worker
+git add .specify .claude && git commit -m "spec kit"   # passes export HEAD, nothing untracked
 ```
 
 To implement on DeepSeek instead of Sonnet — DeepSeek's terms of service and
@@ -77,8 +78,9 @@ It stops at each checkpoint and prints the command that answers it:
   `analysis.md` and the checklist items the fresh checklist review left
   unchecked. Approving is your answer to implement's question whether to go on
   with unchecked items.
-- `review_done`: read `.sdd/review.json` and the check and automation changes
-  it lists; approving marks the tasks review found done.
+- `review_done`: read `.sdd/review.json`, and the check and automation
+  changes `.sdd/verify.json` lists; approving marks the tasks review found
+  done.
 
 Other stops say what answers them:
 
