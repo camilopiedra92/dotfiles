@@ -374,6 +374,28 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
     clean_after "secret in $where"
   done
 
+  # 7b. The review reads the feature's whole change since the feature began —
+  # not only this run's, which `sdd-run start --from` begins after an earlier
+  # run implemented it — and not the run's own records under .sdd/ (the real
+  # run, 2026-10-21: the reviewer saw only metadata and marked nothing done).
+  fresh || return 1
+  printf 'print(2)\n' > "$repo/src/app.py" && tgit commit -qam "implement: 001-probe (claude-sonnet-5-5)"
+  printf '{"run_id":"run1","pid":%s,"started":"x","base":"%s"}\n' "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
+  mkdir -p "$repo/$f/.sdd" && printf '{}\n' > "$repo/$f/.sdd/route.json"
+  # Inside the agent, the stand-in's mounts name where /input is.
+  {
+    printf 'seen=%s/seen-diff.patch\n' "$tmp/case"
+    cat << 'SH'
+for m in $(echo "$SDD_STANDIN_MOUNTS" | tr ";" " "); do
+  case $m in *:/input:ro) cp "${m%%:*}/diff.patch" "$seen" ;; esac
+done
+SH
+  } > "$sa/fixture/script"
+  result "reviewed" '{"findings":[],"done":["T001"]}'
+  out=$(pass agent review) || fail "review diff: failed: $out"
+  grep -qF "+print(2)" "$tmp/case/seen-diff.patch" 2> /dev/null || fail "review diff: the feature's implementation before this run is not in it"
+  grep -qF ".sdd/" "$tmp/case/seen-diff.patch" 2> /dev/null && fail "review diff: the run's own .sdd records are in it"
+  clean_after "review diff"
   # 8. Results: structured output to the row's outcome file with the common
   # fields, the result's text to result_to, a start and an end usage line.
   fresh || return 1

@@ -9,7 +9,7 @@ exports it to every step, and writes into it before any step runs:
 
 | File | What |
 |---|---|
-| `lock.json` | run id, `sdd-run`'s process id, its start time as `ps -o lstart=` prints it (FR-022), and `base`, the commit the run started from (the review's diff) |
+| `lock.json` | run id, `sdd-run`'s process id and its start time as `ps -o lstart=` prints it (FR-022) |
 | `optin.json` | the repository's opt-in as read at start (`sdd.implement`) |
 | `check.json` | the repository's check command as read at start (`sdd.check`) |
 | `routing.json` | the merged effective table, each value with its layer |

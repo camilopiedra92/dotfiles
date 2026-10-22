@@ -320,13 +320,11 @@ def new_run_id(root):
     raise Stop("could not find an unused run id")
 
 
-def lock(bundle, repo, base=None):
+def lock(bundle, repo):
     pid = os.getpid()
     started = host("/bin/ps", "-o", "lstart=", "-p", str(pid)).stdout.decode().strip()
-    old = load(os.path.join(bundle, "lock.json")) if os.path.exists(os.path.join(bundle, "lock.json")) else {}
     write_json(os.path.join(bundle, "lock.json"), {
-        "run_id": os.path.basename(bundle), "pid": pid, "started": started,
-        "base": base or old.get("base"), "repo": repo})
+        "run_id": os.path.basename(bundle), "pid": pid, "started": started, "repo": repo})
 
 
 def write_bundle(tools, repo, table):
@@ -335,8 +333,7 @@ def write_bundle(tools, repo, table):
     rid = new_run_id(root)
     bundle = os.path.join(root, rid)
     os.makedirs(os.path.join(bundle, "admissions"))
-    base = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-    lock(bundle, repo, base)
+    lock(bundle, repo)
     write_json(os.path.join(bundle, "tools.json"), tools)
     write_json(os.path.join(bundle, "optin.json"), {"implement": local_config(repo, "sdd.implement")})
     write_json(os.path.join(bundle, "check.json"), {"command": local_config(repo, "sdd.check")})

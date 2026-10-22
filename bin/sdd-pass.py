@@ -607,7 +607,7 @@ def run_agent(run, phase, implement=None):
             diff_dir = os.path.join(p.dir, "input")
             os.makedirs(diff_dir)
             with open(os.path.join(diff_dir, "diff.patch"), "wb") as f:
-                f.write(run.git("diff", "--no-ext-diff", "--no-textconv", "--binary", run.lock["base"], "HEAD").stdout)
+                f.write(feature_diff(run, feature))
             mounts.append(f"{diff_dir}:/input:ro")
         p.admit(hosts)
         run.usage({"event": "start", "phase": phase, "model": row["model"], "effort": row["effort"]})
@@ -708,6 +708,28 @@ def new_feature(p, changes):
     if named != {"feature_directory": made[0]}:
         raise PassFailed(f".specify/feature.json must name {made[0]} and nothing else")
     return made[0]
+
+
+def feature_diff(run, feature):
+    """The feature's whole change, for the review: from the commit before the
+    feature first appeared — not this run's base, which `sdd-run start
+    --from` sets after an earlier run implemented it — to HEAD, without the
+    run's own records under .sdd/ (the real run, 2026-10-21: the reviewer saw
+    only metadata and marked nothing done)."""
+    first = run.git("log", "--reverse", "--format=%H", "--", feature).stdout.decode().split()
+    if first and run.git("rev-parse", "--verify", "-q", first[0] + "^", check=False).returncode == 0:
+        base = first[0] + "^"
+    else:
+        # The feature arrived with the root commit: diff from the empty tree.
+        base = run.git("hash-object", "-t", "tree", "/dev/null").stdout.decode().strip()
+    # An exclude needs pathspec magic, which the run otherwise turns off.
+    env = {k: v for k, v in HOST_ENV.items() if k != "GIT_LITERAL_PATHSPECS"}
+    r = subprocess.run([GIT, "-C", run.repo, *GIT_OFF, "diff", "--no-ext-diff", "--no-textconv", "--binary",
+                        base, "HEAD", "--", ".", f":(exclude){feature}/.sdd"],
+                       env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=run.dir)
+    if r.returncode != 0:
+        raise PassFailed("the review's diff failed: " + r.stderr.decode(errors="replace").strip())
+    return r.stdout
 
 
 def implemented_before(run, feature):

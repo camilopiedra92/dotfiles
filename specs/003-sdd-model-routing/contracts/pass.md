@@ -104,8 +104,10 @@ and no configuration an agent could have written runs during a run.
    (every pass, verify included: the authority the worker trusts for the
    registries; a pass refuses to start without it), `/bundle/profile.json` (the
    row's profile), `/bundle/check.json` (the implementer only) and,
-   for the review row, `/input/diff.patch`: the diff from the run's base
-   commit to `HEAD`, made on the host (Host git), which the export, having no
+   for the review row, `/input/diff.patch`: the feature's whole change, from the
+   commit before the feature first appeared to `HEAD`, without the run's own
+   records under `<f>/.sdd/` (an earlier run may have implemented it: `sdd-run
+   start --from`), made on the host (Host git), which the export, having no
    history, cannot show (FR-019).
 3. **Container**: the worker image (built by `prepare-worker`, the
    workflow's first step), the export mounted alone at `/work`, the inputs
