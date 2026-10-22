@@ -20,8 +20,15 @@ selection and output there are unchanged.
 
 - File: `$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock`, per user.
   Its existence means nothing; only a live `flock(2)` on it does.
-- Held by: the runner's own shell, on descriptor 9, and no other process
-  once the sections start.
+- Held by: the runner's own shell, on descriptor 9. Each section's
+  subshell closes it before the section runs; the runner's own short
+  commands (its 20 ms poll's `sleep`, `find`, `cat`) inherit it. So no
+  process holding it can outlive the runner by more than the command in
+  flight: a child holding descriptor 9 delays the release only for its own
+  remaining life (R2), and git's fsmonitor daemon, which a run's git may
+  start, does not keep it (probed 2026-10-22: a shell holding the lock ran
+  `git status` with `core.fsmonitor` on, the daemon started, and the lock
+  was free once the shell exited).
 - Scope: every `check.sh` of this repository run by the user — any worktree,
   any clone, any flags.
 
@@ -46,6 +53,13 @@ exactly what the same run made alone prints.
 | lock cannot be opened or taken | 1 |
 
 All others are 004's.
+
+INT reaches a waiting run as a terminal's ^C, or as `kill -INT` to a run
+an interactive shell started. A run started with `&` by a non-interactive
+shell (a script, an agent's tool) ignores INT from its first instruction,
+and bash cannot trap a signal ignored on entry: INT does nothing to it, and
+TERM is what ends it (observed 2026-10-22, 06-lock's INT case without its
+python launcher).
 
 ## Environment
 
