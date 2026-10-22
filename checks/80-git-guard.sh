@@ -6,7 +6,7 @@
 #
 # The last case greps every section for calls that bypass this_repo_git.
 # covers: claude/git-guard.sh claude/settings.json claude/mcp.json install.sh
-# covers: drift.sh Brewfile uv-tools.txt macos/machines/* checks/*.sh
+# covers: drift.sh Brewfile uv-tools.txt macos/machines/* checks/[0-9][0-9]-*.sh
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A

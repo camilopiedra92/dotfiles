@@ -16,7 +16,7 @@ printf '\n%sRunner%s\n' "$DIM" "$OFF"
 
 # Three fake sections: 10-a covers a/* and checks/fixture/*, 20-b covers b/*,
 # b.txt and checks/*.sh (as a section that reads every section's text does,
-# and which also matches checks/lib/), 30-c declares nothing. Plus the
+# as the section that reads every section's text does), 30-c declares nothing. Plus the
 # runner's other inputs, so a change to each can be staged.
 runner_repo() {
   local dir=$1
@@ -25,10 +25,10 @@ runner_repo() {
   mkdir -p "$dir/checks/lib" "$dir/checks/fixture" "$dir/checks/data" \
     "$dir/githooks" "$dir/a" "$dir/b"
   printf '# covers: a/* checks/fixture/*\ncheck "a ran" true\n' > "$dir/checks/10-a.sh"
-  printf '# covers: b/*\n# covers: b.txt checks/*.sh\ncheck "b ran" true\n' > "$dir/checks/20-b.sh"
+  printf '# covers: b/*\n# covers: b.txt checks/[0-9][0-9]-*.sh\ncheck "b ran" true\n' > "$dir/checks/20-b.sh"
   printf 'check "c ran" true\n' > "$dir/checks/30-c.sh"
   echo 'helper() { :; }' > "$dir/checks/lib/helpers.sh"
-  for f in a/x a/z b.txt checks/fixture/f checks/data/f githooks/pre-commit; do
+  for f in a/x a/z b.txt checks/fixture/f checks/data/f checks/data/f.sh githooks/pre-commit; do
     echo one > "$dir/$f"
   done
   git -C "$dir" add -A
@@ -170,6 +170,80 @@ staged_section_edits() {
 }
 check "--staged runs an edited section, and every section when a declaration changes or a section comes or goes" staged_section_edits
 
+# What a review of the selection found (2026-10-22), each case red before its fix.
+staged_review_findings() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  runner_repo "$tmp/r"
+
+  # A section's body edit also selects the sections that read every section
+  # (20-b), not only itself: it continued past the pattern loop.
+  printf 'check "a also" true\n' >> "$tmp/r/checks/10-a.sh"
+  git -C "$tmp/r" add checks/10-a.sh
+  runner_run "$tmp/r" --staged
+  expect_ran "section body edit" "a b c" || return 1
+
+  # A declaration change inside a diff far larger than a pipe buffer: a
+  # `git diff | grep -q` dies of SIGPIPE under pipefail and misses it. In
+  # 20-b, because there "a declaration changed" (every section) and "a body
+  # changed" (20-b and what has none) differ; in 10-a they would not.
+  git -C "$tmp/r" reset -q --hard
+  sed -i '' 's|^# covers: b.txt |# covers: b.md |' "$tmp/r/checks/20-b.sh"
+  awk 'BEGIN { for (i = 0; i < 8000; i++) print "# padding line " i " of a large diff" }' >> "$tmp/r/checks/20-b.sh"
+  git -C "$tmp/r" add checks/20-b.sh
+  runner_run "$tmp/r" --staged
+  expect_ran "large diff" "a b c" || return 1
+
+  # A repository whose config colours every diff.
+  git -C "$tmp/r" reset -q --hard
+  git -C "$tmp/r" config color.diff always
+  sed -i '' 's|^# covers: b.txt |# covers: b.md |' "$tmp/r/checks/20-b.sh"
+  git -C "$tmp/r" add checks/20-b.sh
+  runner_run "$tmp/r" --staged
+  expect_ran "coloured diff" "a b c" || return 1
+  git -C "$tmp/r" config --unset color.diff
+
+  # `checks/[0-9][0-9]-*.sh` is a section; a .sh in a subdirectory is not, and
+  # nobody declares it, so it selects every section.
+  git -C "$tmp/r" reset -q --hard
+  echo '# touched' >> "$tmp/r/checks/data/f.sh"
+  git -C "$tmp/r" add checks/data/f.sh
+  runner_run "$tmp/r" --staged
+  expect_ran "script in a subdirectory" "a b c" || return 1
+}
+check "--staged: a section edit reaches the sections that read it, a large or coloured diff hides no declaration, a nested script is no section" staged_review_findings
+
+# A scratch directory that cannot be made is said, in both modes. macOS's
+# mktemp falls back to its own directory when TMPDIR is unusable (observed
+# 2026-10-22), so the failure is a stub answering 1.
+runner_without_scratch() {
+  local tmp mode
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  runner_repo "$tmp/r"
+  echo two > "$tmp/r/a/x"
+  git -C "$tmp/r" add a/x
+  mkdir "$tmp/bin"
+  printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/mktemp"
+  chmod +x "$tmp/bin/mktemp"
+  for mode in "" --staged; do
+    RC=0
+    # shellcheck disable=SC2086  # $mode is empty or one flag
+    OUT=$(cd "$tmp/r" && PATH="$tmp/bin:$PATH" ./check.sh $mode 2>&1) || RC=$?
+    [ "$RC" -ne 0 ] || {
+      echo "no scratch directory${mode:+ ($mode)}: exit 0"
+      return 1
+    }
+    case "$OUT" in *"cannot create a temporary"*) ;; *)
+      echo "no scratch directory${mode:+ ($mode)}: no reason given, got: $OUT"
+      return 1
+      ;;
+    esac
+  done
+}
+check "a run that cannot make its scratch directory says so" runner_without_scratch
+
 staged_paths_edge_cases() {
   local tmp
   tmp=$(mktemp -d) || return 1
@@ -228,7 +302,7 @@ staged_failure_fails() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
   runner_repo "$tmp/r"
-  printf '# covers: b/*\n# covers: b.txt checks/*.sh\ncheck "b ran" false\n' > "$tmp/r/checks/20-b.sh"
+  printf '# covers: b/*\n# covers: b.txt checks/[0-9][0-9]-*.sh\ncheck "b ran" false\n' > "$tmp/r/checks/20-b.sh"
   git -C "$tmp/r" -c user.name=t -c user.email=t@t commit -qam "b fails"
   echo two > "$tmp/r/b.txt"
   git -C "$tmp/r" add b.txt

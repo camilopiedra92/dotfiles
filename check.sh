@@ -6,7 +6,7 @@
 # stop trusting either one. CI installs what is missing and then calls this
 # file, so a green tick means exactly what a clean run here means.
 #
-# Usage:  ./check.sh [--strict]
+# Usage:  ./check.sh [--strict] [--staged]
 #
 # This file is the runner: arguments, strict mode, the helpers every check
 # shares, and the verdict. The checks are in checks/, one file per area, run in
@@ -139,7 +139,10 @@ SECTIONS=(checks/*.sh)
 # NUL-separated, which a command substitution cannot hold.
 select_staged() {
   local list status path i p hit
-  list=$(mktemp) || return 1
+  list=$(mktemp) || {
+    echo "check.sh: cannot create a temporary file for the staged paths" >&2
+    return 1
+  }
   if ! this_repo_git diff --cached --name-status --no-renames -z > "$list"; then
     ALL="the staged paths could not be read"
     rm -f "$list"
@@ -154,19 +157,21 @@ select_staged() {
         ALL="$path is staged"
         break
         ;;
-      checks/*/*) ;;
-      checks/*.sh)
+      checks/[0-9][0-9]-*.sh)
         hit=
         for i in "${!SECTIONS[@]}"; do
           [ "${SECTIONS[i]}" = "$path" ] && hit=$i
         done
+        # A declaration is compared as the two versions' lines, not read out
+        # of a diff: `git diff | grep -q` dies of SIGPIPE under pipefail
+        # once the diff outgrows a pipe buffer, and a coloured diff hides it.
         if [ "$status" = A ] || [ "$status" = D ] || [ -z "$hit" ] ||
-          this_repo_git diff --cached --no-renames -U0 -- "$path" | grep -q '^[-+]# covers:'; then
+          [ "$(this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
           ALL="$path is staged"
           break
         fi
+        # The section itself, and below, whatever declares it as a path.
         PICKED[hit]=1
-        continue
         ;;
     esac
     # Globbing is off while the patterns are split: `macos/*` expanded
@@ -239,7 +244,10 @@ done
 # of the sections' statuses, so the verdict and strictness are a sequential
 # run's too. bash 3.2 has no `wait -n`, so the loop polls; waiting on the
 # oldest section instead would leave CPUs idle behind a slow one.
-RUN=$(mktemp -d) || exit 1
+RUN=$(mktemp -d) || {
+  echo "check.sh: cannot create a temporary directory for the sections' output" >&2
+  exit 1
+}
 trap 'rm -rf "$RUN"' EXIT
 JOBS=$(sysctl -n hw.ncpu) || JOBS=1
 
