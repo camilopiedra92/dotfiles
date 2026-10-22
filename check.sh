@@ -134,8 +134,22 @@ if [ -z "${CHECK_SH_RUN:-}" ]; then
     else
       echo "check.sh: waiting for another run to finish" >&2
     fi
+    # The wait is a background lockf the runner `wait`s for, not a foreground
+    # one: bash defers a trapped signal until its foreground child returns,
+    # and `wait` returns as soon as one arrives (research R3). The lockf goes
+    # with the runner: left behind, it would take the turn when the holder
+    # ends (06-lock, "TERM while waiting", red that way 2026-10-22). It locks
+    # the open file it shares with this shell, so this shell holds the turn
+    # once it has exited. The traps are set first, so no signal lands between
+    # the start and the trap; the runner's own come later, with the sections.
+    lock_waiter=''
+    trap 'kill "$lock_waiter" 2> /dev/null; exit 130' INT
+    trap 'kill "$lock_waiter" 2> /dev/null; exit 143' TERM
+    lockf -s 9 &
+    lock_waiter=$!
     lock_status=0
-    lockf -s 9 || lock_status=$?
+    wait "$lock_waiter" || lock_status=$?
+    trap - INT TERM
   fi
   [ "$lock_status" -eq 0 ] || {
     echo "check.sh: cannot take the run lock $lock" >&2

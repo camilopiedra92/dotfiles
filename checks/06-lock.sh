@@ -416,6 +416,121 @@ lock_old_record_is_not_a_lock() {
 }
 check "an old record is not a lock" lock_old_record_is_not_a_lock
 
+# lock_await_waiting <prefix>: waits, up to 5 s, for the run writing
+# <prefix>.err to say it is waiting.
+lock_await_waiting() {
+  local tries=0
+  until grep -q '^check.sh: waiting' "$1.err" 2> /dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 100 ] || return 1
+    sleep 0.05
+  done
+}
+
+# US3 AS1 and AS3, FR-005, SC-003: TERM to a waiting run, as an agent's tool
+# sends it to the runner alone. The lockf it waits through must go with it:
+# left behind, it would take the turn when the holder ends.
+lock_term_while_waiting() {
+  local tmp a b waiter
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 1.5
+  lock_repo "$tmp/b" B 0.1
+  lock_repo "$tmp/c" C 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  lock_await "A start" || return 1
+  lock_start "$tmp/b" "$tmp/B"
+  b=$LOCK_PID
+  lock_await_waiting "$tmp/B" || {
+    echo "B never said it was waiting"
+    return 1
+  }
+  waiter=$(pgrep -P "$b" -x lockf)
+  [ -n "$waiter" ] || {
+    echo "B waits through no lockf of its own"
+    return 1
+  }
+  kill -TERM "$b"
+  within 1 "$b" || {
+    echo "B did not end within 1 s of TERM"
+    return 1
+  }
+  lock_expect B "exit" 143 "$RC" || return 1
+  ! kill -0 "$waiter" 2> /dev/null || {
+    echo "B's lockf ($waiter) outlived B"
+    return 1
+  }
+  within 3 "$a" && lock_expect A "exit" 0 "$RC" || return 1
+  lock_expect log "A whole, nothing of B" "A start|A end|" "$(lock_log)" || return 1
+  lock_start "$tmp/c" "$tmp/C"
+  within 2 "$LOCK_PID" && lock_expect C "exit" 0 "$RC" || return 1
+  lock_expect "C's stderr" "nothing" "" "$(cat "$tmp/C.err")"
+}
+check "TERM while waiting ends the run without its turn" lock_term_while_waiting
+
+# US3 AS2: ^C from a terminal, which sends INT to the whole foreground group,
+# the runner and whatever it waits through. The pattern of 05-runner's
+# ctrl_c_stops_sections: python's pty.fork gives the run a terminal.
+lock_ctrl_c_while_waiting() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  command -v python3 > /dev/null || return 0
+  lock_repo "$tmp/a" R 0.1
+  lockf -k "$LOCK_FILE" sleep 5 &
+  echo "$!" >> "$tmp/pids"
+  out=$(
+    env -u CHECK_SH_RUN PATH="$tmp/bin:$PATH" python3 -I - "$tmp/a" << 'PY'
+import os, pty, select, signal, sys, time
+pid, fd = pty.fork()
+if pid == 0:
+    # a process started with & by a non-interactive shell ignores INT, and exec keeps that
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    os.chdir(sys.argv[1])
+    os.execv('/bin/bash', ['bash', './check.sh'])
+seen = b''
+end = time.time() + 5
+while b'waiting' not in seen and time.time() < end:
+    if select.select([fd], [], [], 0.05)[0]:
+        try:
+            seen += os.read(fd, 4096)
+        except OSError:
+            break
+if b'waiting' not in seen:
+    print('the run never said it was waiting: %r' % seen)
+    os.kill(pid, 9)
+    sys.exit(1)
+os.write(fd, b'\x03')
+end = time.time() + 1
+done = 0
+while time.time() < end:
+    if select.select([fd], [], [], 0.05)[0]:
+        try:
+            os.read(fd, 4096)
+        except OSError:
+            pass
+    done, status = os.waitpid(pid, os.WNOHANG)
+    if done:
+        break
+if not done:
+    print('the run was still waiting 1 s after ^C')
+    os.kill(pid, 9)
+    sys.exit(1)
+if not (os.WIFEXITED(status) and os.WEXITSTATUS(status) == 130):
+    print('the run ended with wait status %d, not exit 130' % status)
+    sys.exit(1)
+PY
+  ) || {
+    echo "^C while waiting: $out"
+    return 1
+  }
+  lock_expect log "no section run" "" "$(lock_log)"
+}
+check "^C while waiting ends the run with 130" lock_ctrl_c_while_waiting
+
 # Last: the real lock as it was before the first case.
 lock_real_untouched() {
   lock_expect "$LOCK_REAL" "untouched by the cases" "$LOCK_REAL_BEFORE" "$(lock_real_state)"
