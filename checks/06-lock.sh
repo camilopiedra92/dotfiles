@@ -17,6 +17,23 @@
 # an overlap shows as interleaved lines, so no clock is read.
 printf '\n%sRun lock%s\n' "$DIM" "$OFF"
 
+# The real lock, where the system puts it (getconf by its path, so no stub on
+# PATH can rename it). No case may reach it: inside a run, a fixture that did
+# would wait on the run executing it until a watchdog fired, and outside one
+# it would take the lock and write its record. Its state is read here, before
+# the cases, and compared after them, at the end of this file. Inside a
+# top-level run nobody else writes it meanwhile: this run holds it.
+LOCK_REAL=$(/usr/bin/getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock
+lock_real_state() {
+  if [ -e "$LOCK_REAL" ]; then
+    stat -f 'inode %d:%i, modified %m, changed %c' "$LOCK_REAL"
+    cat "$LOCK_REAL"
+  else
+    echo absent
+  fi
+}
+LOCK_REAL_BEFORE=$(lock_real_state)
+
 # lock_env <tmp>: the stub getconf in <tmp>/bin, answering <tmp>/lockdir/ for
 # the per-user temporary directory and passing anything else to the real one.
 # Sets LOCK_TMP, read by the helpers below.
@@ -132,8 +149,8 @@ lock_waits_across_repositories() {
   }
   lock_start "$tmp/b" "$tmp/B"
   b=$LOCK_PID
-  within 10 "$a" && lock_expect A "exit" 0 "$RC" || return 1
-  within 10 "$b" && lock_expect B "exit" 0 "$RC" || return 1
+  within 3 "$a" && lock_expect A "exit" 0 "$RC" || return 1
+  within 2 "$b" && lock_expect B "exit" 0 "$RC" || return 1
   lock_expect log "no overlap" "A start|A end|B start|B end|" "$(lock_log)" || return 1
   lock_expect "B's stderr" "one waiting line" \
     "check.sh: waiting for the run of pid $a in $tmp/a to finish" "$(cat "$tmp/B.err")"
@@ -155,14 +172,14 @@ lock_waited_output_is_unchanged() {
     lock_start "$tmp/a" "$tmp/A"
     lock_await "A start" || return 1
     lock_start "$tmp/b" "$tmp/B-waited"
-    within 10 "$LOCK_PID" || return 1
+    within 3 "$LOCK_PID" || return 1
     waited_rc=$RC
     [ -s "$tmp/B-waited.err" ] || {
       echo "$verdict: B did not wait, so nothing is compared"
       return 1
     }
     lock_start "$tmp/b" "$tmp/B-alone"
-    within 10 "$LOCK_PID" || return 1
+    within 2 "$LOCK_PID" || return 1
     lock_expect "$verdict" "the exit status alone" "$RC" "$waited_rc" || return 1
     lock_expect "$verdict" "the output alone" "$(cat "$tmp/B-alone.out")" "$(cat "$tmp/B-waited.out")" || return 1
   done
@@ -181,8 +198,8 @@ lock_is_the_machines() {
   lock_await "R start" || return 1
   lock_start "$tmp/a" "$tmp/second"
   b=$LOCK_PID
-  within 10 "$a" && lock_expect first "exit" 0 "$RC" || return 1
-  within 10 "$b" && lock_expect second "exit" 0 "$RC" || return 1
+  within 3 "$a" && lock_expect first "exit" 0 "$RC" || return 1
+  within 2 "$b" && lock_expect second "exit" 0 "$RC" || return 1
   lock_expect log "no overlap" "R start|R end|R start|R end|" "$(lock_log)" || return 1
   lock_expect "second's stderr" "one waiting line" \
     "check.sh: waiting for the run of pid $a in $tmp/a to finish" "$(cat "$tmp/second.err")"
@@ -223,7 +240,7 @@ lock_waiters_go_one_at_a_time() {
     pids+=("$LOCK_PID")
   done
   for pid in "${pids[@]}"; do
-    within 15 "$pid" && lock_expect "$pid" "exit" 0 "$RC" || return 1
+    within 3 "$pid" && lock_expect "$pid" "exit" 0 "$RC" || return 1
   done
   log=$(lock_log)
   # Four runs, each start followed at once by its own end.
@@ -276,7 +293,7 @@ lock_unrecorded_holder() {
     sleep 0.05
   done
   lock_start "$tmp/a" "$tmp/R"
-  within 10 "$LOCK_PID" && lock_expect R "exit" 0 "$RC" || return 1
+  within 3 "$LOCK_PID" && lock_expect R "exit" 0 "$RC" || return 1
   lock_expect "R's stderr" "the line without details" \
     "check.sh: waiting for another run to finish" "$(cat "$tmp/R.err")" || return 1
   lock_expect log "R after the holder" "H end|R start|R end|" "$(lock_log)"
@@ -298,14 +315,14 @@ lock_cannot_be_taken() {
   : > "$tmp/notadir"
   printf '#!/bin/sh\necho "%s/notadir/"\n' "$tmp" > "$tmp/bin/getconf"
   lock_start "$tmp/a" "$tmp/open"
-  within 5 "$LOCK_PID" || return 1
+  within 2 "$LOCK_PID" || return 1
   lock_expect open "exit" 1 "$RC" || return 1
   lock_expect "open's stderr" "the line naming the lock" \
     "check.sh: cannot take the run lock $tmp/notadir/dotfiles-check.lock" "$(cat "$tmp/open.err")" || return 1
   cp "$tmp/getconf" "$tmp/bin/getconf"
   cp "$tmp/lockf" "$tmp/bin/lockf"
   lock_start "$tmp/a" "$tmp/lockf"
-  within 5 "$LOCK_PID" || return 1
+  within 2 "$LOCK_PID" || return 1
   lock_expect lockf "exit" 1 "$RC" || return 1
   lock_expect "lockf's stderr" "the line naming the lock" \
     "check.sh: cannot take the run lock $LOCK_FILE" "$(cat "$tmp/lockf.err")" || return 1
@@ -326,7 +343,7 @@ lock_nested_run_is_part_of_it() {
   sections_repo "$tmp/outer" "10-a:inner_err=\$(cd '$tmp/inner' && ./check.sh 2>&1 > /dev/null)
 check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
   lock_start "$tmp/outer" "$tmp/outer"
-  within 10 "$LOCK_PID" || {
+  within 3 "$LOCK_PID" || {
     echo "the outer run did not end: its nested run waited for it"
     return 1
   }
@@ -336,3 +353,71 @@ check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
   }
 }
 check "a run started inside a run does not wait for it" lock_nested_run_is_part_of_it
+
+# US2 AS1, SC-002: SIGKILL leaves no clean-up step run, and the next run still
+# starts at once. What A's section was sleeping on lives on; lock_cleanup
+# ends it.
+lock_killed_run_frees_the_turn() {
+  local tmp a
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 5
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  lock_await "A start" || return 1
+  kill -KILL "$a"
+  wait "$a" 2> /dev/null
+  lock_start "$tmp/b" "$tmp/B"
+  within 2 "$LOCK_PID" || {
+    echo "B was still waiting 2 s after A was killed"
+    return 1
+  }
+  lock_expect B "exit" 0 "$RC" || return 1
+  lock_expect "B's stderr" "nothing" "" "$(cat "$tmp/B.err")"
+}
+check "a run killed outright frees the turn" lock_killed_run_frees_the_turn
+
+# US2 AS2, FR-004: A's section leaves a sleep running and A ends; the sleep
+# is not the run.
+lock_leftover_is_not_the_run() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 0.1 "sh -c 'echo \$\$ >> \"$tmp/pids\"; exec sleep 5' > /dev/null 2>&1 &"
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  within 2 "$LOCK_PID" && lock_expect A "exit" 0 "$RC" || return 1
+  lock_start "$tmp/b" "$tmp/B"
+  within 2 "$LOCK_PID" || {
+    echo "B was still waiting 2 s after A ended, behind what A's section left running"
+    return 1
+  }
+  lock_expect B "exit" 0 "$RC" || return 1
+  lock_expect "B's stderr" "nothing" "" "$(cat "$tmp/B.err")"
+}
+check "what a section leaves running is not the run" lock_leftover_is_not_the_run
+
+# US2 AS3: a record nobody holds, however old, is not a lock.
+lock_old_record_is_not_a_lock() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 0.1
+  echo "99999 /nowhere" > "$LOCK_FILE"
+  touch -t 202001010000 "$LOCK_FILE"
+  lock_start "$tmp/a" "$tmp/A"
+  within 2 "$LOCK_PID" || return 1
+  lock_expect A "exit" 0 "$RC" || return 1
+  lock_expect "A's stderr" "nothing" "" "$(cat "$tmp/A.err")"
+}
+check "an old record is not a lock" lock_old_record_is_not_a_lock
+
+# Last: the real lock as it was before the first case.
+lock_real_untouched() {
+  lock_expect "$LOCK_REAL" "untouched by the cases" "$LOCK_REAL_BEFORE" "$(lock_real_state)"
+}
+check "no case reached the real lock" lock_real_untouched

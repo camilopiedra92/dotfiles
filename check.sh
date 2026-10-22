@@ -315,6 +315,17 @@ JOBS=$(sysctl -n hw.ncpu) || JOBS=1
 # section stopped early -- an `exit`, a `return`, a syntax error, an unset
 # variable under set -u -- which is a failure even when the status says 0.
 run_section() {
+  # Only the runner's own shell holds the run lock (descriptor 9, "One run at
+  # a time" above): flock belongs to the open file, so any process that
+  # inherited the descriptor keeps the turn while it lives. Probed 2026-10-22
+  # (research R2): a child holding it kept the lock after its parent's
+  # SIGKILL, one started after `exec 9>&-` did not. Closed here, at the top of
+  # the background subshell this function runs in, and not only in the
+  # section's own subshell below: this one waits for the section, so a runner
+  # killed outright would otherwise leave it holding the turn as long as the
+  # section ran (06-lock, "a run killed outright frees the turn", red that
+  # way). A no-op in a nested run, which never opened it.
+  exec 9>&-
   # The section runs from a copy of its own name with the marker appended, so
   # a `return` or a syntax error, which end a sourced file quietly with status
   # 0, leave the marker unwritten like an `exit` does.
