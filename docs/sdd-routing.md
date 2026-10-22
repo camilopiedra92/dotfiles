@@ -92,11 +92,14 @@ Other stops say what answers them:
   `sdd-run resume <id>` runs it again.
 - A run whose process died cannot be resumed (Spec Kit refuses a run it still
   reads as running): `sdd-run start --from specs/<feature>` starts a new run
-  on that feature, skipping the phases already finished.
+  on that feature, skipping the phases already finished; one that died before
+  its specify made a feature is started anew from its description.
 
 One run at a time in a worktree: `start` refuses while another run there is
-paused, stopped or running, and names the commands that end it. A run is
-answered from the worktree it started in.
+paused, stopped or running — still starting included — and names the commands
+that end it. A run is answered from the worktree it started in, and works on
+the feature its own specify made or `--from` named, never on one a pointer
+left by an earlier run names (`.specify/feature.json` is the worktree's).
 
 The run's own files are in its bundle, `$(git rev-parse --git-common-dir)/sdd/<id>/`:
 the frozen routing table, profiles and brief, the code the run executes

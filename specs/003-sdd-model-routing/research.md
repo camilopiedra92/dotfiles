@@ -894,6 +894,39 @@ it would only refuse, not keep the run running; reading the feature from the
 bundle in every step instead of Spec Kit's pointer — Spec Kit's own scripts,
 inside the agents, read the pointer, so both must agree anyway.
 
+**Second round** (the US1 review, 2026-10-22). *Finding*: `report()` pinned
+whatever `.specify/feature.json` named at its first call; in a worktree a
+feature had run in before, a specify that failed before writing the pointer
+pinned the old feature, wrote the run's `routing.json` into it, and the
+resume after specify refused the run's own feature (reproduced on check 95's
+stand-ins and on the real engine, check 96). *Decision*: the bundle's
+`feature.json` has two writers — `start --from`, and the specify pass, which
+writes it beside the pointer once its change is applied (Spec Kit's
+`create-new-feature.sh` writes the pointer only when it makes a feature; the
+pass is the one place that makes it in a run) — and `sdd-run` only reads it:
+`routing.json` goes into that feature, and a dead run's advice names it.
+`start` also refuses while another run's process is alive, whatever Spec Kit
+holds for it. *Rejected*: pinning at `report()` a pointer that differs from
+the one `start` found — it infers who moved the pointer instead of being told
+by the one writer, and would pin a pointer moved by hand while the run paused
+before specify.
+
+*Recorded, not fixed* (LOW, same review):
+- `pin_feature` runs before `write_bundle`, `cleanup` and `prepare-worker`,
+  so a failure there leaves the pointer moved to `--from`'s feature with no
+  run to show for it; harmless to Spec Kit, which reads it as a switch of
+  feature, but not undone.
+- Ticks are taken back only for implement passes (`sdd-pass.py`
+  `take_back_ticks`), while the `tasks` and `converge` rows also write
+  `tasks.md` (`routing.yml`): an agent there could tick a task the review has
+  not found done. Not fixed: the review's own `done` list is what marks tasks
+  at `review_done`, and those rows author the task list itself.
+- Unsettled: a repository whose committed `.specify/scripts` predate
+  `SPECIFY_FEATURE_NO_PERSIST` (#4128) would have its scripts rewrite the
+  pointer in every non-specify pass, which the pass then refuses as a write
+  outside its row; only the host CLI's version (≥ 1.2.2) is checked, not the
+  scripts the repository carries. Not tested.
+
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 
 **Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the

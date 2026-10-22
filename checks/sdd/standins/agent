@@ -36,6 +36,8 @@ profile = os.path.join(mounts.get("/bundle", "/nonexistent"), "profile.json")
 print(json.dumps({"agent": os.path.basename(sys.argv[2]), "argv": sys.argv[3:], "env": dict(os.environ), "stdin": sys.argv[1],
                   "profile": open(profile).read() if os.path.exists(profile) else None}))
 ' "$stdin" "$0" "$@" >> "$dir/agents.jsonl"
+# fixture/say: printed before anything else, as an agent that times out has said.
+[ -f "$fx/say" ] && cat "$fx/say"
 [ -f "$fx/sleep" ] && sleep "$(cat "$fx/sleep")"
 [ -d "$fx/edits" ] && cp -R "$fx/edits/." .
 if [ -f "$fx/delete" ]; then

@@ -493,6 +493,14 @@ def feature_dir(repo):
     return None
 
 
+def pinned_feature(bundle):
+    """The feature the bundle records the run working on, or None yet."""
+    try:
+        return load(os.path.join(bundle, "feature.json"))["feature_directory"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def step_name(at):
     """The workflow step an engine step id is a pass of. Spec Kit names a
     step's first pass by its bare id and later ones `<loop>:<step>:<n>`, nested
@@ -521,12 +529,12 @@ def step_message(state, at):
 def report(tools, bundle, repo, code):
     """What the owner sees when Spec Kit exits, and the bundle's record."""
     rid = os.path.basename(bundle)
-    feature = feature_dir(repo)
-    if feature and not os.path.exists(os.path.join(bundle, "feature.json")):
-        # The feature this run works on, once specify made it or --from named
-        # it: a resume refuses a worktree pointing elsewhere.
-        write_json(os.path.join(bundle, "feature.json"), {"feature_directory": feature})
-    if feature:
+    # The feature this run works on, as the bundle records it: written by
+    # start --from, or by this run's specify pass with the pointer. Never
+    # the worktree's pointer as found here, which an earlier run may have
+    # left (the US1 review's second round, research R28).
+    feature = pinned_feature(bundle)
+    if feature and os.path.isdir(os.path.join(repo, feature)):
         record = os.path.join(repo, feature, ".sdd", "routing.json")
         if not os.path.exists(record):
             os.makedirs(os.path.dirname(record), exist_ok=True)
@@ -610,6 +618,8 @@ def start(args):
     if from_dir:
         pin_feature(repo, from_dir)
     rid, bundle = write_bundle(tools, repo, table)
+    if from_dir:
+        write_json(os.path.join(bundle, "feature.json"), {"feature_directory": from_dir})
     # From here on the run's own frozen copies (research R28).
     tools = load(os.path.join(bundle, "tools.json"))
     try:
@@ -633,7 +643,8 @@ def start(args):
 def unfinished_here(tools, repo):
     """One run at a time in a worktree: Spec Kit's feature.json, which every
     phase reads, is the worktree's, and a second run would move it under the
-    first. A run whose process died while running is the cleanup's to finish,
+    first. A run whose process is alive blocks, whatever Spec Kit holds for
+    it; a run whose process died while running is the cleanup's to finish,
     not a blocker; one Spec Kit ended (completed, or rejected at a checkpoint)
     before sdd-run could record it is finished here."""
     root = os.path.join(common_dir(repo), "sdd")
@@ -646,13 +657,19 @@ def unfinished_here(tools, repo):
         if os.path.exists(os.path.join(bundle, "finished.json")) or \
                 os.path.realpath(lock_doc.get("repo", "")) != os.path.realpath(repo):
             continue
+        # A live process blocks whatever the state: before Spec Kit holds
+        # any (cleanup, prepare-worker, the proxy starting), and while it
+        # ends a run sdd-run has yet to record.
+        if alive(lock_doc):
+            raise Stop(f"run {rid} of this worktree is running (process {lock_doc.get('pid')}): "
+                       f"let it pause or finish, or stop it with Ctrl-C in its terminal")
         state = run_state(repo, rid)
         status, at = state.get("status"), state.get("current_step_id")
         if status == "completed":
             finish(bundle, "completed")
         elif status == "aborted":
             finish(bundle, "rejected")
-        elif status in ("paused", "failed") or (status == "running" and alive(lock_doc)):
+        elif status in ("paused", "failed"):
             raise Stop(f"run {rid} of this worktree is not finished ({status} at {at}): "
                        f"sdd-run resume {rid}, or sdd-run abort {rid}")
 
@@ -704,8 +721,7 @@ def resume(args):
     prerequisites(tools, repo, starting=False)
     if os.path.exists(os.path.join(bundle, "finished.json")):
         raise Stop(f"run {rid} is finished ({load(os.path.join(bundle, 'finished.json')).get('outcome')})")
-    pinned = load(os.path.join(bundle, "feature.json"))["feature_directory"] \
-        if os.path.exists(os.path.join(bundle, "feature.json")) else None
+    pinned = pinned_feature(bundle)
     if pinned and feature_dir(repo) != pinned:
         raise Stop(f"run {rid} works on {pinned}, but this worktree's .specify/feature.json names "
                    f"{feature_dir(repo)}: point it back at {pinned} (or sdd-run abort {rid})")
@@ -714,10 +730,14 @@ def resume(args):
     if status == "running":
         if alive(load(os.path.join(bundle, "lock.json"))):
             raise Stop(f"run {rid} is running")
-        feature = feature_dir(repo)
-        left = ", ".join(from_inputs_left(repo, feature)) if feature else "every phase"
+        # The run's own feature, never a pointer an earlier run left: before
+        # specify made one, there is nothing to start from.
+        if not pinned:
+            raise Stop(f"run {rid} died while running (its process is gone), before it made its feature, and "
+                       f"Spec Kit cannot resume it: start it anew, sdd-run start \"<description>\"")
+        left = ", ".join(from_inputs_left(repo, pinned))
         raise Stop(f"run {rid} died while running (its process is gone), and Spec Kit cannot resume it: "
-                   f"sdd-run start --from {feature or '<feature dir>'} (phases that run again: {left})")
+                   f"sdd-run start --from {pinned} (phases that run again: {left})")
     inputs = []
     if verdict == "retry":
         if not stuck(at):

@@ -423,11 +423,15 @@ SH
   fresh || return 1
   /usr/bin/python3 -I -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["phases"]["plan"]["timeout"]["value"]=2; json.dump(d,open(p,"w"))' "$run/routing.json"
   echo 20 > "$sa/fixture/sleep"
+  printf 'still planning\n' > "$sa/fixture/say"
   result "planned"
   edit "$f/plan.md" "# Plan"
   if out=$(pass agent plan); then fail "timeout: succeeded"; fi
   grep -q '"stop"' "$sa/calls.jsonl" || fail "timeout: the container was not stopped"
   [ ! -e "$repo/$f/plan.md" ] || fail "timeout: applied"
+  # What the agent said before it was stopped stays in results/ (the US1
+  # review's second round, 2026-10-22).
+  grep -rqF "still planning" "$run/results" 2> /dev/null || fail "timeout: what the agent said is not kept in results/"
   clean_after "timeout"
 
   # 10a. An answer that is no JSON result still lands in results/, where the

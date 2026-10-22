@@ -22,7 +22,7 @@ exports it to every step, and writes into it before any step runs:
 | `proxy-ca.pem` | the certificate authority the egress proxy made at its start, written by `egress-proxy` while it runs; every pass mounts it at `/bundle/proxy-ca.pem` |
 | `admissions/` | one `<token>.json` per running pass, and the `heartbeat` file `sdd-run` touches |
 | `code/` | the code the run executes, frozen at start in dotfiles' layout: `bin/sdd-step.sh`, `bin/sdd-pass.py`, `bin/sdd-egress-proxy.py`, `claude/config-guard.sh`, `claude/speckit/schemas/`, `containers/worker/`; `tools.json` runs `sdd-step` from here (research R28) |
-| `feature.json` | the feature the run works on, once specify made it or `--from` named it |
+| `feature.json` | the feature the run works on, once the run's specify pass made it or `--from` named it — each writes it; never copied from the worktree's pointer |
 | `finished.json` | written by `sdd-run` when the run completes or is aborted; until then the run holds its worker image |
 | `usage.jsonl` | appended by every agent attempt |
 

@@ -36,7 +36,9 @@ repository's root.
   repository holds, so they are unique across repositories.
 - One run at a time in a worktree: `start` refuses while another run of it is
   paused, stopped, failed or running, naming it and the two commands that end
-  it; a run whose process died is the cleanup's to finish, not a blocker.
+  it, and while another run's process is alive whatever Spec Kit holds for it
+  — none yet during cleanup, `prepare-worker` and the proxy's start; a run
+  whose process died is the cleanup's to finish, not a blocker.
 - A run belongs to its worktree: `resume` and `abort` from another worktree of
   the repository refuse, naming the run's, before writing anything.
 - `finished.json` (`outcome`: `completed`, `rejected`, `aborted`, `died`, `not
@@ -47,15 +49,20 @@ repository's root.
   cleanup drops links whose bundle is gone or finished. A paused or stopped
   run is not finished: its process is gone too, but `resume` takes it up.
 - `resume` of a run that died: refused, naming `sdd-run start --from <feature
-  dir>` and the phases that will run again. `resume` reuses the bundle as it
+  dir>` with the run's own feature and the phases that will run again, or, for
+  a run that died before its specify made a feature, starting it anew. `resume` reuses the bundle as it
   is, rewrites only the lock, and refuses when the run's worker image is gone
   or when the worktree's `.specify/feature.json` no longer names the run's
   feature. It checks only Spec Kit's version, the runtime and the token: the
   engine resumes from the run's own copy of the workflow
   (`.specify/workflows/runs/<id>/workflow.yml`), whose gates `sdd-run` reads
   too, so an installed workflow of another version does not stop it.
-- After Spec Kit exits, the bundle's `routing.json` is copied to the
-  feature's `.sdd/routing.json` once the feature directory exists.
+- The run's feature is the bundle's `feature.json`, written by `start --from`
+  with the feature it names, or by the run's specify pass beside the pointer
+  it writes (`sdd-pass`); never read off the worktree's
+  `.specify/feature.json`, which an earlier run may have left (research R28).
+  After Spec Kit exits, the bundle's `routing.json` is copied to that
+  feature's `.sdd/routing.json`, once the bundle names one.
 - `sdd-run routing` prints one line per phase and field: phase, field, value,
   layer. `sdd-run usage` prints one line per model (attempts and cost, and
   DeepSeek's tokens), one `unreported` line naming each attempt with no end

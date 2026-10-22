@@ -57,10 +57,11 @@ sr_fresh() { # sets SR (scratch), SR_REPO, SR_SA (stand-ins)
     git config user.name owner && git config user.email owner@example.com
   ) || return 1
 }
-# Runs sdd-run as the owner would, from the repository root. The owner's
-# shell has an effort level set, which sdd-run must not pass on.
+# Runs sdd-run as the owner would, from the repository root — or from
+# $SR_IN, another worktree. The owner's shell has an effort level set, which
+# sdd-run must not pass on.
 sr() {
-  (cd "$SR_REPO" && CLAUDE_CODE_EFFORT_LEVEL=max HOME="$SR/home" \
+  (cd "${SR_IN:-$SR_REPO}" && CLAUDE_CODE_EFFORT_LEVEL=max HOME="$SR/home" \
     PATH="$SR_SA:$SR/dbin:/usr/bin:/bin:/usr/sbin:/sbin" sdd-run "$@" 2>&1)
 }
 sr_common() { git -C "$SR_REPO" rev-parse --path-format=absolute --git-common-dir; }
@@ -159,7 +160,10 @@ sdd_run_prereqs() {
   # effort level, and the effective table lands in the feature's .sdd/.
   rm -rf "$SR"
   sr_fresh || return 1
-  printf 'mkdir -p specs/001-x && printf %s > .specify/feature.json\n' "'{\"feature_directory\":\"specs/001-x\"}'" > "$SR_SA/specify.sh"
+  # As sdd-pass's specify pass does: the pointer, and the run's own record of it.
+  cat > "$SR_SA/specify.sh" << 'SH'
+mkdir -p specs/001-x && printf '{"feature_directory":"specs/001-x"}' | tee .specify/feature.json > "$SDD_RUN_DIR/feature.json"
+SH
   out=$(sr start "a feature") || fail "all met: failed: $out"
   [ "$(sr_calls)" -eq 1 ] || fail "all met: Spec Kit ran $(sr_calls) workflows"
   grep -q CLAUDE_CODE_EFFORT_LEVEL "$SR_SA/specify.jsonl" && fail "all met: CLAUDE_CODE_EFFORT_LEVEL reached Spec Kit"
@@ -339,7 +343,8 @@ SH
   id=$(sr_last_id)
   bundle=$(sr_common)/sdd/$id
   mkdir -p "$SR_REPO/specs/002-dead/.sdd" "$bundle/passes/plan-1/export"
-  printf '{"feature_directory":"specs/002-dead"}\n' > "$SR_REPO/.specify/feature.json"
+  # Its specify made specs/002-dead: the pointer, and the bundle's record of it.
+  printf '{"feature_directory":"specs/002-dead"}\n' | tee "$SR_REPO/.specify/feature.json" > "$bundle/feature.json"
   : > "$SR_REPO/specs/002-dead/spec.md"
   printf '{"schema":"urn:dotfiles:sdd:phases:1","step":"phases","at":"2026-10-21T14:00:00Z","done":[{"phase":"specify","at":"2026-10-21T14:00:00Z"}]}\n' > "$SR_REPO/specs/002-dead/.sdd/phases.json"
   printf '{"status":"running","current_step_id":"plan"}\n' > "$SR_REPO/.specify/workflows/runs/$id/state.json"
@@ -427,6 +432,125 @@ sdd_run_lows() {
   return "$status"
 }
 check "sdd-run keeps an exclude file's last line, refuses a malformed layer, and aborts no finished run" sdd_run_lows
+
+# The US1 review's second round (2026-10-22). A feature directory with its
+# specify phase finished, for start --from.
+sr_feature() { # dir
+  mkdir -p "$SR_REPO/$1/.sdd"
+  printf '# Spec\n' > "$SR_REPO/$1/spec.md"
+  printf '{"schema":"urn:dotfiles:sdd:phases:1","step":"phases","at":"2026-10-22T10:00:00Z","done":[{"phase":"specify","at":"2026-10-22T10:00:00Z"}]}\n' > "$SR_REPO/$1/.sdd/phases.json"
+}
+sdd_run_review2() {
+  local status=0 out code id bundle calls nested
+  trap '[ -z "$SR" ] || rm -rf "$SR"' RETURN
+  fail() {
+    echo "$1"
+    status=1
+  }
+  # N1 (HIGH). A worktree whose pointer an earlier run left naming its
+  # feature: a run whose specify fails before writing the pointer is not
+  # pinned to that feature, writes nothing into it, and once specify makes
+  # its own feature works on that one through the checkpoints.
+  sr_fresh || return 1
+  printf 'feature.json\n' > "$SR_REPO/.specify/.gitignore"
+  sr_feature specs/001-old
+  rm -rf "$SR_REPO/specs/001-old/.sdd"
+  printf '{"feature_directory":"specs/001-old"}' > "$SR_REPO/.specify/feature.json"
+  printf '{"status":"failed","current_step_id":"specify"}\n' > "$SR_SA/state.json"
+  out=$(sr start "a new feature") || true
+  id=$(sr_last_id)
+  bundle=$(sr_common)/sdd/$id
+  [ ! -e "$bundle/feature.json" ] || fail "leftover pointer: the run is pinned to $(cat "$bundle/feature.json" | tr -d '\n ') before its specify wrote any"
+  [ ! -e "$SR_REPO/specs/001-old/.sdd" ] || fail "leftover pointer: the run wrote into the earlier feature: $(ls "$SR_REPO/specs/001-old/.sdd")"
+  # Had it died there, the advice would not send start --from to the earlier feature.
+  printf '{"status":"running","current_step_id":"specify"}\n' > "$SR_REPO/.specify/workflows/runs/$id/state.json"
+  out=$(sr resume "$id") || true
+  grep -qF "start --from specs/001-old" <<< "$out" && fail "leftover pointer: a dead run's advice names the earlier feature: $out"
+  cp "$SR_SA/state.json" "$SR_REPO/.specify/workflows/runs/$id/state.json"
+  # As sdd-pass's specify pass does: the pointer, and the run's own record of it.
+  cat > "$SR_SA/specify.sh" << 'SH'
+mkdir -p specs/002-new && echo x > specs/002-new/spec.md
+printf '{"feature_directory":"specs/002-new"}' | tee .specify/feature.json > "$SDD_RUN_DIR/feature.json"
+SH
+  printf '{"status":"paused","current_step_id":"review-spec"}\n' > "$SR_SA/state.json"
+  out=$(sr resume "$id") || fail "leftover pointer: resume after specify failed: $out"
+  rm "$SR_SA/specify.sh"
+  [ -s "$SR_REPO/specs/002-new/.sdd/routing.json" ] || fail "leftover pointer: no routing.json in the run's own feature"
+  printf '{"status":"completed"}\n' > "$SR_SA/state.json"
+  out=$(sr resume "$id" approve) || fail "leftover pointer: approve refused: $out"
+  tail -1 "$SR_SA/specify.jsonl" | grep -qF '"spec_verdict=approve"' || fail "leftover pointer: approve did not reach Spec Kit"
+  [ ! -e "$SR_REPO/specs/001-old/.sdd" ] || fail "leftover pointer: the run wrote into the earlier feature at last"
+  rm -rf "$SR"
+
+  # N2a. A resume refuses a pointer moved since the run was pinned, before
+  # Spec Kit runs.
+  sr_fresh || return 1
+  sr_feature specs/002-x
+  sr_feature specs/003-y
+  printf '{"status":"paused","current_step_id":"review-plan"}\n' > "$SR_SA/state.json"
+  out=$(sr start --from specs/002-x) || fail "moved pointer: start --from failed: $out"
+  id=$(sr_last_id)
+  printf '{"feature_directory":"specs/003-y"}' > "$SR_REPO/.specify/feature.json"
+  calls=$(sr_calls)
+  out=$(sr resume "$id" approve) && code=0 || code=$?
+  [ "$code" -eq 1 ] || fail "moved pointer: resume exit $code, wanted 1: $out"
+  [ "$(sr_calls)" -eq "$calls" ] || fail "moved pointer: Spec Kit resumed anyway"
+  if ! grep -qF "specs/002-x" <<< "$out" || ! grep -qF "specs/003-y" <<< "$out"; then
+    fail "moved pointer: the refusal does not name both features: $out"
+  fi
+
+  # N2b. abort from another worktree of the repository refuses, naming the
+  # run's own, and leaves the run unfinished.
+  git -C "$SR_REPO" worktree add -q "$SR/wt" -b other 2> /dev/null
+  out=$(SR_IN=$SR/wt sr abort "$id") && code=0 || code=$?
+  [ "$code" -eq 1 ] || fail "other worktree: abort exit $code, wanted 1: $out"
+  grep -qF "$SR_REPO" <<< "$out" || fail "other worktree: the run's worktree is not named: $out"
+  [ ! -e "$(sr_common)/sdd/$id/finished.json" ] || fail "other worktree: the run was finished from another worktree"
+
+  # N2c. A paused run's gates are its own workflow copy's: the installed
+  # workflow changing a gate's options and input after start changes nothing
+  # the run accepts or binds.
+  printf '{"feature_directory":"specs/002-x"}' > "$SR_REPO/.specify/feature.json"
+  sr abort "$id" > /dev/null
+  printf '{"status":"paused","current_step_id":"review-spec"}\n' > "$SR_SA/state.json"
+  out=$(sr start "a feature") || fail "own gates: start failed: $out"
+  id=$(sr_last_id)
+  sed -i.bak -e 's/verdict_input: spec_verdict/verdict_input: spec_answer/' -e 's/options: \[approve, reject\]/options: [approve, reject, later]/' \
+    "$SR_REPO/.specify/workflows/sdd-routed/workflow.yml"
+  calls=$(sr_calls)
+  out=$(sr resume "$id" later) && code=0 || code=$?
+  [ "$code" -eq 1 ] && [ "$(sr_calls)" -eq "$calls" ] || fail "own gates: a verdict only the installed workflow offers was taken (exit $code): $out"
+  printf '{"status":"completed"}\n' > "$SR_SA/state.json"
+  out=$(sr resume "$id" approve) || fail "own gates: approve failed: $out"
+  tail -1 "$SR_SA/specify.jsonl" | grep -qF '"spec_verdict=approve"' ||
+    fail "own gates: the verdict is not bound to the run's own input: $(tail -1 "$SR_SA/specify.jsonl")"
+  rm -rf "$SR"
+
+  # N3. A run whose process is alive blocks a second start in its worktree
+  # even before Spec Kit holds any state for it — the window of cleanup,
+  # prepare-worker and the proxy — and the second start's --from leaves the
+  # pointer alone. The second start is made from inside the first's Spec
+  # Kit, where the first's state.json does not exist yet.
+  sr_fresh || return 1
+  sr_feature specs/002-x
+  nested=$SR/nested
+  cat > "$SR_SA/specify.sh" << SH
+[ -e "$nested.code" ] && exit 0
+: > "$nested.code"
+sdd-run start --from specs/002-x > "$nested.out" 2>&1
+echo \$? > "$nested.code"
+cat .specify/feature.json > "$nested.pointer" 2> /dev/null
+exit 0
+SH
+  printf '{"status":"paused","current_step_id":"review-spec"}\n' > "$SR_SA/state.json"
+  out=$(sr start "the first") || fail "live run: the first start failed: $out"
+  id=$(sr_last_id)
+  [ "$(cat "$nested.code" 2> /dev/null)" = 1 ] || fail "live run: a second start passed the guard (exit $(cat "$nested.code" 2> /dev/null)): $(tail -2 "$nested.out" 2> /dev/null)"
+  [ ! -s "$nested.pointer" ] || fail "live run: the second start rewrote the pointer under the first: $(cat "$nested.pointer")"
+  [ "$(awk '/"workflow", "run"/ { n++ } END { print n + 0 }' "$SR_SA/specify.jsonl")" -eq 1 ] || fail "live run: Spec Kit ran a second run"
+  return "$status"
+}
+check "sdd-run pins only its own feature, refuses a moved pointer, another worktree's abort, gates not its own, and a second start beside a live run" sdd_run_review2
 
 sdd_run_usage() {
   local status=0 out common

@@ -280,3 +280,54 @@ if command -v specify > /dev/null 2>&1 && command -v check-jsonschema > /dev/nul
 else
   skip "sdd-run: nested stuck stops, rejected runs finished, its own worktree, frozen code, --from on its feature" "specify or check-jsonschema"
 fi
+
+# The US1 review's second round (2026-10-22), against the real engine and
+# the real specify pass: a worktree whose pointer an earlier run left naming
+# its feature. specify fails before it writes the pointer; the run is pinned
+# to nothing and writes nothing into that feature. Resumed, specify makes the
+# run's own feature, which the pass records in the bundle, and the run goes
+# on through its checkpoint.
+e2e_leftover_pointer() {
+  local tmp status=0 out rid d sa repo f common old=specs/009-old
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  fail() {
+    echo "$1"
+    status=1
+  }
+  e2e_fresh '#!/bin/sh
+exit 0
+' || return 1
+  e2e_fixtures
+  # The first specify pass fails: the agent exits 1.
+  answer speckit-specify.1 "no"
+  printf '1' > "$(fx speckit-specify.1)/exit"
+  (
+    cd "$repo" || exit 1
+    mkdir -p "$old"
+    printf '# Old\n' > "$old/spec.md"
+    git add -A && git -c core.hooksPath=/dev/null commit -qm "an earlier feature"
+    printf '{"feature_directory": "%s"}' "$old" > .specify/feature.json
+  )
+  common=$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)
+  out=$(sr start "a probe feature")
+  rid=$(e2e_rid "$out")
+  printf '%s' "$out" | grep -qF "failed at specify" || fail "leftover: specify did not fail: $(printf '%s' "$out" | tail -2)"
+  [ ! -e "$common/sdd/$rid/feature.json" ] ||
+    fail "leftover: pinned before specify wrote the pointer: $(tr -d '\n ' < "$common/sdd/$rid/feature.json")"
+  [ ! -e "$repo/$old/.sdd" ] || fail "leftover: the run wrote into $old: $(ls "$repo/$old/.sdd")"
+  out=$(sr resume "$rid")
+  printf '%s' "$out" | grep -qF "paused at review_spec" || fail "leftover: the resumed specify did not reach review_spec: $(printf '%s' "$out" | tail -2)"
+  /usr/bin/python3 -I -c 'import json,os,sys; d=json.load(open(sys.argv[1])) if os.path.exists(sys.argv[1]) else None; sys.exit(0 if d == {"feature_directory": sys.argv[2]} else "leftover: the bundle pins %r, not the feature specify made" % d)' \
+    "$common/sdd/$rid/feature.json" "$f" 2>&1 || status=1
+  [ -s "$repo/$f/.sdd/routing.json" ] || fail "leftover: no routing.json in $f"
+  out=$(sr resume "$rid" approve)
+  printf '%s' "$out" | grep -qF "paused at review_plan" || fail "leftover: approve did not reach review_plan: $(printf '%s' "$out" | tail -2)"
+  [ ! -e "$repo/$old/.sdd" ] || fail "leftover: the run wrote into $old at last: $(ls "$repo/$old/.sdd")"
+  return "$status"
+}
+if command -v specify > /dev/null 2>&1 && command -v check-jsonschema > /dev/null 2>&1; then
+  check "sdd-run: a pointer an earlier run left is never taken for the run's feature" e2e_leftover_pointer
+else
+  skip "sdd-run: a pointer an earlier run left is never taken for the run's feature" "specify or check-jsonschema"
+fi

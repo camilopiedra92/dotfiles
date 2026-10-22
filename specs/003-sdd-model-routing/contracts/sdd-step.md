@@ -22,7 +22,7 @@ existing directory.
 | `mark` | marks `[X]` in `tasks.md` the tasks `review.json` lists as done | the tasks marked | 0; non-zero when verify is not `pass` or review is `blocking` |
 | `stuck fix` / `stuck converge` | reads `.sdd/verify.json` or `.sdd/converge.json`; `clear` when it passed or converged, resetting the pass count in `$SDD_RUN_DIR/counters/`; `again` for the second and third pass; after the third, consumes and deletes `$SDD_RUN_DIR/verdicts/retry` if present and prints `retry` (exactly one more pass); else fails, naming `sdd-run resume <id> retry` and `sdd-run abort <id>` | `clear`, `again` or `retry`, no newline | 0, or non-zero to stop the run for the owner |
 | `phase-done <phase>` | appends the phase to `.sdd/phases.json` | — | 0 |
-| `agent specify` | as `agent`, with no feature directory yet: the prompt carries the run's `spec` input, read from `.specify/workflows/runs/<run_id>/inputs.json`; the pass must create exactly one `specs/<nnn>-<slug>/`, which `.specify/feature.json` names exactly | — | as `agent` |
+| `agent specify` | as `agent`, with no feature directory yet: the prompt carries the run's `spec` input, read from `.specify/workflows/runs/<run_id>/inputs.json`; the pass must create exactly one `specs/<nnn>-<slug>/`, which `.specify/feature.json` names exactly; once applied, the pass records it in the bundle's `feature.json` | — | as `agent` |
 | `cleanup [<run_id>]` | removes the exports, containers, volumes and the egress proxy labelled with that run, or with any run that is not `running`, or whose run lock names a process that no longer exists (process id and start time, FR-022) | what it removed | 0 |
 
 ## `implement`

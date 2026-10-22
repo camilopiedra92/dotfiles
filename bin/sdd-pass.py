@@ -692,6 +692,13 @@ def run_agent(run, phase, implement=None):
             os.makedirs(os.path.join(run.repo, ".specify"), exist_ok=True)
             with open(os.path.join(run.repo, ".specify", "feature.json"), "w") as f:
                 json.dump(local_state, f)
+        if specify:
+            # The run's own record of its feature, written with the pointer
+            # by the one pass that sets it: sdd-run pins this, never a
+            # pointer it finds, which an earlier run may have left (the US1
+            # review's second round, research R28).
+            with open(os.path.join(run.dir, "feature.json"), "w") as f:
+                json.dump({"feature_directory": feature}, f)
         if place_outcome:
             place_outcome(**({"commit": commit} if implement else {}))
         if row.get("result_to"):
