@@ -132,7 +132,7 @@ one phase per user story.
 ### Implementation for User Story 2
 
 - [X] T046 [US2] (pi's usage per response; credentials withheld from what a pass keeps or prints, research R29) Implement the DeepSeek path of `sdd-step implement` (contracts/sdd-step.md steps 1–4); T042–T044 green
-- [ ] T047 [US2] On this machine, with the real container runtime: the containment probe of quickstart.md 11 (SC-003), each attempt recorded with its result in `docs/sdd-routing.md`; then a leak probe with sentinel credentials: the image's layers, the container's stored configuration and the runtime's logs searched for them, none holding them (FR-009)
+- [X] T047 [US2] (2026-10-22, sentinel credentials through the real code, recorded in `docs/sdd-routing.md`: six attempts, the first two with faulty probes. Covered on the real runtime: verify, a judgment pass, a Claude implement pass and a pi (DeepSeek) implement pass. Found and not fixed: DeepSeek's 401 body quotes the key's last four characters to the agent. Not tested: host process environments, which `ps -E` does not show on this macOS. Never seen red: the `container system logs` search) On this machine, with the real container runtime: the containment probe of quickstart.md 11 (SC-003), each attempt recorded with its result in `docs/sdd-routing.md`; then a leak probe with sentinel credentials: the image's layers, the container's stored configuration and the runtime's logs searched for them, none holding them (FR-009)
 - [ ] T048 [US2] Close US2: `./check.sh` green; each new check seen red; a fresh-context review of the story's diff
 
 ---
