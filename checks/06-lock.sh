@@ -34,12 +34,22 @@ lock_real_state() {
 }
 LOCK_REAL_BEFORE=$(lock_real_state)
 
+# Nor may a case leave a run's scratch in the system's temporary directory: a
+# runner killed outright runs no EXIT trap. What is there before the cases is
+# compared after them, at the end of this file; each case's directory is
+# listed in LOCK_CASES, to tell this section's runs from the other sections'.
+LOCK_TEMP_BEFORE=$(system_temp_runs)
+LOCK_CASES=$(mktemp) || exit 1
+
 # lock_env <tmp>: the stub getconf in <tmp>/bin, answering <tmp>/lockdir/ for
-# the per-user temporary directory and passing anything else to the real one.
-# Sets LOCK_TMP, read by the helpers below.
+# the per-user temporary directory and passing anything else to the real one,
+# and a mktemp there that makes a run's scratch in <tmp>/scratch, so
+# lock_cleanup removes it even from a run killed outright. Sets LOCK_TMP, read
+# by the helpers below.
 lock_env() {
   LOCK_TMP=$1
   LOCK_FILE=$LOCK_TMP/lockdir/dotfiles-check.lock
+  echo "$LOCK_TMP" >> "$LOCK_CASES"
   mkdir -p "$LOCK_TMP/bin" "$LOCK_TMP/lockdir"
   : > "$LOCK_TMP/log"
   : > "$LOCK_TMP/pids"
@@ -47,6 +57,7 @@ lock_env() {
   printf '#!/bin/sh\nif [ "$1" = DARWIN_USER_TEMP_DIR ]; then echo "%s/lockdir/"; else exec /usr/bin/getconf "$@"; fi\n' \
     "$LOCK_TMP" > "$LOCK_TMP/bin/getconf"
   chmod +x "$LOCK_TMP/bin/getconf"
+  fixture_mktemp "$LOCK_TMP/bin" "$LOCK_TMP/scratch"
 }
 
 # lock_repo <dir> <name> <seconds|hold> [<extra section body>]: a scratch
@@ -391,8 +402,8 @@ check 'the nested run said nothing on stderr' test -z \"\$inner_err\""
 check "a run started inside a run does not wait for it" lock_nested_run_is_part_of_it
 
 # US2 AS1, SC-002: SIGKILL leaves no clean-up step run, and the next run still
-# starts at once. What A's section was sleeping on lives on; lock_cleanup
-# ends it.
+# starts at once. What A's section was sleeping on lives on, and A's scratch
+# stays; lock_cleanup ends the one and removes the other.
 lock_killed_run_frees_the_turn() {
   local tmp a
   tmp=$(mktemp -d) || return 1
@@ -561,3 +572,21 @@ lock_real_untouched() {
   lock_expect "$LOCK_REAL" "untouched by the cases" "$LOCK_REAL_BEFORE" "$(lock_real_state)"
 }
 check "no case reached the real lock" lock_real_untouched
+
+# Last too: no case's run left its scratch in the system's temporary
+# directory. A new one is this section's when its copy of a fake section
+# names a case's directory. Red 2026-10-22 on "a run killed outright frees
+# the turn", before the runs made their scratch inside the case's own.
+lock_temp_untouched() {
+  local run left=
+  while IFS= read -r run; do
+    grep -qsF -f "$LOCK_CASES" "$run"/*.d/* && left="$left$run
+"
+  done < <(comm -13 <(printf '%s\n' "$LOCK_TEMP_BEFORE" | sort) <(system_temp_runs | sort))
+  rm -f "$LOCK_CASES"
+  [ -z "$left" ] || {
+    printf 'left in the system temporary directory:\n%s' "$left"
+    return 1
+  }
+}
+check "no case left a run's scratch in the system temporary directory" lock_temp_untouched
