@@ -28,7 +28,7 @@ runner_repo() {
   printf '# covers: b/*\n# covers: b.txt checks/[0-9][0-9]-*.sh\ncheck "b ran" true\n' > "$dir/checks/20-b.sh"
   printf 'check "c ran" true\n' > "$dir/checks/30-c.sh"
   echo 'helper() { :; }' > "$dir/checks/lib/helpers.sh"
-  for f in a/x a/z b.txt checks/fixture/f checks/data/f checks/data/f.sh githooks/pre-commit; do
+  for f in a/x a/z b/y b.txt checks/fixture/f checks/data/f checks/data/f.sh githooks/pre-commit; do
     echo one > "$dir/$f"
   done
   git -C "$dir" add -A
@@ -451,3 +451,62 @@ sections_capped_at_cpus() {
   }
 }
 check "sections run at the same time, no more at once than the CPUs" sections_capped_at_cpus
+
+# US3: a declared pattern that matches no tracked path is a section that has
+# silently stopped being selected. Reads patterns as check.sh does (the
+# `# covers:` lines, split with globbing off, matched with [[ == ]]), over the
+# tracked paths on stdin; prints "<section>: <pattern>" for each miss.
+declaration_misses() {
+  local dir=$1 paths section name patterns pattern path hit
+  paths=$(cat)
+  for section in "$dir"/checks/[0-9][0-9]-*.sh; do
+    name=${section##*/}
+    patterns=$(sed -n 's/^# covers://p' "$section")
+    set -f
+    # shellcheck disable=SC2086  # split on purpose, globbing off
+    for pattern in $patterns; do
+      hit=
+      while IFS= read -r path; do
+        # shellcheck disable=SC2053  # the right side is a pattern on purpose
+        if [[ $path == $pattern ]]; then
+          hit=1
+          break
+        fi
+      done <<< "$paths"
+      [ -n "$hit" ] || printf '%s: %s\n' "${name%.sh}" "$pattern"
+    done
+    set +f
+  done
+}
+
+declared_patterns_match_something() {
+  local tmp out
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  runner_repo "$tmp/r"
+  out=$(git -C "$tmp/r" ls-files | declaration_misses "$tmp/r")
+  [ -z "$out" ] || {
+    echo "a fixture whose patterns all match something reported: $out"
+    return 1
+  }
+  # A typo in one pattern of a line that has others that match.
+  sed -i '' 's|^# covers: b.txt |# covers: b.tx |' "$tmp/r/checks/20-b.sh"
+  out=$(git -C "$tmp/r" ls-files | declaration_misses "$tmp/r")
+  [ "$out" = "20-b: b.tx" ] || {
+    echo "expected exactly \"20-b: b.tx\", got: $out"
+    return 1
+  }
+}
+check "a declared pattern that matches no tracked file is reported, with its section" declared_patterns_match_something
+
+# This repository's own declarations.
+this_repo_declarations() {
+  local out
+  out=$(this_repo_git ls-files | declaration_misses .)
+  [ -z "$out" ] || {
+    echo "declared patterns matching no tracked file:"
+    printf '%s\n' "$out"
+    return 1
+  }
+}
+check "every pattern this repository's sections declare matches a tracked file" this_repo_declarations

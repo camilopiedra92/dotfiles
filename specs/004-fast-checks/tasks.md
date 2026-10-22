@@ -68,12 +68,12 @@ exists, and each must fail for the reason its case predicts.
 
 ### Tests for User Story 3
 
-- [ ] T016 [US3] Add to checks/05-runner.sh a case running the declaration check over a scratch repository whose section declares a pattern matching no tracked file, expecting a failure naming the section and the pattern (US3 AS1), and run it red
+- [x] T016 [US3] Add to checks/05-runner.sh a case running the declaration check over a scratch repository whose section declares a pattern matching no tracked file, expecting a failure naming the section and the pattern (US3 AS1), and run it red
 
 ### Implementation for User Story 3
 
-- [ ] T017 [US3] Implement the declaration check in checks/05-runner.sh over this repository's sections, through the runner's own pattern reader and `this_repo_git ls-files`
-- [ ] T018 [US3] Break it by hand (a typo in one real `# covers:` pattern) and see it go red; restore; full suite green; fresh review of the story
+- [x] T017 [US3] Implement the declaration check in checks/05-runner.sh over this repository's sections, through the runner's own pattern reader and `this_repo_git ls-files`
+- [x] T018 [US3] Break it by hand (a typo in one real `# covers:` pattern) and see it go red; restore; full suite green; fresh review of the story
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
