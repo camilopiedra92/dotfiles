@@ -6,7 +6,9 @@ global instructions file linked into `~/.claude/`, not this project's.
 
 ## Commands
 
-- `./check.sh` — the checks; the pre-commit hook and CI run the same command.
+- `./check.sh` — the checks, all sections; CI runs it. The pre-commit hook runs
+  `./check.sh --strict --staged`: the sections the staged files select
+  (`docs/checks.md`, "Tiers").
 - `./drift.sh` — what this machine has that the manifests do not say, and the
   reverse. Local only: a CI runner has packages of its own.
 
