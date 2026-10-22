@@ -22,6 +22,25 @@ built (004 research R5) and what the owner wants kept.
 - One lock per repository. Lost: the contention is the machine's. The
   overlapping runs were in different worktrees and clones, which a
   per-repository lock lets through.
+- A shared jobserver: a machine-wide token pool, as GNU make's, Ninja's or
+  Cargo's, here a FIFO handing one token per section across all runs. Lost:
+  with no parent process owning every client (make's model), a run killed
+  with SIGKILL leaks its tokens until the pool drains and every run
+  deadlocks; recovering them needs a daemon tracking holders, far more
+  machinery than one user's machine needs. And what it buys is throughput
+  when two suites coincide, not the goal, which is not overloading the
+  machine.
+- Caching section verdicts by their inputs, as Bazel, Turborepo or Nx do.
+  Lost: it requires hermetic sections, and these read machine state —
+  installed tool versions, the container runtime, Keychain stand-ins — so a
+  stale verdict could pass green.
+
+**Prior art** the chosen design follows (cited by the owner, 2026-10-22; the
+wording was not re-checked against those tools here): Bazel's client prints
+"Another command (pid=…) is running. Waiting for it to complete" and waits
+for the server's lock; Cargo prints "Blocking waiting for file lock" and
+waits on an advisory `flock` of its build directory. Both wait rather than
+compete, and say once for whom.
 
 ## R2 — The locking primitive
 
@@ -229,5 +248,13 @@ DARWIN_USER_TEMP_DIR` exists on the macOS runner as on any macOS.
 
 ## Measurements
 
-Pending: the added time of a run with no other in progress (spec SC-004),
-measured before and after on this machine during implementation.
+The added time of a run with no other in progress (spec SC-004): wall time
+of `./check.sh` in a scratch repository (`git init`, `check.sh` copied, one
+section `check "a ran" true`, `checks/lib/` with one helper), one warm-up run
+not counted, then ten runs, each `/usr/bin/time -p env -u CHECK_SH_RUN
+./check.sh`, the `real` line kept; this M4 Pro, idle, 2026-10-22.
+`time -p` reports hundredths, so 0.01 s is its resolution.
+
+- Before, `check.sh` from c3819e5 (`main`): 0.05 0.04 0.05 0.05 0.05 0.05
+  0.05 0.05 0.05 0.05 s — median 0.05, mean 0.049.
+- After: pending (T033).
