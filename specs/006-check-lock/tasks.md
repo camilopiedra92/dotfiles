@@ -68,12 +68,12 @@ they never touch the real lock nor wait on the run executing them.
 
 ### Tests for User Story 4
 
-- [ ] T017 [US4] Add to checks/06-lock.sh the case "a run started inside a run does not wait for it": a scratch repository whose section runs `./check.sh` in a second scratch repository (inheriting the outer copy's environment) and checks its stderr is empty; the outer run exits 0 within 10 s under `within` (US4 AS1, FR-006)
-- [ ] T018 [US4] Run it: it passes, since T013 already exports `CHECK_SH_RUN`; break by hand (remove the export, then separately the skip) and see it go red by the watchdog each time, which is what keeps it (T013's note); restore
+- [X] T017 [US4] Add to checks/06-lock.sh the case "a run started inside a run does not wait for it": a scratch repository whose section runs `./check.sh` in a second scratch repository (inheriting the outer copy's environment) and checks its stderr is empty; the outer run exits 0 within 10 s under `within` (US4 AS1, FR-006)
+- [X] T018 [US4] Run it: it passes, since T013 already exports `CHECK_SH_RUN`; break by hand (remove the export, then separately the skip) and see it go red by the watchdog each time, which is what keeps it (T013's note); restore
 
 ### Implementation for User Story 4
 
-- [ ] T019 [US4] Run the full suite `./check.sh --strict` and see checks/05-runner.sh pass with its ~30 nested copies (US4 AS2, SC-005); commit with T018's red runs named
+- [X] T019 [US4] Run the full suite `./check.sh --strict` and see checks/05-runner.sh pass with its ~30 nested copies (US4 AS2, SC-005); commit with T018's red runs named
 
 ## Phase 5: User Story 2 - A dead run blocks nobody (P2)
 
