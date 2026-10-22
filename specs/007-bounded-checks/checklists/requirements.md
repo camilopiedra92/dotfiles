@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — one remains (User Story 3: how "one section" is run; `check.sh` has no way today)
+- [x] No [NEEDS CLARIFICATION] markers remain (the one about running a named section was settled with the owner: FR-014)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable (stop latency, no trips over five runs, reported-time tolerance, added overhead)
 - [x] Success criteria name no tool or language beyond the existing interface

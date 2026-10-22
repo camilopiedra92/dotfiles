@@ -98,8 +98,8 @@ file order as before.
 ### User Story 3 - Everyone verifies the same way, and the machine stays cool (Priority: P2)
 
 An agent or the owner working on a change iterates with `./check.sh --staged`
-or [NEEDS CLARIFICATION: a way to run one named section — `check.sh` has
-none today], runs the full suite once when a story or a commit closes, and
+or the sections it names (`./check.sh checks/91-sdd-routing.sh`, FR-014), runs
+the full suite once when a story or a commit closes, and
 never repeats full suites to prove that something is stable; a check that
 needs repetition to prove stability repeats inside itself. The rule is written
 where every agent and person reads it: the project CLAUDE.md "Commands" and
@@ -173,7 +173,12 @@ and the CLAUDE.md lines point to "Tiers" for the full statement.
   period, the same for every section and fixed by the plan, to run its own
   clean-up, then forcibly. Stopping MUST reach every process the section
   started, including processes whose parent has exited, so none outlives the
-  run.
+  run. Settled with the owner (2026-10-22): this stays a requirement, not a
+  goal. 004's parent-pid walk cannot reach a reparented process, and 004
+  rejected `set -m` because a section in its own group lost ^C and stopped on
+  reading stdin (SIGTTIN). The plan researches a process group per section
+  without job control, with the section's stdin from /dev/null and the
+  runner's INT/TERM traps signalling each group, and records the evidence.
 - **FR-005**: A section stopped for its budget MUST count as failed in every
   mode — by hand, `--strict`, `--staged`, CI — and its place in the output MUST
   show what it printed before it was stopped followed by one line naming the
@@ -207,6 +212,15 @@ and the CLAUDE.md lines point to "Tiers" for the full statement.
   broken by hand (constitution III), the red runs named in the commit message.
 - **FR-013**: The suite MUST behave the same in CI as on this machine: the same
   budgets, the same stop, the same failure, the same report.
+- **FR-014**: `check.sh` MUST accept section paths as arguments
+  (`./check.sh [--strict] checks/91-sdd-routing.sh ...`) and run only those,
+  with the same runner, helpers, budgets, lock (006) and report as any run; a
+  path that is not a section is a usage error, reported before any wait.
+  `--staged` and named sections together are a usage error. Observed
+  2026-10-22: every agent that iterated on a section wrote its own scratch
+  runner to source one section (run-section.sh, drive.sh, run1.sh), each a
+  copy of the runner's setup that could drift from it, and one ran outside the
+  lock.
 
 ### Key Entities
 
