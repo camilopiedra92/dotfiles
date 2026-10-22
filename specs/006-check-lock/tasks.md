@@ -83,15 +83,15 @@ they never touch the real lock nor wait on the run executing them.
 
 ### Tests for User Story 2
 
-- [ ] T020 [US2] Add to checks/06-lock.sh the case "a run killed outright frees the turn": start A (section sleeping 5 s), `kill -9` its runner after 0.5 s, start B; B has empty stderr and ends within 2 s (US2 AS1, SC-002); then kill what A's section left
-- [ ] T021 [US2] Add the case "what a section leaves running is not the run": A's section starts `sleep 5 &` and ends; after A exits, B has empty stderr and ends within 2 s (US2 AS2, FR-004); kill the sleep
-- [ ] T022 [US2] Add the case "an old record is not a lock": the scratch lock file holds `99999 /nowhere` and nobody holds it; a run starts at once with empty stderr (US2 AS3)
-- [ ] T023 [US2] Run them before the code: T021 fails (the section's child inherited descriptor 9, so B waits — the R2 probe's prediction); T020 and T022 pass (the kernel lock already frees on death: guards, kept only after T025)
+- [X] T020 [US2] Add to checks/06-lock.sh the case "a run killed outright frees the turn": start A (section sleeping 5 s), `kill -9` its runner after 0.5 s, start B; B has empty stderr and ends within 2 s (US2 AS1, SC-002); then kill what A's section left
+- [X] T021 [US2] Add the case "what a section leaves running is not the run": A's section starts `sleep 5 &` and ends; after A exits, B has empty stderr and ends within 2 s (US2 AS2, FR-004); kill the sleep
+- [X] T022 [US2] Add the case "an old record is not a lock": the scratch lock file holds `99999 /nowhere` and nobody holds it; a run starts at once with empty stderr (US2 AS3)
+- [X] T023 [US2] Run them before the code: T021 fails (the section's child inherited descriptor 9, so B waits — the R2 probe's prediction); T020 and T022 pass (the kernel lock already frees on death: guards, kept only after T025)
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] In check.sh's `run_section`, close descriptor 9 first thing in the section's subshell (`exec 9>&-`), with the R2 probe beside it as its why; T020–T022 green
-- [ ] T025 [US2] Hand-breaks, seen red and restored, named in the commit message: remove the `exec 9>&-` (T021 red); replace the kernel lock with an existence test of the lock file (T020, T022 red); commit; fresh-context review of the story
+- [X] T024 [US2] In check.sh's `run_section`, close descriptor 9 first thing in the section's subshell (`exec 9>&-`), with the R2 probe beside it as its why; T020–T022 green
+- [X] T025 [US2] Hand-breaks, seen red and restored, named in the commit message: remove the `exec 9>&-` (T021 red); replace the kernel lock with an existence test of the lock file (T020, T022 red); commit; fresh-context review of the story
 
 ## Phase 6: User Story 3 - Waiting can be abandoned (P2)
 
