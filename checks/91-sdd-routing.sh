@@ -478,6 +478,17 @@ sys.exit("\n".join(bad) or 0)
   printf '%s' "$out" | grep -qF "STOPPED: some checklists are incomplete" || fail "no-op implement: the agent's answer is not shown: $out"
   grep -rqF "STOPPED: some checklists are incomplete" "$run/results" 2> /dev/null || fail "no-op implement: the agent's answer is not kept in the bundle"
   clean_after "no-op implement"
+  # A feature implemented by an earlier run (sdd-run start --from) has been
+  # implemented: a first pass of this run finding nothing to change is valid
+  # (the real run, 2026-10-21).
+  fresh || return 1
+  mkdir -p "$repo/$f/.sdd"
+  printf '{"schema":"urn:dotfiles:sdd:route:1","step":"route","at":"2026-10-21T14:00:00Z","agent":"sonnet"}\n' > "$repo/$f/.sdd/route.json"
+  printf 'print(2)\n' > "$repo/src/app.py" && tgit commit -qam "implement: 001-probe (claude-sonnet-5-5)"
+  printf '{"run_id":"run1","pid":%s,"started":"x","base":"%s"}\n' "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
+  result "everything is already implemented"
+  out=$(pass implement) || fail "no-op after an earlier run implemented it: refused: $out"
+  clean_after "no-op, implemented by an earlier run"
   # After an implementation, a fix round (verify failed) that changes nothing
   # fails too; with verify passing, nothing left to change is a valid answer.
   local verdict

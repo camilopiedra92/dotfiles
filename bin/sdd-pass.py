@@ -710,10 +710,13 @@ def new_feature(p, changes):
     return made[0]
 
 
-def implemented_before(run):
-    """Whether an implement pass of this run already committed a change."""
-    log = run.git("log", "--format=%s", f"{run.lock['base']}..HEAD").stdout.decode()
-    return any(line.startswith("implement: ") for line in log.splitlines())
+def implemented_before(run, feature):
+    """Whether an implement pass already committed a change to this feature,
+    in this run or an earlier one (`sdd-run start --from` continues a feature
+    an earlier run implemented; the real run, 2026-10-21)."""
+    log = run.git("log", "--format=%s", "HEAD").stdout.decode()
+    mark = f"implement: {os.path.basename(feature)} ("
+    return any(line.startswith(mark) for line in log.splitlines())
 
 
 def fix_round(run, feature):
@@ -879,9 +882,9 @@ def implement(run):
     # real run, 2026-10-21). After a converge round, nothing left to change
     # stays a valid answer. (Open tasks are no signal: the run, not the
     # implementer, marks them.)
-    if not r["changes"] and (fix or not implemented_before(run)):
+    if not r["changes"] and (fix or not implemented_before(run, feature)):
         raise PassFailed("the implementer changed nothing, on %s; it said:\n  "
-                         % ("a fix round" if fix else "the run's first implementation")
+                         % ("a fix round" if fix else "the feature's first implementation")
                          + "\n  ".join(r["text"].strip().splitlines()[-12:]))
     print(f"{phase}: {len(r['changes'])} files changed" + (f", commit {r['commit'][:12]}" if r["commit"] else ", no change"))
 
