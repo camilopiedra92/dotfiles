@@ -88,6 +88,64 @@ for arg in "$@"; do
   esac
 done
 
+# ── One run at a time ────────────────────────────────────────────────────────
+# One top-level run per user on this machine runs its sections at a time,
+# whichever worktree or clone it was started in; a second waits for the first
+# and says once for whom (specs/006-check-lock). Observed 2026-10-22: four
+# suites from different worktrees overlapped, each over every CPU, the laptop
+# ran hot for hours and one section failed under the contention alone.
+#
+# The turn is a flock(2) taken through macOS's /usr/bin/lockf on descriptor 9,
+# open on a per-user file: the kernel drops it when the last holder of that
+# open file closes it, on any exit, SIGKILL included, so a dead run blocks
+# nobody and no age or pid decides staleness (probed 2026-10-22, research R2).
+# The file's existence means nothing, and the `<pid> <path>` line the holder
+# writes into it only words the waiting line; a missing or stale one can make
+# that line vaguer, never make anyone wait.
+#
+# The place is asked of the system with getconf and not read from TMPDIR: an
+# environment variable a tool or sandbox may point elsewhere would give two
+# runs two different locks, and they would overlap in silence (R6).
+#
+# A run started from within a run -- 05-runner's ~30 copies of this file, or
+# anything a section starts -- is part of it: CHECK_SH_RUN, exported once the
+# turn is taken, makes it skip all of this. Without that it would wait forever
+# for the parent that waits for it. Exporting it by hand bypasses the lock.
+#
+# Taken after the arguments, so a usage error never waits, and before the
+# selection, so a run that waited reads the index as it is when its turn comes
+# and has printed nothing but its waiting line (R7).
+if [ -z "${CHECK_SH_RUN:-}" ]; then
+  lock=$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock
+  # The braces keep bash's own message about a failed open off stderr while
+  # the descriptor itself stays open in this shell.
+  { exec 9>> "$lock"; } 2> /dev/null || {
+    echo "check.sh: cannot take the run lock $lock" >&2
+    exit 1
+  }
+  lock_status=0
+  lockf -s -t 0 9 || lock_status=$?
+  # 75 is EX_TEMPFAIL, "held by another process" (man lockf).
+  if [ "$lock_status" -eq 75 ]; then
+    holder_pid='' holder_path=''
+    read -r holder_pid holder_path < "$lock"
+    if [ -n "$holder_pid" ]; then
+      echo "check.sh: waiting for the run of pid $holder_pid in $holder_path to finish" >&2
+    else
+      echo "check.sh: waiting for another run to finish" >&2
+    fi
+    lock_status=0
+    lockf -s 9 || lock_status=$?
+  fi
+  [ "$lock_status" -eq 0 ] || {
+    echo "check.sh: cannot take the run lock $lock" >&2
+    exit 1
+  }
+  # Truncates the same inode: the lock on the open file stays.
+  printf '%s %s\n' "$$" "$PWD" > "$lock"
+  export CHECK_SH_RUN=$$
+fi
+
 # Report every failure in one run rather than dying on the first. When you are
 # about to commit, knowing there are three problems beats finding them one
 # restart at a time.

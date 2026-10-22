@@ -324,19 +324,7 @@ staged_failure_fails() {
 }
 check "--staged fails when a selected section fails, and only then" staged_failure_fails
 
-# A repository of fake sections for how a run executes them. Each argument is
-# "<name>:<body>", written to checks/<name>.sh; every run starts from its own.
-sections_repo() {
-  local dir=$1 spec
-  shift
-  git init -q "$dir"
-  cp -p check.sh "$dir/"
-  mkdir -p "$dir/checks/lib"
-  echo 'helper() { :; }' > "$dir/checks/lib/helpers.sh"
-  for spec in "$@"; do
-    printf '%s\n' "${spec#*:}" > "$dir/checks/${spec%%:*}.sh"
-  done
-}
+# sections_repo, the repository of fake sections below, is in checks/lib/runner.sh.
 
 # Sections finishing in the reverse of file order: each prints a header and
 # two lines with a pause between, so output written as it happens would
