@@ -94,7 +94,10 @@ and failed a section by contention alone. The turn is a kernel lock
 `$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock`, held by the runner's own
 shell only: it frees the moment the runner ends, by any means, `kill -9`
 included, and nothing a section leaves running keeps it. The file's existence
-means nothing; the `<pid> <path>` line in it only words the waiting line.
+means nothing; the `<pid> <path>` line in it only words the waiting line,
+and names the run holding the turn or nobody: a run empties it as it ends,
+and a waiter that finds the pid gone (a run killed outright) names nobody
+(`specs/006-check-lock/research.md` R4 has the one gap left).
 INT or TERM to a run still waiting ends it with 130 or 143, having run
 nothing and without taking the turn. A usage error never waits, and a lock
 that cannot be opened or taken is reported, naming the file, and fails the

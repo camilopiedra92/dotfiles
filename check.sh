@@ -100,8 +100,15 @@ done
 # open file closes it, on any exit, SIGKILL included, so a dead run blocks
 # nobody and no age or pid decides staleness (probed 2026-10-22, research R2).
 # The file's existence means nothing, and the `<pid> <path>` line the holder
-# writes into it only words the waiting line; a missing or stale one can make
-# that line vaguer, never make anyone wait.
+# writes into it only words the waiting line, never makes anyone wait. It
+# names the run that holds the turn, or nobody: the holder empties it as it
+# exits, while the turn is still its own, and a waiter names nobody for a pid
+# that is gone -- the record of a run killed outright, or stopped before its
+# EXIT trap was set, which never emptied it. What remains: such a record
+# whose pid is still taken -- by the dead run until its parent reaps it, or
+# by another process the system has given it since -- read in the instant
+# between the next holder taking the turn and writing its own, or while
+# something other than a run (a bare lockf) holds it, names that pid (R4).
 #
 # The place is asked of the system with getconf and not read from TMPDIR: an
 # environment variable a tool or sandbox may point elsewhere would give two
@@ -129,7 +136,7 @@ if [ -z "${CHECK_SH_RUN:-}" ]; then
   if [ "$lock_status" -eq 75 ]; then
     holder_pid='' holder_path=''
     read -r holder_pid holder_path < "$lock"
-    if [ -n "$holder_pid" ]; then
+    if [ -n "$holder_pid" ] && kill -0 "$holder_pid" 2> /dev/null; then
       echo "check.sh: waiting for the run of pid $holder_pid in $holder_path to finish" >&2
     else
       echo "check.sh: waiting for another run to finish" >&2
@@ -158,6 +165,9 @@ if [ -z "${CHECK_SH_RUN:-}" ]; then
   # Truncates the same inode: the lock on the open file stays.
   printf '%s %s\n' "$$" "$PWD" > "$lock"
   export CHECK_SH_RUN=$$
+  # Emptied by the EXIT trap below. Set only here, so a nested run, which
+  # holds nothing, empties nothing.
+  lock_record=$lock
 fi
 
 # Report every failure in one run rather than dying on the first. When you are
@@ -322,7 +332,9 @@ RUN=$(mktemp -d) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
 }
-trap 'rm -rf "$RUN"' EXIT
+# The run's record goes with it too (One run at a time, above). A run that
+# stops before this line leaves it, as a run killed outright does.
+trap 'rm -rf "$RUN"; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
 JOBS=$(sysctl -n hw.ncpu) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the

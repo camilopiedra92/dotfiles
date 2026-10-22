@@ -327,20 +327,17 @@ lock_usage_error_does_not_wait() {
 }
 check "a usage error does not wait" lock_usage_error_does_not_wait
 
-# The holder has the turn but has written no record: here a bare lockf, which
-# leaves the file empty, holds it.
-lock_unrecorded_holder() {
-  local tmp tries=0 rc
-  tmp=$(mktemp -d) || return 1
-  lock_env "$tmp"
-  trap 'lock_cleanup' RETURN
-  lock_repo "$tmp/a" R 0.1
-  lockf -k "$LOCK_FILE" sh -c "n=0; until [ -e '$tmp/release' ] || [ \$n -ge 200 ]; do sleep 0.05; n=\$((n + 1)); done; echo 'H end' >> '$tmp/log'" &
-  echo "$!" >> "$tmp/pids"
+# lock_bare_holder: holds the case's lock with a bare lockf, as no run does:
+# it writes no record and leaves the file as it finds it, logs `H end` and
+# lets go at lock_release. Returns once the lock is seen held.
+lock_bare_holder() {
+  local tries=0 rc
+  lockf -k "$LOCK_FILE" sh -c "n=0; until [ -e '$LOCK_TMP/release' ] || [ \$n -ge 200 ]; do sleep 0.05; n=\$((n + 1)); done; echo 'H end' >> '$LOCK_TMP/log'" &
+  echo "$!" >> "$LOCK_TMP/pids"
   while :; do
     rc=0
     lockf -k -s -t 0 "$LOCK_FILE" true || rc=$?
-    [ "$rc" -eq 75 ] && break
+    [ "$rc" -eq 75 ] && return 0
     tries=$((tries + 1))
     [ "$tries" -lt 100 ] || {
       echo "the stand-in holder never took the lock"
@@ -348,6 +345,17 @@ lock_unrecorded_holder() {
     }
     sleep 0.05
   done
+}
+
+# The holder has the turn but has written no record: here a bare lockf, on
+# a file nobody has written.
+lock_unrecorded_holder() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" R 0.1
+  lock_bare_holder || return 1
   lock_start "$tmp/a" "$tmp/R"
   lock_await_waiting "$tmp/R" || return 1
   lock_release
@@ -357,6 +365,55 @@ lock_unrecorded_holder() {
   lock_expect log "R after the holder" "H end|R start|R end|" "$(lock_log)"
 }
 check "a holder that has not recorded itself still makes a run wait, said without details" lock_unrecorded_holder
+
+# R4: the record names the run that holds the turn, or nobody. A run that
+# ends empties it while the turn is still its own, so whoever holds the turn
+# next -- a run that has not written its record yet, or, as here, a bare
+# lockf -- is not taken for it.
+lock_ended_run_not_named() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 0.1
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  within 2 "$LOCK_PID" && lock_expect A "exit" 0 "$RC" || return 1
+  lock_expect "the record A left" "nothing" "" "$(cat "$LOCK_FILE")" || return 1
+  lock_bare_holder || return 1
+  lock_start "$tmp/b" "$tmp/B"
+  lock_await_waiting "$tmp/B" || return 1
+  lock_release
+  within 3 "$LOCK_PID" && lock_expect B "exit" 0 "$RC" || return 1
+  lock_expect "B's stderr" "the line without details" \
+    "check.sh: waiting for another run to finish" "$(cat "$tmp/B.err")"
+}
+check "a run that has ended is not named as the one being waited for" lock_ended_run_not_named
+
+# R4: a run killed outright cannot empty its record. A waiter that finds a
+# pid no longer alive names nobody.
+lock_killed_run_not_named() {
+  local tmp a
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  lock_repo "$tmp/a" A 5
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  lock_await "A start" || return 1
+  kill -KILL "$a"
+  wait "$a" 2> /dev/null
+  lock_expect "the record A left" "A's" "$a $tmp/a" "$(cat "$LOCK_FILE")" || return 1
+  lock_bare_holder || return 1
+  lock_start "$tmp/b" "$tmp/B"
+  lock_await_waiting "$tmp/B" || return 1
+  lock_release
+  within 3 "$LOCK_PID" && lock_expect B "exit" 0 "$RC" || return 1
+  lock_expect "B's stderr" "the line without details" \
+    "check.sh: waiting for another run to finish" "$(cat "$tmp/B.err")"
+}
+check "a run killed outright is not named as the one being waited for" lock_killed_run_not_named
 
 # FR-007: the lock cannot be opened (its directory is a file), or it opens and
 # lockf fails for a reason other than a holder (a stub answering 71,

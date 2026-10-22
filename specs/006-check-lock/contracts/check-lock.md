@@ -12,7 +12,9 @@ selection and output there are unchanged.
    exports `CHECK_SH_RUN=<pid>`.
 5. Selection, sections and verdict, as in 004. Every section's subshell
    closes the lock descriptor before running the section.
-6. The lock is released when the runner process ends, by any means.
+6. The runner empties the lock file as it exits through its EXIT trap,
+   still holding the lock; the lock is released when the runner process
+   ends, by any means.
 
 ## The lock
 
@@ -27,8 +29,8 @@ selection and output there are unchanged.
 
 - Waiting, once per run, before anything else is printed:
   - `check.sh: waiting for the run of pid <pid> in <path> to finish`, or
-  - `check.sh: waiting for another run to finish` when the holder has not
-    recorded itself yet.
+  - `check.sh: waiting for another run to finish` when the file holds no
+    record, or one whose pid is no longer alive (a run killed outright).
 - The lock cannot be opened or taken for a reason other than a holder:
   `check.sh: cannot take the run lock <file>`, exit 1, no section run.
 
