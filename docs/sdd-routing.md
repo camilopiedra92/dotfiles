@@ -211,11 +211,15 @@ that is the host's own Claude Code session writing its configuration, and
 it did not change during attempts 4–6. No `t047-probe` file appeared in `~`
 or `~/dotfiles`.
 
-A finding, not fixed here: DeepSeek's 401 body quotes the last four
+A finding, fixed after the probes: DeepSeek's 401 body quotes the last four
 characters of the key it was sent. With the real key, those four characters
-would reach the agent through the proxy's relayed answer. The judge and the
-withholding of what a pass keeps look for the exact value of the key, not
-for a fragment of it.
+would have reached the agent through the proxy's relayed answer, and the
+judge and the withholding of what a pass keeps look for the exact value of
+the key, not for a fragment of it. The proxy now answers a provider's 401 or
+403 with the status and a body of its own, none of the provider's body or
+headers, and logs the refusal without its body (research R31; check 93 "a
+provider refusing the run's credential…", against a stand-in provider, not
+re-run against DeepSeek).
 
 **Leak search.** Every search looked for the two sentinel values and their
 marker, printed only counts, and was first seen to find a marker planted on

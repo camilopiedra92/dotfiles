@@ -1023,6 +1023,85 @@ it would refuse legitimate runs where Claude Code reports an auxiliary model;
 narrowing the contract to pi — a Claude pass reporting no usage would be
 counted free, the defect US2 closed for pi.
 
+## R31 — A provider's refusal, in the proxy's words
+
+**Finding** (T047, attempt 6, 2026-10-22, docs/sdd-routing.md): DeepSeek
+answered the sentinel key with 401 "Your api key: \*\*\*\*d5be is invalid",
+the key's last four characters, and the proxy relayed the provider's answer
+verbatim, body and headers. With the real key, part of it would reach the
+agent. The judge and the withholding (R29) look for the exact value only.
+
+**Decision**: when a provider whose credential the proxy injects (Anthropic,
+DeepSeek) answers 401 or 403, the proxy relays the status with a JSON body of
+its own, `{"error": {"type": "provider_refused_credential", "status",
+"message"}}`, naming the status and that the provider refused the run's
+credential, and none of the provider's body or headers (`WWW-Authenticate`
+and any other: none of them is needed to read a refusal, and any could
+describe the key). It logs the refusal with its status, host and path,
+never the body. Every other status passes through as before. Check 93,
+`ep_refusal`, against a stand-in provider whose 401 and 403 quote the
+injected credential's tail in the body and two headers; seen red on the
+relay before the change, and again with the branch disabled by hand.
+
+**Alternatives**: scanning for key fragments in the judge — four characters
+match by chance in ordinary text, and by the time the judge reads the
+agent's output the fragment has already reached the agent, which could
+have sent it anywhere the pass may reach; dropping only the provider's
+`WWW-Authenticate` header and rewriting the body — the next provider's
+header or wording would need its own rule, where relaying nothing of a
+refusal needs none.
+
+## R32 — The stand-in proxy lives as the real one, not for a fixed time
+
+**Finding** (2026-10-22): one full `./check.sh`, with three suites running
+in parallel on this laptop, failed check 96 `e2e` with "sdd-step: the bundle
+has no proxy-ca.pem: the run's egress proxy is not running" at
+`fix_loop:verify:2`; it passed alone and in later runs. The hypothesis
+handed over — the real proxy exits when its heartbeat file stops changing,
+and under load the writer stalls past the timeout — does not hold for this
+check: the writer is sdd-run's main loop (`beat()` every 2 seconds,
+`HEARTBEAT_SECONDS`), the timeout is 60 seconds (`heartbeat_seconds` in
+`sdd-pass.py`'s start line), a 30-period margin, but check 96 never runs
+`sdd-egress-proxy.py` at all: the stand-in runtime
+(`checks/sdd/standins/container`) answers a run naming it with a fake proxy
+that printed its ready line and then ran `sleep 300`, ignoring the
+heartbeat. When that sleep ends, `sdd-step egress-proxy`'s wait returns and
+its `finally` removes `proxy-ca.pem` and `proxy.json` while the run goes on;
+the next pass fails with this message. Reproduced without load (the scratch
+runner ran check 96's `e2e` alone with the stand-in's `sleep 300` rewritten
+to a shorter one): with 3 seconds, "failed at fix_loop:verify:1" with this
+message; with 4, at `fix_loop:implement:2`; with 5, and with 300, it passed
+(the third `sdd-run` call, the one that failed, took 7 seconds unloaded).
+What was not reproduced is the load itself: the flake needs that call to
+take more than 300 seconds, about 40 times its unloaded time, and nothing
+else in check 96 removes the file (the only writers of `proxy-ca.pem` are
+`start_proxy`'s leftover removal and `egress_proxy`'s `finally`, and no
+`container stop` names the proxy in that check), so the fixed lifetime is
+the cause by elimination, the load that crossed it observed only once.
+
+**Decision**: the stand-in's fake proxy keeps the real proxy's lifetime: it
+runs until stopped, or until `admissions/heartbeat` (resolved through the
+`-v` mount, as the stand-in resolves `/work`) has not changed for the start
+line's `heartbeat_seconds`. A live run's stand-in proxy then cannot die of
+elapsed time, and one an interrupted check abandoned still exits once its
+heartbeat stops or its scratch directory is gone. Check 91's own proxy
+cases, where no sdd-run beats, touch the heartbeat while their proxy runs.
+Check 91, `sdd_standin_proxy_lifetime`: red on the `sleep 300` stand-in
+("still running four seconds after its last heartbeat"), and red with the
+heartbeat loop replaced by a 3-second sleep by hand ("exited although its
+heartbeat changed").
+
+**Alternatives**: a longer sleep (an hour) — still a fixed lifetime a slow
+enough machine crosses, and an interrupted check leaves a process behind for
+the hour; running until stopped, with no bound — an interrupted check leaves
+it forever, since `sdd-step egress-proxy` runs in a session of its own and
+outlives a killed sdd-run; changing the real proxy's heartbeat (liveness
+from the run's process, or a wider window) — the real proxy was not the
+cause, and its margin is 30 writer periods. A stall of the writer alone
+does end the real proxy while the run lives — sdd-run stopped by a signal
+while its passes go on — which is what the heartbeat is for when sdd-run is
+killed; not changed here, and not a cause of this failure.
+
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 
 **Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the

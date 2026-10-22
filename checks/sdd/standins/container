@@ -75,8 +75,12 @@ run)
     # proxy.fail: the proxy exits before it is ready.
     [ -e "$here/proxy.fail" ] && exit 1
     IFS= read -r line
+    # Runs as the real proxy does, until stopped or until the run's heartbeat
+    # has not changed for heartbeat_seconds, never for a fixed time: a fixed
+    # `sleep 300` ended it under a live run when check 96 ran slowly
+    # (2026-10-22, research R32).
     /usr/bin/python3 -I -c '
-import json, os, sys
+import json, os, sys, time
 c = json.loads(sys.argv[1])
 here = sys.argv[2]
 fake = {k: open(os.path.join(here, "secrets", v)).read() for k, v in (("anthropic", "claude-oauth"), ("deepseek", "deepseek-api"))}
@@ -86,8 +90,21 @@ json.dump({"providers": seen, "admissions": c.get("admissions"), "heartbeat_seco
 models = {"deepseek": {"data": [{"id": "deepseek-flash", "name": "DeepSeek-Standin-Flash"}]}} if "deepseek" in c["providers"] else {}
 ca = "-----BEGIN CERTIFICATE-----\nstand-in run authority\n-----END CERTIFICATE-----\n"
 print(json.dumps({"api_port": 8080, "models": models, "ca": ca}), flush=True)
-' "$line" "$here" || exit 125
-    sleep 300 &
+mounts = dict(m.split(":")[1:2] + [m.split(":")[0]] for m in sys.argv[3].split(";") if m)
+beat = os.path.join(mounts[c["admissions"]], "heartbeat")
+def stamp():
+    try:
+        return os.stat(beat).st_mtime_ns
+    except OSError:
+        return None
+window = float(c["heartbeat_seconds"])
+seen, since = stamp(), time.monotonic()
+while time.monotonic() - since < window:
+    time.sleep(min(1.0, window / 8))
+    now = stamp()
+    if now != seen:
+        seen, since = now, time.monotonic()
+' "$line" "$here" "$mounts" &
     child=$!
     [ -n "$name" ] && echo "$child" >"$here/running.$name"
     wait "$child"

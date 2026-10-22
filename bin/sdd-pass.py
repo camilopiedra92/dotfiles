@@ -710,7 +710,16 @@ def run_agent(run, phase, implement=None):
         started = time.time()
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         try:
-            text, structured, usage, served = parse_result(row["agent"], out, row["model"])
+            try:
+                text, structured, usage, served = parse_result(row["agent"], out, row["model"])
+            except PassFailed as e:
+                # An agent that failed says why on its exit and stderr, and in
+                # the error result it may still have returned (Claude Code's -p
+                # exits non-zero on one, its stderr often empty): the owner
+                # reads both, never only that usage is missing.
+                if code != 0:
+                    raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}; {e}") from None
+                raise
             p.answer = text
             run.usage(run.withhold(row["agent"], {"event": "end", "phase": phase, "model": served,
                                                   "effort": row["effort"], "usage": usage, "exit": code}))

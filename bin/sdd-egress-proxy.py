@@ -6,7 +6,9 @@ Every agent container's firewall allows this proxy and nothing else. It holds
 the run's provider credentials -- no agent does -- and:
 
 - forwards plain-HTTP requests to the provider of the pass that sent them,
-  over TLS, with the pass's token replaced by the provider's credential;
+  over TLS, with the pass's token replaced by the provider's credential, and
+  answers the provider's 401 or 403 in its own words, since the provider's
+  can describe that credential (research R31);
 - answers CONNECT to a package registry, for implement and verify passes,
   with a certificate its own authority signed, and forwards what comes
   through it to the real registry over verified TLS -- GET and HEAD only, so
@@ -313,6 +315,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (OSError, http.client.HTTPException) as e:
             log("%s %s %s -> upstream error %s" % (who(token), self.command, self.path.split("?")[0], type(e).__name__))
             return self.refuse(502, "upstream unreachable", token)
+        if r.status in (401, 403):
+            # The provider refused the credential this proxy put in, and its
+            # refusal can describe that credential: DeepSeek's 401 quoted its
+            # last four characters (T047, 2026-10-22). The agent gets the
+            # status in the proxy's words, none of the provider's body or
+            # headers; the log names the refusal, never its body (research R31).
+            log("%s %s %s:%d%s -> %s %s: the provider refused the run's credential"
+                % (who(token), self.command, c.host, c.port, self.path.split("?")[0], name, r.status))
+            body = json.dumps({"error": {"type": "provider_refused_credential", "status": r.status,
+                                         "message": "%s answered %d: the provider refused the run's credential"
+                                         % (name, r.status)}}).encode()
+            self.send_response(r.status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.send_response(r.status)
         for k, v in r.getheaders():
             if k.lower() not in DROPPED:

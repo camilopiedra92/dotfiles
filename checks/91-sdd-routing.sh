@@ -830,11 +830,13 @@ pi_says() { # model usage-json text [model usage-json text ...]
   done
 }
 # The run's egress proxy, started as sdd-run starts it, against the stand-in
-# runtime; sets pid. Its heartbeat file is sdd-run's, not a pass's admission,
-# and goes when the proxy is stopped.
+# runtime; sets pid, and beater, which touches the heartbeat as sdd-run does
+# so the proxy lives however long the case takes. Its heartbeat file is
+# sdd-run's, not a pass's admission, and goes when the proxy is stopped.
 start_proxy() { # case
   (cd "$repo" && SDD_RUN_DIR=$run "$step" egress-proxy > "$tmp/proxy.out" 2>&1) &
   pid=$!
+  beat_while_running "$run/admissions/heartbeat"
   local waited=0
   until grep -q 127.0.0.1 "$run/proxy.json" 2> /dev/null; do
     if [ $waited -ge 100 ] || ! kill -0 "$pid" 2> /dev/null; then
@@ -848,7 +850,18 @@ start_proxy() { # case
 stop_proxy() { # case
   "$sa/container" stop sdd-run1-proxy
   wait "$pid" || fail "$1: the egress proxy exited non-zero: $(cat "$tmp/proxy.out")"
+  kill "$beater" 2> /dev/null
+  wait "$beater" 2> /dev/null
   rm -f "$run/admissions/heartbeat"
+}
+# Touches a heartbeat file every second, as sdd-run does every two, until it
+# is stopped or the file's directory is gone with the case; sets beater.
+beat_while_running() { # heartbeat file
+  mkdir -p "$(dirname "$1")"
+  (while touch "$1" 2> /dev/null; do
+    sleep 1
+  done) &
+  beater=$!
 }
 # Nothing of an implement pass reached the worktree: no implement commit,
 # the file it edited as it was, no implement.json.
@@ -1134,6 +1147,56 @@ else
   skip "a Claude pass reporting no usage, or none for its configured model, applies nothing; a model beside it is recorded" check-jsonschema
 fi
 
+# A Claude agent that exits non-zero fails its pass with its exit and the
+# tail of its stderr, whatever its stdout held: a result without usage, or
+# nothing. A failed agent read as "reported no usage" sent the owner after
+# the wrong cause. Usage it did report is still recorded.
+sdd_agent_exit() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code stdout
+  for stdout in "a result without usage" "no result" "an error result" "a result with usage"; do
+    fresh || return 1
+    route_to sonnet
+    case $stdout in
+      "a result without usage") claude_says - - ;;
+      "no result") rm -f "$sa/fixture/result.json" ;;
+      # Claude Code's -p exits non-zero on an error result, its stderr often
+      # empty: the error it reported is the cause the owner needs.
+      "an error result") printf '{"type":"result","is_error":true,"result":"API Error: 529 overloaded","permission_denials":[]}\n' > "$sa/fixture/result.json" ;;
+      "a result with usage") claude_says 0.1 '{"claude-sonnet-5-5":{"inputTokens":2,"outputTokens":4}}' ;;
+    esac
+    edit src/app.py "print(3)"
+    printf 'echo "Error: the agent crashed mid-pass" >&2\n' > "$sa/fixture/script"
+    printf '2' > "$sa/fixture/exit"
+    out=$(pass implement)
+    code=$?
+    [ "$code" -eq 1 ] || fail "claude exit 2, $stdout: exit $code, wanted 1: $out"
+    printf '%s' "$out" | grep -qF "the agent exited 2: Error: the agent crashed mid-pass" ||
+      fail "claude exit 2, $stdout: the exit and its stderr are not what the owner reads: $out"
+    [ "$stdout" != "an error result" ] || grep -qF "the agent reported an error: API Error: 529 overloaded" <<< "$out" ||
+      fail "claude exit 2, $stdout: the error the agent reported is lost: $out"
+    nothing_applied "claude exit 2, $stdout"
+    clean_after "claude exit 2, $stdout"
+  done
+  # The last case's usage, recorded although the agent failed.
+  /usr/bin/python3 -I -c '
+import json, sys
+end = [e for e in map(json.loads, open(sys.argv[1])) if e["event"] == "end"]
+sys.exit(0 if end and end[-1].get("exit") == 2 and end[-1]["usage"]["total_cost_usd"] == 0.1
+         else "claude exit 2, a result with usage: the usage was not recorded: %s" % end)
+' "$run/usage.jsonl" || status=1
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "a Claude agent exiting non-zero fails with its exit and stderr, not as missing usage, and its usage is kept" sdd_agent_exit
+else
+  skip "a Claude agent exiting non-zero fails with its exit and stderr, not as missing usage, and its usage is kept" check-jsonschema
+fi
+
 # No credential leaks (FR-009). An agent that returns a credential's exact
 # value — in a file, its result's text, its structured output, its usage or
 # what it prints on failing — is refused with nothing applied and the value shown
@@ -1208,7 +1271,7 @@ sdd_no_leak() {
 
   # Full passes, opted in. A marker dates what the run wrote in the
   # temporary directories.
-  local marker=$tmp/marker pid
+  local marker=$tmp/marker pid beater
   fresh || return 1
   : > "$marker"
   tgit config sdd.implement deepseek
@@ -1467,7 +1530,7 @@ sdd_lifecycle() {
   fi
 
   # egress-proxy, opted out: Claude's credential only.
-  local opt pid
+  local opt pid beater
   # The network policy comes from the bundle, frozen at start.
   printf 'registry.frozen.example\n' > "$run/egress-registries.txt"
   for opt in sonnet deepseek; do
@@ -1475,6 +1538,7 @@ sdd_lifecycle() {
     rm -f "$run/proxy.json" "$sa/proxy-start.json"
     (cd "$repo" && SDD_RUN_DIR=$run "$step" egress-proxy > "$tmp/proxy.out" 2>&1) &
     pid=$!
+    beat_while_running "$run/admissions/heartbeat"
     local waited=0
     while [ ! -s "$run/proxy.json" ] && [ $waited -lt 100 ] && kill -0 "$pid" 2> /dev/null; do
       sleep 0.1
@@ -1525,6 +1589,8 @@ PY
       fail "egress-proxy $opt: a credential reached an argument, the bundle or the output"
     "$sa/container" stop sdd-run1-proxy
     wait "$pid" || fail "egress-proxy $opt: exited non-zero when the proxy stopped: $(cat "$tmp/proxy.out")"
+    kill "$beater" 2> /dev/null
+    wait "$beater" 2> /dev/null
     grep -qx sdd-run1 "$sa/networks.txt" 2> /dev/null && fail "egress-proxy $opt: the network outlived the proxy"
     [ ! -e "$run/proxy-ca.pem" ] || fail "egress-proxy $opt: proxy-ca.pem outlived the proxy"
   done
@@ -1551,3 +1617,49 @@ PY
   return "$status"
 }
 check "prepare-worker builds once, egress-proxy holds the credentials and records the served model, cleanup spares a live run" sdd_lifecycle
+
+# The stand-in runtime runs its fake proxy as long as the real proxy runs:
+# while the heartbeat file changes, however long that is, and no longer once
+# it stops. A fixed lifetime (it was `sleep 300`) ended the proxy under a
+# run that was still beating, when check 96 ran slowly on a loaded machine:
+# "the bundle has no proxy-ca.pem" (2026-10-22, research R32).
+sdd_standin_proxy_lifetime() {
+  local tmp sa adm pid i
+  tmp=$(mktemp -d) || return 1
+  trap 'kill "$pid" 2> /dev/null; rm -rf "$tmp"' RETURN
+  sa=$tmp/standins adm=$tmp/admissions
+  cp -R checks/sdd/standins "$sa"
+  mkdir -p "$sa/secrets" "$adm"
+  printf 'x' > "$sa/secrets/claude-oauth"
+  printf 'x' > "$sa/secrets/deepseek-api"
+  touch "$adm/heartbeat"
+  printf '{"listen": "0.0.0.0:8080", "admissions": "/admissions", "heartbeat_seconds": 2, "providers": {}}\n' |
+    "$sa/container" run --rm -i --name sdd-run1-proxy -v "$adm:/admissions:ro" --entrypoint python3 img \
+      -I /proxy/sdd-egress-proxy.py > "$tmp/ready" 2> "$tmp/err" &
+  pid=$!
+  for i in $(seq 1 100); do
+    [ -s "$tmp/ready" ] && break
+    sleep 0.1
+  done
+  [ -s "$tmp/ready" ] || {
+    echo "the stand-in proxy printed no ready line: $(cat "$tmp/err")"
+    return 1
+  }
+  # Beats every half second for six seconds, three times the window.
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    touch -t "2001010101.$((10 + i))" "$adm/heartbeat"
+    sleep 0.5
+  done
+  kill -0 "$pid" 2> /dev/null || {
+    echo "the stand-in proxy exited although its heartbeat changed every half second"
+    return 1
+  }
+  # Then silence: gone within twice the window.
+  for i in $(seq 1 40); do
+    kill -0 "$pid" 2> /dev/null || return 0
+    sleep 0.1
+  done
+  echo "the stand-in proxy was still running four seconds after its last heartbeat, with a two-second window"
+  return 1
+}
+check "the stand-in runtime's proxy runs while its heartbeat changes, past any fixed time, and exits once it stops" sdd_standin_proxy_lifetime

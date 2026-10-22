@@ -60,6 +60,12 @@ so no credential outlives the run's process. It:
   read-only into the proxy's container, which looks each request's token up
   there, so a judgment pass cannot reach the registries and a Claude pass
   cannot reach DeepSeek;
+- answers a provider's 401 or 403 — the provider refusing the credential the
+  proxy put in — with that status and a JSON body of its own,
+  `{"error": {"type": "provider_refused_credential", "status", "message"}}`,
+  never the provider's body or headers, which can describe the credential
+  (DeepSeek's quoted its last four characters, T047); the refusal is logged
+  with its status, host and path, never its body (research R31);
 - exits by itself when `admissions/heartbeat`, which `sdd-run` touches, has
   not changed for its `heartbeat_seconds` (a change, not a timestamp, since
   the host's and the container's clocks may differ).
@@ -201,7 +207,11 @@ and no configuration an agent could have written runs during a run.
    to contracts/sdd-step.md, implement step 3, judgment rows included: a
    result without its usage, or without tokens for the row's model, fails
    the pass with nothing applied; one whose usage names other models still
-   writes its usage line first, so the attempt counts (research R30). What
+   writes its usage line first, so the attempt counts (research R30). An
+   agent that exits non-zero fails the pass as `the agent exited <code>:
+   <the last 300 characters of its stderr>`, whatever its stdout held — a
+   result without usage, or none — and the usage it did report is still
+   written first. What
    the agent said reaches no log or file unjudged: the usage line, a failing pass's message and the
    answer kept in `results/` have the exact value of every credential of the
    run replaced by its Keychain item's name first — the usage line within its
