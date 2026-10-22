@@ -12,13 +12,6 @@
 # every script that asks: guessing would apply one Mac's Dock to the other.
 printf '\n%sMachine profile%s\n' "$DIM" "$OFF"
 
-# A profile directory named `test` with nothing in it, and a machine file
-# naming it. Shared by every test below that runs a per-machine script.
-machine_fixture() {
-  mkdir -p "$1/machines/test"
-  echo test > "$1/machine"
-}
-
 machine_run() {
   local tmp=$1
   shift

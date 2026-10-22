@@ -233,21 +233,8 @@ check "install.sh is idempotent" install_is_idempotent
 #
 # A fixture rather than the real manifest, because the real one has a single
 # well-formed line and would exercise none of the shapes worth getting wrong.
-# Every extraction below ends at the header of the next step, and this is the
-# check that it took exactly one. A step extracted up to a prose comment once
-# swallowed the step added after it: that step ran for real, against this
-# machine's HOME and the real CLI, inside a test that had stubbed only `uv`.
-one_step_only() {
-  local steps=$1 n
-  # The range is inclusive, so its last line is the next step's header (or the
-  # closing log line): that one is the boundary, not a step that was taken.
-  n=$(sed '$d' "$steps" | grep -c '^# --- [0-9]')
-  [ "$n" -eq 1 ] || {
-    echo "extraction took $n steps from install.sh, not one:"
-    sed '$d' "$steps" | grep '^# --- [0-9]'
-    return 1
-  }
-}
+# Each extraction below is held to exactly one step by one_step_only, in
+# checks/lib/fixtures.sh.
 
 uv_tools_step() {
   local tmp steps

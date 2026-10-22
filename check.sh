@@ -121,6 +121,10 @@ skip() {
 # process is the point: one verdict, one strictness, one summary. The files are
 # linted directly (see Lint), so shellcheck has nothing to follow here.
 # shellcheck source=/dev/null
+for lib in checks/lib/*.sh; do
+  . "$lib"
+done
+# shellcheck source=/dev/null
 for section in checks/*.sh; do
   . "$section"
 done
