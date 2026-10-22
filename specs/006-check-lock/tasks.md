@@ -101,14 +101,14 @@ they never touch the real lock nor wait on the run executing them.
 
 ### Tests for User Story 3
 
-- [ ] T026 [US3] Add to checks/06-lock.sh the case "TERM while waiting ends the run without its turn": holder A (3 s), waiter B; TERM to B's runner after 0.5 s; B exits 143 within 1 s (SC-003), no `B start` in the log, A exits 0 with its log whole, then C starts with empty stderr, and no `lockf` process B started remains (`pgrep -P` before the TERM names it) (US3 AS1, AS3, FR-005)
-- [ ] T027 [US3] Add the case "^C while waiting ends the run with 130": the pty pattern of `ctrl_c_stops_sections` in checks/05-runner.sh (python3 `pty.fork`, `\x03` written to the pty) with the scratch lock held by `lockf -k <file> sleep 5`; the run exits 130 and runs no section (US3 AS2)
-- [ ] T028 [US3] Run them before the code: T026 fails for not exiting within 1 s (bash defers the TERM trap behind the foreground `lockf`); T027's predicted result recorded as observed, kept only if a hand-break turns it red
+- [X] T026 [US3] Add to checks/06-lock.sh the case "TERM while waiting ends the run without its turn": holder A (3 s), waiter B; TERM to B's runner after 0.5 s; B exits 143 within 1 s (SC-003), no `B start` in the log, A exits 0 with its log whole, then C starts with empty stderr, and no `lockf` process B started remains (`pgrep -P` before the TERM names it) (US3 AS1, AS3, FR-005)
+- [X] T027 [US3] Add the case "^C while waiting ends the run with 130": the pty pattern of `ctrl_c_stops_sections` in checks/05-runner.sh (python3 `pty.fork`, `\x03` written to the pty) with the scratch lock held by `lockf -k <file> sleep 5`; the run exits 130 and runs no section (US3 AS2)
+- [X] T028 [US3] Run them before the code: T026 fails for not exiting within 1 s (bash defers the TERM trap behind the foreground `lockf`); T027's predicted result recorded as observed, kept only if a hand-break turns it red
 
 ### Implementation for User Story 3
 
-- [ ] T029 [US3] In check.sh's lock block, wait with `lockf -s 9 &` and `wait $!` under INT and TERM traps that kill that `lockf` and exit 130 and 143, then clear those traps before the runner sets its section traps (research R3); T026–T027 green
-- [ ] T030 [US3] Hand-breaks, seen red and restored, named in the commit message: wait in the foreground again (T026 red); let the trap exit without killing the background `lockf` (T026 red on the leftover process or C waiting); exit 0 from the trap (T026, T027 red); commit; fresh-context review of the story
+- [X] T029 [US3] In check.sh's lock block, wait with `lockf -s 9 &` and `wait $!` under INT and TERM traps that kill that `lockf` and exit 130 and 143, then clear those traps before the runner sets its section traps (research R3); T026–T027 green
+- [X] T030 [US3] Hand-breaks, seen red and restored, named in the commit message: wait in the foreground again (T026 red); let the trap exit without killing the background `lockf` (T026 red on the leftover process or C waiting); exit 0 from the trap (T026, T027 red); commit; fresh-context review of the story
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
