@@ -3,6 +3,10 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# The last case greps every section for calls that bypass this_repo_git.
+# covers: claude/git-guard.sh claude/settings.json claude/mcp.json install.sh
+# covers: drift.sh Brewfile uv-tools.txt macos/machines/* checks/*.sh
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A

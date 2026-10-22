@@ -35,16 +35,16 @@ exists, and each must fail for the reason its case predicts.
 
 ### Tests for User Story 1
 
-- [ ] T005 [US1] Write checks/05-runner.sh: a scratch repository holding a copy of check.sh, fake sections A (`# covers: a/*`), B (`# covers: b.txt`), C (no declaration) and checks/lib/; cases: a staged path selects its section plus C and names B as not selected (US1 AS1, FR-003); check.sh, githooks/, checks/lib/ and an undeclared checks/ path select all (AS2, AS7); a section edit leaving `# covers:` alone selects that section, one changing it, adding or deleting a section selects all (AS3, AS4); a selected failing section exits 1 (AS5); a rename selects both sides (AS6); nothing staged runs only C and passes under --strict (edge); an unreadable index selects all (edge); a pattern is not glob-expanded against the tree (edge); `*` crosses `/`; the index read is THIS_INDEX's
-- [ ] T006 [US1] Change the expectation in `pre_commit_gate` (checks/15-githooks.sh) to `check.sh --strict --staged` (FR-004)
-- [ ] T007 [US1] Run the suite and record that each new case fails for its predicted reason (an unknown `--staged` is a usage error)
+- [x] T005 [US1] Write checks/05-runner.sh: a scratch repository holding a copy of check.sh, fake sections A (`# covers: a/*`), B (`# covers: b.txt`), C (no declaration) and checks/lib/; cases: a staged path selects its section plus C and names B as not selected (US1 AS1, FR-003); check.sh, githooks/, checks/lib/ and an undeclared checks/ path select all (AS2, AS7); a section edit leaving `# covers:` alone selects that section, one changing it, adding or deleting a section selects all (AS3, AS4); a selected failing section exits 1 (AS5); a rename selects both sides (AS6); nothing staged runs only C and passes under --strict (edge); an unreadable index selects all (edge); a pattern is not glob-expanded against the tree (edge); `*` crosses `/`; the index read is THIS_INDEX's
+- [x] T006 [US1] Change the expectation in `pre_commit_gate` (checks/15-githooks.sh) to `check.sh --strict --staged` (FR-004)
+- [x] T007 [US1] Run the suite and record that each new case fails for its predicted reason (an unknown `--staged` is a usage error)
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implement `--staged` in check.sh: argument parsing in any order, the staged list through `this_repo_git diff --cached --name-status --no-renames -z`, the selection rule of research R4, globbing off while reading patterns, the selection line of contracts/check-cli.md
-- [ ] T009 [US1] Run `"$repo/check.sh" --strict --staged` from githooks/pre-commit, comment updated
-- [ ] T010 [P] [US1] Add the `# covers:` lines of research R7 to each section in checks/*.sh, and a comment on each section without one saying why
-- [ ] T011 [US1] Break each selection rule by hand once and see its case go red; restore; full suite green; fresh review of the story
+- [x] T008 [US1] Implement `--staged` in check.sh: argument parsing in any order, the staged list through `this_repo_git diff --cached --name-status --no-renames -z`, the selection rule of research R4, globbing off while reading patterns, the selection line of contracts/check-cli.md
+- [x] T009 [US1] Run `"$repo/check.sh" --strict --staged` from githooks/pre-commit, comment updated
+- [x] T010 [P] [US1] Add the `# covers:` lines of research R7 to each section in checks/*.sh, and a comment on each section without one saying why
+- [x] T011 [US1] Break each selection rule by hand once and see its case go red; restore; full suite green; fresh review of the story
 
 ## Phase 4: User Story 2 - The full run takes about the time of its slowest section (P2)
 

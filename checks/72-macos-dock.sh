@@ -3,6 +3,8 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: macos/dock.sh macos/machine.sh macos/machines/*
 
 # ── macOS Dock ───────────────────────────────────────────────────────────────
 # macos/dock.sh rebuilds the Dock's app section from the machine's dock.txt through

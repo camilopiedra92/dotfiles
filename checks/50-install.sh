@@ -3,6 +3,11 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# Step 3 links every tree below into a scratch HOME from a copy of the
+# repository, and the other steps read the manifests.
+# covers: install.sh claude/* zsh/* git/* ssh/* launchd/* mise/* ghostty/*
+# covers: vscode/* bin/* macos/* starship.toml uv-tools.txt Brewfile drift.sh
 
 # ── install.sh ───────────────────────────────────────────────────────────────
 # The whole promise of this repo is that install.sh rebuilds a machine. Running
