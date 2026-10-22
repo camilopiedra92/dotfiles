@@ -851,6 +851,32 @@ restated Spec Kit's procedure; the system prompt is where a harness puts the
 environment. pi reading Claude's skill file — a second copy of the procedure
 in another agent's format, when Spec Kit ships pi's own.
 
+## R28 — A run's code and governance, frozen with it
+
+**Finding** (the US1 review, 2026-10-21): the routing table, profiles, brief and
+prices were frozen per run, but not the code that runs them: the outcome
+schemas, `sdd-step` and `sdd-pass` were read from `~/dotfiles` at every step,
+and the proxy, which holds the credentials, was copied from it at every start;
+a branch switch or an edit there mid-run changed a run in progress. `resume`
+also refused unless the installed workflow matched dotfiles' — while the
+engine resumes from its own per-run copy.
+
+**Decision**: `sdd-run start` copies the code a run executes into the bundle's
+`code/`, in dotfiles' layout (`bin/`, `claude/speckit/schemas/`,
+`claude/config-guard.sh`, `containers/worker/`), and points `tools.json`'s
+`sdd-step` there; `sdd-step` and `sdd-pass` resolve their root from their own
+path, which is then the bundle's, so nothing in either needed to change.
+`resume` reads gates from the run's own workflow copy and checks only what the
+moment needs (Spec Kit's version, the runtime, the token). One run at a time
+per worktree — Spec Kit's feature pointer is the worktree's — and a run
+belongs to its worktree; `start --from` sets the pointer to the feature it
+names, and a resume refuses a pointer moved since.
+
+**Alternatives**: a version check of the live code against the bundle's —
+it would only refuse, not keep the run running; reading the feature from the
+bundle in every step instead of Spec Kit's pointer — Spec Kit's own scripts,
+inside the agents, read the pointer, so both must agree anyway.
+
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 
 **Finding** (owner's review of R23, 2026-10-21): with `CONNECT` tunnels to the

@@ -7,12 +7,12 @@ repository's root.
 
 | Command | Does |
 |---|---|
-| `sdd-run start --from <feature dir>` | as `start`, with `-i spec=<feature dir>/spec.md` instead of a description, for a feature whose run died: `resume_from` set to the first phase not in `.sdd/phases.json`; refused when no phase is finished (FR-022) |
+| `sdd-run start --from <feature dir>` | as `start`, with `-i spec=<feature dir>/spec.md` instead of a description, for a feature whose run died: `resume_from` set to the first phase not in `.sdd/phases.json`; refused when no phase is finished (FR-022). The run works on that feature: Spec Kit's per-worktree pointer `.specify/feature.json` is set to it (a repository that tracks the pointer must already name it), and the bundle records it |
 | `sdd-run start "<description>"` | `sdd-step cleanup`, the prerequisites below, unsets `CLAUDE_CODE_EFFORT_LEVEL` (research R14), merges and validates the routing layers (contracts/routing.md), applying `--set` overrides, generates the run id, writes the run bundle (contracts/routing.md) and exports `SDD_RUN_DIR`, starts the egress proxy (contracts/pass.md), sets `SPECKIT_WORKFLOW_RUN_ID` and `SDD_STEP` (the absolute path of `sdd-step` from `tools.json`), then runs `specify workflow run sdd-routed -i spec=<description>` as its child and stops the egress proxy when it exits |
 | `sdd-run resume <run_id> [<verdict>]` | `sdd-step cleanup`, the same checks, the run's bundle reused unchanged and `SDD_RUN_DIR` exported, then runs `specify workflow resume <run_id>` as its child, stopping the egress proxy when it exits, binding the verdict to the input of the gate the run is paused at; with no verdict, for a run paused outside a gate (Ctrl-C), it resumes the interrupted step |
 | `sdd-run routing [--set <phase>.<field>=<value> …] [--init-local]` | prints the effective routing table for this repository, each value with its layer; `--init-local` creates the git-ignored local layer (contracts/routing.md) |
-| `sdd-run resume <run_id> retry` | for a run stopped at `fix-stuck` or `converge-stuck`: writes the one-shot verdict `$SDD_RUN_DIR/verdicts/retry`, which the next `sdd-step stuck` consumes and deletes, then resumes — exactly one more round |
-| `sdd-run abort <run_id>` | ends a run stopped for the owner: records it aborted in the bundle, removes its containers, network and exports, and leaves the feature's worktree as it is |
+| `sdd-run resume <run_id> retry` | for a run stopped at `fix_stuck` or `converge_stuck`, at any nesting (`convergence:fix_loop:<j>:fix_stuck:<i>`): writes the one-shot verdict `$SDD_RUN_DIR/verdicts/retry`, which the next `sdd-step stuck` consumes and deletes, then resumes — exactly one more round |
+| `sdd-run abort <run_id>` | ends a run stopped for the owner: records it aborted in the bundle, removes its containers, network and exports, and leaves the feature's worktree as it is; a finished run is left as it is, and said so |
 | `sdd-run usage <run_id>` | from the run's `usage.jsonl` (contracts/routing.md): per model, every attempt's reported cost; attempts with a start and no end, or no usage, listed as unreported; the provider's tokens priced from `models.json`; the totals |
 
 ## As built (T038, 2026-10-21)
@@ -24,25 +24,36 @@ repository's root.
   YAML library.
 - Order of `start`: the prerequisites, the layers merged and validated, the
   bundle written (`lock.json` atomically: run id, pid, its `LC_ALL=C ps -o
-  lstart=` start time, the base commit and the worktree), the run linked as
+  lstart=` start time and the worktree; the code the run executes frozen
+  under `code/`, research R28), the run linked as
   `~/.local/state/sdd/runs/<run_id>`, then `sdd-step cleanup`, then `sdd-step
-  prepare-worker` — before the proxy, which runs on the worker image; the
-  workflow's own step 0 then finds the image present and re-checks its
-  inventory —, then the egress proxy (in a session of its own, so a Ctrl-C
+  prepare-worker` — before the proxy, which runs on the worker image —, then
+  the egress proxy (in a session of its own, so a Ctrl-C
   meant for Spec Kit does not reach it), answering once it has written
   `proxy.json` and `proxy-ca.pem`, its heartbeat touched every 2 seconds
   while Spec Kit runs, and stopped with SIGTERM when Spec Kit exits.
 - Run ids: twelve random hex digits, never one the registry or this
   repository holds, so they are unique across repositories.
-- `finished.json` (`outcome`: `completed`, `aborted`, `died`, `not started`)
-  is written when a run completes, is aborted, dies mid-step (Spec Kit still
+- One run at a time in a worktree: `start` refuses while another run of it is
+  paused, stopped, failed or running, naming it and the two commands that end
+  it; a run whose process died is the cleanup's to finish, not a blocker.
+- A run belongs to its worktree: `resume` and `abort` from another worktree of
+  the repository refuse, naming the run's, before writing anything.
+- `finished.json` (`outcome`: `completed`, `rejected`, `aborted`, `died`, `not
+  started`) is written when a run completes, is rejected at a checkpoint (the
+  engine's `aborted`), is aborted, dies mid-step (Spec Kit still
   records it `running` and its process is gone — `sdd-step cleanup` finds it)
   or fails before Spec Kit starts; its registry link goes with it, and
   cleanup drops links whose bundle is gone or finished. A paused or stopped
   run is not finished: its process is gone too, but `resume` takes it up.
 - `resume` of a run that died: refused, naming `sdd-run start --from <feature
   dir>` and the phases that will run again. `resume` reuses the bundle as it
-  is, rewrites only the lock, and refuses when the run's worker image is gone.
+  is, rewrites only the lock, and refuses when the run's worker image is gone
+  or when the worktree's `.specify/feature.json` no longer names the run's
+  feature. It checks only Spec Kit's version, the runtime and the token: the
+  engine resumes from the run's own copy of the workflow
+  (`.specify/workflows/runs/<id>/workflow.yml`), whose gates `sdd-run` reads
+  too, so an installed workflow of another version does not stop it.
 - After Spec Kit exits, the bundle's `routing.json` is copied to the
   feature's `.sdd/routing.json` once the feature directory exists.
 - `sdd-run routing` prints one line per phase and field: phase, field, value,
