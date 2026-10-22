@@ -585,11 +585,13 @@ check "a staged rename that strands a declared pattern fails the hook's tier" de
 # terminal as stdin, so one that reads it stopped on SIGTTIN, and gave each
 # foreground child of the runner the terminal's SIGINT, so ^C missed the
 # runner. Both need a terminal: `script` and a pty from python provide one.
+# Neither is looked for first: macOS ships /usr/bin/script and
+# /usr/bin/python3, and a missing one fails its case rather than passing it
+# unrun.
 section_stdin_is_not_the_terminal() {
   local tmp out
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
-  command -v script > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:check "stdin is not a terminal" test ! -t 0'
   out=$(cd "$tmp/r" && script -q /dev/null ./check.sh < /dev/null 2>&1 | tr -d '\r')
   case "$out" in *"ok"*"stdin is not a terminal"*) ;; *)
@@ -611,7 +613,6 @@ ctrl_c_stops_sections() {
   local tmp out
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
-  command -v python3 > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true'
   # Its runner is killed outright when ^C does not stop it.
   fixture_mktemp "$tmp/bin" "$tmp/scratch"
