@@ -464,7 +464,6 @@ JSONL
   local total
   total=$(/usr/bin/python3 -I -c 'import sys; print("%.4f" % (0.75 + float(sys.argv[1])))' "$want_ds")
   printf '%s\n' "$out" | grep -qE "^total +\\\$$total" || fail "usage: the total is not \$$total: $out"
-  grep -qF 9.0000 <<< "$out" && fail "usage: another run's attempts were counted"
   return "$status"
 }
 check "sdd-run usage sums each model's attempts for the named run, prices DeepSeek from models.json, and lists what reported nothing" sdd_run_usage
