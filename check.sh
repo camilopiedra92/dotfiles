@@ -54,7 +54,7 @@ drop_hook_git_env() {
   done
   # Nor does this machine's git config: the checks build throwaway
   # repositories meant to behave as on a CI runner, and the global config
-  # (signing, hooks, fsmonitor) would make them behave as on this laptop. With
+  # (signing, hooks) would make them behave as on this laptop. With
   # commit.gpgsign on and an empty ssh-agent, every scratch `git commit`
   # failed (observed 2026-10-13: 2 failures, "failed to write commit object").
   # Set here, after the loop above would have erased them, and not at the call

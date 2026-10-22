@@ -105,21 +105,19 @@
 	# non-standard -- and doing that silently disables the default path, which
 	# is how the ignore file sitting there stopped being read at all.
 	#
-	# Both attack the same cost: `git status` stat-ing the whole tree. fsmonitor
-	# runs a daemon fed by FSEvents so git is told what changed instead of
-	# looking, and untrackedCache remembers which directories held no untracked
-	# files. On a large repo this is the difference between seconds and
-	# milliseconds, and starship runs it on every prompt.
+	# No fsmonitor or untrackedCache. Both speed up `git status` on very large
+	# trees, and measured here they bought nothing: on 2026-10-22, `git status`
+	# with and without fsmonitor in every repository under ~/Development and
+	# ~/dotfiles took 0-20 ms either way, the largest (5,136 files) 10 ms both.
+	# Set globally, fsmonitor started a daemon for every repository git
+	# touched, throwaway ones included, alive as long as its directory: 613 from
+	# one project's pytest temp dirs on 2026-10-08, 71 on 2026-10-22. A
+	# repository that grows to tens of thousands of files gets it on its own:
+	# `git config --local core.fsmonitor true`.
 	#
-	# It also starts a daemon for every repository a git command touches,
-	# throwaway ones included, and the daemon lives as long as its directory: a
-	# test suite that builds scratch repositories should run git with
-	# GIT_CONFIG_GLOBAL=/dev/null (as git's own test suite does), or each run
-	# leaves daemons behind (613 from one project's pytest temp dirs, found
-	# 2026-10-08). That also keeps this file's hooks, signing and defaults out
-	# of a run meant to match CI's.
-	fsmonitor = true
-	untrackedCache = true
+	# A test suite that builds scratch repositories still runs git with
+	# GIT_CONFIG_GLOBAL=/dev/null, as git's own suite does: this file's hooks,
+	# signing and identity have no place in a run meant to match CI's.
 
 [help]
 	# Fixes typos ("git stauts") after 1s instead of just suggesting
