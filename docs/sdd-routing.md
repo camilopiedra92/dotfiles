@@ -73,7 +73,8 @@ It stops at each checkpoint and prints the command that answers it:
 - `answer_clarify`, only when clarify has questions: each question in
   `specs/<feature>/clarify-questions.md` carries a recommendation; write
   `**Answer:** <option>` under each, then `sdd-run resume <id> approve`.
-- `review_spec`: read `spec.md`; `approve` or `reject` (reject ends the run).
+- `review_spec`: read `spec.md`; `approve` or `reject` (reject ends the run,
+  recorded as rejected).
 - `review_plan`, after tasks and analyze: read `plan.md`, `tasks.md`,
   `analysis.md` and the checklist items the fresh checklist review left
   unchecked. Approving is your answer to implement's question whether to go on
@@ -91,10 +92,16 @@ Other stops say what answers them:
   `sdd-run resume <id>` runs it again.
 - A run whose process died cannot be resumed (Spec Kit refuses a run it still
   reads as running): `sdd-run start --from specs/<feature>` starts a new run
-  that skips the phases already finished.
+  on that feature, skipping the phases already finished.
+
+One run at a time in a worktree: `start` refuses while another run there is
+paused, stopped or running, and names the commands that end it. A run is
+answered from the worktree it started in.
 
 The run's own files are in its bundle, `$(git rev-parse --git-common-dir)/sdd/<id>/`:
-the frozen routing table, profiles and brief, `usage.jsonl`, and `results/`,
+the frozen routing table, profiles and brief, the code the run executes
+(`code/`: a change to dotfiles mid-run does not reach it), `usage.jsonl`, and
+`results/`,
 every agent's final answer — the first place to look when a pass did something
 unexpected.
 

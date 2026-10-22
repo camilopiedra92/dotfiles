@@ -300,6 +300,8 @@ SH
   tail -1 "$SR_SA/specify.jsonl" | grep -qF '"-i"' && fail "resume after Ctrl-C: a verdict was passed"
   tail -1 "$SR_SA/specify.jsonl" | grep -qF "\"resume\", \"$id\"" || fail "resume after Ctrl-C: Spec Kit was not resumed"
   # Stuck: retry writes the one-shot verdict, then resumes; abort finishes.
+  # One run at a time in a worktree: the previous run, left paused, is ended first.
+  sr abort "$id" > /dev/null
   printf '{"status":"failed","current_step_id":"fix_loop:fix_stuck:2"}\n' > "$SR_SA/state.json"
   out=$(sr start "fourth") || true
   id=$(sr_last_id)
@@ -348,9 +350,15 @@ SH
   [ -s "$bundle/finished.json" ] || fail "cleanup: the dead run is not finished"
   [ ! -L "$SR/home/.local/state/sdd/runs/$dead" ] || fail "cleanup: the dead run's registry link remains"
   ln -s "$SR/nowhere" "$SR/home/.local/state/sdd/runs/stale1"
+  # One run at a time in a worktree: the previous run, left paused, is ended first.
+  id=$(sr_last_id)
+  sr abort "$id" > /dev/null
   out=$(sr start "seventh") || true
   [ ! -L "$SR/home/.local/state/sdd/runs/stale1" ] || fail "cleanup: a stale registry link remains"
   # start --from: spec.md and the first unfinished phase; refused with none.
+  # One run at a time in a worktree: the previous run, left paused, is ended first.
+  id=$(sr_last_id)
+  sr abort "$id" > /dev/null
   printf '{"status":"completed"}\n' > "$SR_SA/state.json"
   out=$(sr start --from specs/002-dead) || fail "start --from: failed: $out"
   if ! tail -1 "$SR_SA/specify.jsonl" | grep -qF '"spec=specs/002-dead/spec.md"' ||
@@ -377,6 +385,42 @@ check "a run's proxy lives as long as Spec Kit, and paused, stuck, dead and rest
 # sdd-run usage (SC-001's counting): per model, every attempt's reported
 # cost, failed and resumed ones included; attempts that reported nothing
 # listed; pi's tokens priced from the worker's models.json.
+# The US1 review's LOWs (2026-10-21): an exclude file without a final newline
+# keeps its last line; a layer of the wrong shape is refused, not a traceback;
+# aborting a finished run changes nothing and says so.
+sdd_run_lows() {
+  local status=0 out code exclude id bundle
+  trap '[ -z "$SR" ] || rm -rf "$SR"' RETURN
+  fail() {
+    echo "$1"
+    status=1
+  }
+  sr_fresh || return 1
+  exclude=$(sr_common)/info/exclude
+  printf '*.tmp' > "$exclude"
+  out=$(sr routing --init-local) || fail "init-local: failed: $out"
+  grep -qx '\*.tmp' "$exclude" || fail "init-local: the exclude file's last line was changed: $(cat "$exclude")"
+  grep -qx '.claude/sdd-routing.local.yml' "$exclude" || fail "init-local: the local layer is not excluded: $(cat "$exclude")"
+  local shape
+  for shape in 'phases: [plan]' '- plan'; do
+    printf '%s\n' "$shape" > "$SR_REPO/.claude/sdd-routing.yml"
+    out=$(sr routing) && code=0 || code=$?
+    [ "$code" -eq 1 ] || fail "layer '$shape': exit $code, wanted 1"
+    printf '%s' "$out" | grep -q "Traceback" && fail "layer '$shape': a traceback: $(printf '%s' "$out" | tail -1)"
+  done
+  rm "$SR_REPO/.claude/sdd-routing.yml"
+  printf '{"status":"completed"}\n' > "$SR_SA/state.json"
+  out=$(sr start "a feature") || fail "start: failed: $out"
+  id=$(sr_last_id)
+  bundle=$(sr_common)/sdd/$id
+  cp "$bundle/finished.json" "$SR/finished.before"
+  out=$(sr abort "$id") || fail "abort of a finished run: failed: $out"
+  printf '%s' "$out" | grep -qF "already finished (completed)" || fail "abort of a finished run: not said so: $out"
+  cmp -s "$SR/finished.before" "$bundle/finished.json" || fail "abort of a finished run: finished.json changed"
+  return "$status"
+}
+check "sdd-run keeps an exclude file's last line, refuses a malformed layer, and aborts no finished run" sdd_run_lows
+
 sdd_run_usage() {
   local status=0 out common
   trap '[ -z "$SR" ] || rm -rf "$SR"' RETURN

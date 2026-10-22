@@ -159,10 +159,12 @@ def speckit_version(tools):
     return tuple(int(x) for x in m.groups()) if r.returncode == 0 and m else None
 
 
-def workflow_step(tools, repo, step_id):
-    """The installed workflow's step with this id, searched through every
-    nested block (loops, ifs), or None."""
-    doc = load_yaml(tools, os.path.join(repo, ".specify", "workflows", WORKFLOW_ID, "workflow.yml"), WORKFLOW_ID)
+def workflow_step(tools, repo, rid, step_id):
+    """The step with this id in the run's own workflow — the copy Spec Kit
+    keeps per run and resumes from, not the one installed now — searched
+    through every nested block (loops, ifs), or None."""
+    doc = load_yaml(tools, os.path.join(repo, ".specify", "workflows", "runs", rid, "workflow.yml"), WORKFLOW_ID)
+    step_id = step_name(step_id)
 
     def walk(node):
         if isinstance(node, dict):
@@ -182,12 +184,18 @@ def workflow_step(tools, repo, step_id):
     return walk(doc.get("steps", []))
 
 
-def prerequisites(tools, repo):
-    """contracts/sdd-run.md, "Prerequisites", each a Stop naming it."""
+def prerequisites(tools, repo, starting=True):
+    """contracts/sdd-run.md, "Prerequisites", each a Stop naming it. A resume
+    checks only what the moment needs — the engine, the runtime, the token:
+    everything else is frozen in the run's bundle, and the engine resumes
+    from the run's own copy of the workflow (research R28)."""
     version = speckit_version(tools)
     if not version or version < SPECKIT_MIN:
         raise Stop("Spec Kit %s is older than %s: move its pin in uv-tools.txt and run ./install.sh"
                    % (".".join(map(str, version)) if version else "of unknown version", ".".join(map(str, SPECKIT_MIN))))
+    if not starting:
+        runtime_and_token(tools)
+        return
     if not os.path.isdir(os.path.join(repo, ".specify")):
         raise Stop("this repository has no .specify/: set Spec Kit up with sdd-init first")
     source = os.path.join(SPECKIT, f"{WORKFLOW_ID}.yml")
@@ -199,12 +207,7 @@ def prerequisites(tools, repo):
     have = (load_yaml(tools, installed, installed).get("workflow") or {}).get("version")
     if want != have:
         raise Stop(f"the {WORKFLOW_ID} workflow here is at {have}, dotfiles has {want}: {add}")
-    if host(tools["container"], "system", "status").returncode != 0:
-        raise Stop("the container runtime does not answer: container system start")
-    r = host(tools["security"], "find-generic-password", "-s", "claude-oauth", "-w")
-    if r.returncode != 0 or not r.stdout.strip():
-        raise Stop("the Keychain item claude-oauth is missing or blank: claude setup-token, then "
-                   "security add-generic-password -U -a \"$USER\" -s claude-oauth -w")
+    runtime_and_token(tools)
     for need in ("routing.yml", "brief.md", "pi-models.json", "egress-registries.txt", "profiles/author.json", "profiles/reader.json", "profiles/implementer.json"):
         if not os.path.isfile(os.path.join(SPECKIT, need)):
             raise Stop(f"dotfiles lacks claude/speckit/{need}: update ~/dotfiles")
@@ -218,6 +221,15 @@ def prerequisites(tools, repo):
             env=HOST_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
         raise Stop("opted in to DeepSeek, but Spec Kit's pi integration is not committed: "
                    "specify integration install pi, then commit .pi/")
+
+
+def runtime_and_token(tools):
+    if host(tools["container"], "system", "status").returncode != 0:
+        raise Stop("the container runtime does not answer: container system start")
+    r = host(tools["security"], "find-generic-password", "-s", "claude-oauth", "-w")
+    if r.returncode != 0 or not r.stdout.strip():
+        raise Stop("the Keychain item claude-oauth is missing or blank: claude setup-token, then "
+                   "security add-generic-password -U -a \"$USER\" -s claude-oauth -w")
 
 
 # ── Routing layers (contracts/routing.md, FR-027) ────────────────────────────
@@ -270,10 +282,12 @@ def effective_table(tools, repo, sets):
         try:
             validate(tools, "routing-layer.schema.json", doc or {"phases": {}}, label)
         except Stop as e:
-            # What the layer tried to set, beside why it may not.
-            sets = ", ".join(f"{p}.{f}" for p, fs in ((doc or {}).get("phases") or {}).items()
-                             if isinstance(fs, dict) for f in fs)
-            raise Stop(f"{e} (it sets {sets or 'nothing readable'})")
+            # What the layer tried to set, beside why it may not — when its
+            # shape lets that be read at all.
+            phases = doc.get("phases") if isinstance(doc, dict) else None
+            named = ", ".join(f"{p}.{f}" for p, fs in phases.items() if isinstance(fs, dict) for f in fs) \
+                if isinstance(phases, dict) else ""
+            raise Stop(f"{e} (it sets {named or 'nothing readable'})")
         for phase, fields in check_layer(defaults, doc, label).items():
             for field, value in fields.items():
                 table[phase][field] = {"value": value, "layer": name}
@@ -346,9 +360,34 @@ def write_bundle(tools, repo, table):
         shutil.copy2(os.path.join(SPECKIT, name), os.path.join(bundle, name))
     os.makedirs(os.path.join(bundle, "hooks"))
     shutil.copy2(os.path.join(DOTFILES, "claude", "config-guard.sh"), os.path.join(bundle, "hooks", "config-guard.sh"))
+    freeze_code(bundle)
     os.makedirs(registry(), exist_ok=True)
     os.symlink(bundle, os.path.join(registry(), rid))
     return rid, bundle
+
+
+# The code a run executes, frozen with it, laid out as dotfiles is so each
+# piece finds the others where it looks for them (research R28): sdd-step
+# and sdd-pass resolve their root from their own path, which is then the
+# bundle's, so a branch switch or an edit in ~/dotfiles mid-run changes nothing
+# in it — not the pass, not the schemas, not the proxy that holds the
+# credentials, not the worker recipe prepare-worker builds from.
+FROZEN = ["bin/sdd-step.sh", "bin/sdd-pass.py", "bin/sdd-egress-proxy.py", "claude/config-guard.sh",
+          "claude/speckit/schemas", "containers/worker"]
+
+
+def freeze_code(bundle):
+    code = os.path.join(bundle, "code")
+    for rel in FROZEN:
+        src, dst = os.path.join(DOTFILES, rel), os.path.join(code, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    tools = load(os.path.join(bundle, "tools.json"))
+    tools["sdd-step"] = os.path.join(code, "bin", "sdd-step.sh")
+    write_json(os.path.join(bundle, "tools.json"), tools)
 
 
 def finish(bundle, outcome):
@@ -454,12 +493,18 @@ def feature_dir(repo):
     return None
 
 
-def stuck(at):
-    """The stuck stop a step id names, or None. Spec Kit names a step's first
-    pass by its bare id and later passes `<loop>:<step>:<n>` (seen on 1.2.2,
-    check 96)."""
+def step_name(at):
+    """The workflow step an engine step id is a pass of. Spec Kit names a
+    step's first pass by its bare id and later ones `<loop>:<step>:<n>`, nested
+    loops `<loop>:<inner>:<j>:<step>:<n>` (seen on 1.2.2, check 96): the name
+    is the last segment, or the one before a pass number."""
     parts = (at or "").split(":")
-    name = parts[1] if len(parts) == 3 else parts[0]
+    return parts[-2] if len(parts) > 1 and parts[-1].isdigit() else parts[-1]
+
+
+def stuck(at):
+    """The stuck stop a step id names, or None."""
+    name = step_name(at)
     return name if name in STUCK_STEPS else None
 
 
@@ -477,6 +522,10 @@ def report(tools, bundle, repo, code):
     """What the owner sees when Spec Kit exits, and the bundle's record."""
     rid = os.path.basename(bundle)
     feature = feature_dir(repo)
+    if feature and not os.path.exists(os.path.join(bundle, "feature.json")):
+        # The feature this run works on, once specify made it or --from named
+        # it: a resume refuses a worktree pointing elsewhere.
+        write_json(os.path.join(bundle, "feature.json"), {"feature_directory": feature})
     if feature:
         record = os.path.join(repo, feature, ".sdd", "routing.json")
         if not os.path.exists(record):
@@ -488,8 +537,13 @@ def report(tools, bundle, repo, code):
         finish(bundle, "completed")
         print(f"sdd-run: run {rid} completed")
         return 0
+    if status == "aborted":
+        # A checkpoint answered reject: the run ends there, as the owner chose.
+        finish(bundle, "rejected")
+        print(f"sdd-run: run {rid} ended at {at}: rejected")
+        return 0
     if status == "paused":
-        gate = workflow_step(tools, repo, at) if at else None
+        gate = workflow_step(tools, repo, rid, at) if at else None
         if gate and gate.get("type") == "gate":
             options = "|".join(gate.get("options") or ["approve", "reject"])
             print(f"sdd-run: run {rid} paused at {at}: sdd-run resume {rid} {options}")
@@ -504,6 +558,10 @@ def report(tools, bundle, repo, code):
               f"or sdd-run abort {rid}")
     elif status == "failed":
         print(f"sdd-run: run {rid} failed at {at}; once its cause is fixed: sdd-run resume {rid}")
+    else:
+        print(f"sdd-run: run {rid}: Spec Kit holds no state it can report ({status or 'none'}); "
+              f"its own output is above")
+        return code or 1
     return code
 
 
@@ -546,9 +604,14 @@ def start(args):
     repo = repo_root()
     tools = resolve_tools()
     prerequisites(tools, repo)
+    unfinished_here(tools, repo)
     inputs = [f"spec={description}"] if description is not None else from_inputs(repo, from_dir)
     table = effective_table(tools, repo, sets)
+    if from_dir:
+        pin_feature(repo, from_dir)
     rid, bundle = write_bundle(tools, repo, table)
+    # From here on the run's own frozen copies (research R28).
+    tools = load(os.path.join(bundle, "tools.json"))
     try:
         r = step(tools, bundle, repo, "cleanup")
         if r.returncode != 0:
@@ -565,6 +628,51 @@ def start(args):
         finish(bundle, "not started")
         raise
     return report(tools, bundle, repo, code)
+
+
+def unfinished_here(tools, repo):
+    """One run at a time in a worktree: Spec Kit's feature.json, which every
+    phase reads, is the worktree's, and a second run would move it under the
+    first. A run whose process died while running is the cleanup's to finish,
+    not a blocker; one Spec Kit ended (completed, or rejected at a checkpoint)
+    before sdd-run could record it is finished here."""
+    root = os.path.join(common_dir(repo), "sdd")
+    for rid in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        bundle = os.path.join(root, rid)
+        try:
+            lock_doc = load(os.path.join(bundle, "lock.json"))
+        except (OSError, ValueError):
+            continue
+        if os.path.exists(os.path.join(bundle, "finished.json")) or \
+                os.path.realpath(lock_doc.get("repo", "")) != os.path.realpath(repo):
+            continue
+        state = run_state(repo, rid)
+        status, at = state.get("status"), state.get("current_step_id")
+        if status == "completed":
+            finish(bundle, "completed")
+        elif status == "aborted":
+            finish(bundle, "rejected")
+        elif status in ("paused", "failed") or (status == "running" and alive(lock_doc)):
+            raise Stop(f"run {rid} of this worktree is not finished ({status} at {at}): "
+                       f"sdd-run resume {rid}, or sdd-run abort {rid}")
+
+
+def pin_feature(repo, feature):
+    """start --from works on the feature it names: Spec Kit's per-worktree
+    pointer, which every phase and Spec Kit's own scripts read, is set to it,
+    as switching features in Spec Kit does. A repository that tracks the
+    pointer (an older Spec Kit's layout) must already name it: rewriting a
+    tracked file would leave the worktree dirty and the export unaware."""
+    path = os.path.join(repo, ".specify", "feature.json")
+    tracked = subprocess.run([GIT, "-C", repo, "ls-files", "--error-unmatch", "--", ".specify/feature.json"],
+                             env=HOST_ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if tracked:
+        if feature_dir(repo) != feature:
+            raise Stop(f"--from {feature}: this repository tracks .specify/feature.json, which names "
+                       f"{feature_dir(repo)}; commit it naming {feature} first")
+        return
+    with open(path, "w") as f:
+        json.dump({"feature_directory": feature}, f)
 
 
 def from_inputs(repo, feature):
@@ -591,10 +699,16 @@ def resume(args):
     rid, verdict = args[0], (args[1] if len(args) > 1 else None)
     repo = repo_root()
     bundle = bundle_of(repo, rid)
+    own_worktree(bundle, repo, rid)
     tools = load(os.path.join(bundle, "tools.json"))
-    prerequisites(tools, repo)
+    prerequisites(tools, repo, starting=False)
     if os.path.exists(os.path.join(bundle, "finished.json")):
         raise Stop(f"run {rid} is finished ({load(os.path.join(bundle, 'finished.json')).get('outcome')})")
+    pinned = load(os.path.join(bundle, "feature.json"))["feature_directory"] \
+        if os.path.exists(os.path.join(bundle, "feature.json")) else None
+    if pinned and feature_dir(repo) != pinned:
+        raise Stop(f"run {rid} works on {pinned}, but this worktree's .specify/feature.json names "
+                   f"{feature_dir(repo)}: point it back at {pinned} (or sdd-run abort {rid})")
     state = run_state(repo, rid)
     status, at = state.get("status"), state.get("current_step_id")
     if status == "running":
@@ -612,7 +726,7 @@ def resume(args):
         with open(os.path.join(bundle, "verdicts", "retry"), "w") as f:
             f.write(now())
     elif verdict:
-        gate = workflow_step(tools, repo, at) if at else None
+        gate = workflow_step(tools, repo, rid, at) if at else None
         if not gate or gate.get("type") != "gate" or not gate.get("verdict_input"):
             raise Stop(f"run {rid} is not paused at a gate (it is at {at}): sdd-run resume {rid}")
         options = gate.get("options") or ["approve", "reject"]
@@ -634,6 +748,15 @@ def resume(args):
     return report(tools, bundle, repo, code)
 
 
+def own_worktree(bundle, repo, rid):
+    """A run belongs to the worktree it started in: the engine's state lives
+    there, and its feature pointer. From another, refuse — before anything
+    is written."""
+    owner = load(os.path.join(bundle, "lock.json")).get("repo", "")
+    if os.path.realpath(owner) != os.path.realpath(repo):
+        raise Stop(f"run {rid} belongs to the worktree {owner}: run this from there")
+
+
 def from_inputs_left(repo, feature):
     try:
         done = {d["phase"] for d in load(os.path.join(repo, feature, ".sdd", "phases.json"))["done"]}
@@ -648,6 +771,11 @@ def abort(args):
     rid = args[0]
     repo = repo_root()
     bundle = bundle_of(repo, rid)
+    own_worktree(bundle, repo, rid)
+    if os.path.exists(os.path.join(bundle, "finished.json")):
+        outcome = load(os.path.join(bundle, "finished.json")).get("outcome")
+        print(f"sdd-run: run {rid} is already finished ({outcome}); nothing to abort")
+        return 0
     if alive(load(os.path.join(bundle, "lock.json"))):
         raise Stop(f"run {rid} is running; stop it first (Ctrl-C in its terminal)")
     tools = load(os.path.join(bundle, "tools.json"))
@@ -683,10 +811,12 @@ def routing(args):
                         "phases: {}\n")
         exclude = os.path.join(common_dir(repo), "info", "exclude")
         os.makedirs(os.path.dirname(exclude), exist_ok=True)
-        lines = open(exclude).read().splitlines() if os.path.exists(exclude) else []
-        if rel not in lines:
+        text = open(exclude).read() if os.path.exists(exclude) else ""
+        if rel not in text.splitlines():
             with open(exclude, "a") as f:
-                f.write(("" if not lines or lines[-1] == "" else "") + rel + "\n")
+                # A file not ending in a newline would glue the entry to its
+                # last line.
+                f.write(("\n" if text and not text.endswith("\n") else "") + rel + "\n")
         print(f"sdd-run: {rel} is ready and excluded from git")
     table = effective_table(tools, repo, sets)
     for phase, row in table.items():

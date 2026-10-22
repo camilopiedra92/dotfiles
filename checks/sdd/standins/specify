@@ -7,7 +7,9 @@
 # specify.jsonl beside it; `--version` answers version.txt, else 1.2.2; a
 # workflow run or resume runs specify.sh beside it, if any, from the
 # repository root, then writes the run's state from state.json beside it
-# (default: completed) into .specify/workflows/runs/<run id>/state.json.
+# (default: completed) into .specify/workflows/runs/<run id>/state.json. A run
+# keeps its own copy of the workflow there, workflow.yml, as the engine does
+# (engine.py: the copy a resume runs from).
 here=$(cd "$(dirname "$0")" && pwd -P)
 /usr/bin/python3 -I -c '
 import json, os, sys
@@ -31,6 +33,7 @@ esac
 status=0
 [ -f "$here/specify.sh" ] && { bash "$here/specify.sh" "$@"; status=$?; }
 mkdir -p ".specify/workflows/runs/$run_id"
+[ "$verb" = run ] && cp ".specify/workflows/sdd-routed/workflow.yml" ".specify/workflows/runs/$run_id/workflow.yml"
 if [ -f "$here/state.json" ]; then
   cp "$here/state.json" ".specify/workflows/runs/$run_id/state.json"
 else
