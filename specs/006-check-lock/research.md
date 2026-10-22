@@ -122,18 +122,34 @@ the turn held reads that line and prints, once, on stderr:
 `check.sh: waiting for the run of pid <pid> in <path> to finish`. If the line
 is empty — the holder has the turn but has not written yet — it prints
 `check.sh: waiting for another run to finish`. The repository path is the
-directory `check.sh` changed into (`$PWD` after its `cd`).
+directory `check.sh` changed into (`$PWD` after its `cd`). The holder
+empties the record in its EXIT trap, while the turn is still its own, and a
+waiter that reads a pid no longer alive (`kill -0` fails) prints the line
+without details too.
 
 **Rationale**: the record is informative only: the kernel lock decides who
-holds the turn (spec Key Entities), so a stale or empty record can only make
-the message less precise, never block anyone. Standard error keeps standard
-output identical to a run made alone (FR-003).
+holds the turn (spec Key Entities), so no record, stale or empty, blocks
+anyone. But a stale one does not merely make the line vaguer: until
+2026-10-22 the record was never emptied, so a waiter that read it between
+the next holder taking the turn and writing its own, or while something that
+is not a run held the turn, named a run that had finished (06-lock, "a run
+that has ended is not named", red that way before the fix). Emptying it on
+exit covers every run that ends through its EXIT trap; the liveness test
+covers the rest, a run killed outright (06-lock, "a run killed outright is
+not named", red without it). What remains: a record left by a run killed
+outright whose pid is still taken -- by the dead run until its parent reaps
+it, or by a process the system has given it since -- read in that instant or
+behind such a holder names that pid. Standard error keeps standard output
+identical to a run made alone (FR-003).
 
 **Alternatives**:
 - A separate record file beside the lock. Lost: a second file to create and
   keep consistent for no gain.
 - Retrying the read until the line appears. Lost: the window is the holder's
   next statement; a less precise message is acceptable there.
+- Truncating the record as the turn is taken, before writing it. Lost: the
+  write that follows truncates already, in the next statement; the gap
+  between taking the turn and that statement is the same either way.
 
 ## R5 — What holds the turn, and nested runs
 
