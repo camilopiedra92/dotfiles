@@ -99,9 +99,14 @@ and names the run holding the turn or nobody: a run empties it as it ends,
 and a waiter that finds the pid gone (a run killed outright) names nobody
 (`specs/006-check-lock/research.md` R4 has the one gap left).
 INT or TERM to a run still waiting ends it with 130 or 143, having run
-nothing and without taking the turn. A usage error never waits, and a lock
-that cannot be opened or taken is reported, naming the file, and fails the
-run. A `check.sh` started from within a run (`checks/05-runner.sh`'s copies,
+nothing and without taking the turn. INT means a terminal's ^C, or `kill
+-INT` to a run started from an interactive shell: a run started with `&` by
+a non-interactive one (a script, an agent's tool) ignores INT from its first
+instruction, and bash cannot trap a signal ignored on entry, so there only
+TERM ends it (06-lock starts its INT case through python to undo that;
+without it the run did not end, observed 2026-10-22). A usage error never
+waits, and a lock that cannot be opened or taken is reported, naming the
+file, and fails the run. A `check.sh` started from within a run (`checks/05-runner.sh`'s copies,
 anything a section starts) is part of it: the runner exports `CHECK_SH_RUN`,
 and a run that starts with it set skips the lock — so exporting it by hand
 bypasses the lock. CI runs one suite per runner, so the turn is always free
