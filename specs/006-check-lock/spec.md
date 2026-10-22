@@ -139,6 +139,11 @@ holds the turn and waits for a section that waits for the parent.
 - The place where the turn is recorded cannot be written (permissions, a full
   disk): the run says so, naming the place, and fails, as a run that cannot
   make its scratch directory does today; it does not run unguarded in silence.
+  Observed 2026-10-22: a Claude Code agent session on this machine created and
+  locked a file in `getconf DARWIN_USER_TEMP_DIR`, so agent sessions are not
+  in this case.
+- A run that waited checks the working tree and index as they are when its
+  turn comes, not as they were when it was started, as any queued run does.
 - The record of the turn lives in a per-user temporary location that macOS may
   clear: a cleared record means no run is alive to hold it, so the next run
   starts at once.
