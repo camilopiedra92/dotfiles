@@ -3,13 +3,16 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# No `# covers:` line, so it runs for every change: gitleaks reads the
+# history and the index, and the executable-bit check every tracked file.
 
 # ── Lint ─────────────────────────────────────────────────────────────────────
 printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh
+  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -18,7 +21,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh
+  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -59,7 +62,7 @@ else
   skip "gitleaks" "brew install gitleaks"
 fi
 
-syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
@@ -104,3 +107,21 @@ exec_bits() {
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits
+
+# The index check.sh keeps for the calls about this repository (THIS_INDEX)
+# has to be the one they read: an index in which install.sh lost its
+# executable bit, as a `chmod -x` then `commit -a` would leave it, must fail
+# exec_bits. Only a scratch index is written; read-tree and --chmod touch
+# nothing else.
+exec_bits_reads_the_commit_index() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  GIT_INDEX_FILE=$tmp/commit-index git read-tree HEAD &&
+    GIT_INDEX_FILE=$tmp/commit-index git update-index --chmod=-x install.sh || return 1
+  if THIS_INDEX=$tmp/commit-index exec_bits > /dev/null; then
+    echo "exec_bits did not read the commit's index"
+    return 1
+  fi
+}
+check "exec_bits reads the index being committed" exec_bits_reads_the_commit_index

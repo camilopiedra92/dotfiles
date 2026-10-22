@@ -3,6 +3,9 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# No `# covers:` line, so it runs for every change: whether the installed
+# tools match the pins depends on this machine, not on any staged file.
 
 # ── Tool versions ────────────────────────────────────────────────────────────
 # CI pins these seven and verifies them by checksum; the Brewfile installs

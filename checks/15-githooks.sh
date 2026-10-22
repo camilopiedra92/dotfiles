@@ -3,6 +3,8 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: githooks/*
 
 # ── Git hooks ────────────────────────────────────────────────────────────────
 # The hooks in githooks/, driven by git itself against scratch repositories:
@@ -125,8 +127,9 @@ pre_push_guard() {
 check "pre-push refuses deleting or rewriting the remote's default branch, and only that" pre_push_guard
 
 # pre-commit runs the checks of the repository being committed to, in strict
-# mode, refuses the commit when they fail for any reason, shows what they
-# printed, and says nothing when they pass. A stub check.sh in a scratch
+# mode and only those the staged paths select, refuses the commit when they
+# fail for any reason, shows what they printed, and says nothing when they
+# pass. A stub check.sh in a scratch
 # repository stands in for them: it logs its canonical path and arguments,
 # prints a marker, and exits with the code in $CODE. The path is compared
 # canonically because git runs hooks from the top level with a canonical
@@ -155,8 +158,8 @@ STUB
     echo "passing checks: refused the commit: $out"
     return 1
   }
-  [ "$(cat "$LOG")" = "$top/check.sh --strict" ] || {
-    echo "strict mode: expected the repository's check.sh called once with --strict, \"$top/check.sh --strict\", got: $(cat "$LOG")"
+  [ "$(cat "$LOG")" = "$top/check.sh --strict --staged" ] || {
+    echo "strict mode: expected the repository's check.sh called once with --strict --staged, \"$top/check.sh --strict --staged\", got: $(cat "$LOG")"
     return 1
   }
   [ "$out" = stub-checks-output ] || {
@@ -185,4 +188,4 @@ STUB
     return 1
   fi
 }
-check "pre-commit runs this repository's checks in strict mode and refuses a commit they fail" pre_commit_gate
+check "pre-commit runs this repository's checks, strict and selected by what is staged, and refuses a commit they fail" pre_commit_gate

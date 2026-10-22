@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the repo's checks before every commit.
+# Runs the repo's checks before every commit: those the staged paths select.
 #
 # Lives in githooks/ rather than .git/hooks/ because the latter is not
 # versioned: a hook nobody else receives is a hook that only protects the
@@ -24,7 +24,12 @@ repo=$(git rev-parse --show-toplevel)
 # strict on by itself, so without this the local run is the more permissive of
 # the two and waves through exactly what CI will reject -- the round trip this
 # hook exists to save.
-if ! "$repo/check.sh" --strict; then
+#
+# --staged, because a commit should wait for the checks it can affect, not for
+# all of them: check.sh runs the sections whose `# covers:` lines match a
+# staged path, and every section on any doubt. What this tier skips, CI runs:
+# it runs every section, and merging waits for it.
+if ! "$repo/check.sh" --strict --staged; then
   echo "Commit aborted. Fix the above, or bypass with: git commit --no-verify" >&2
   exit 1
 fi

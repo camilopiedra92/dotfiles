@@ -6,7 +6,7 @@
 # stop trusting either one. CI installs what is missing and then calls this
 # file, so a green tick means exactly what a clean run here means.
 #
-# Usage:  ./check.sh [--strict]
+# Usage:  ./check.sh [--strict] [--staged]
 #
 # This file is the runner: arguments, strict mode, the helpers every check
 # shares, and the verdict. The checks are in checks/, one file per area, run in
@@ -70,16 +70,23 @@ this_repo_git() {
 # Every CI system sets CI, so the strict path needs no wiring in the workflow
 # and cannot be forgotten there. --strict reproduces it locally, which is the
 # only way to test this behaviour without pushing.
+#
+# --staged runs only the sections the staged paths select (see Selection
+# below). It is the pre-commit hook's tier; without it every section runs,
+# which is what CI does and what the merge gate rests on.
 STRICT=0
+STAGED=0
 [ -n "${CI:-}" ] && STRICT=1
-case "${1:-}" in
-  "") ;;
-  --strict) STRICT=1 ;;
-  *)
-    echo "usage: ./check.sh [--strict]" >&2
-    exit 2
-    ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    --strict) STRICT=1 ;;
+    --staged) STAGED=1 ;;
+    *)
+      echo "usage: ./check.sh [--strict] [--staged]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Report every failure in one run rather than dying on the first. When you are
 # about to commit, knowing there are three problems beats finding them one
@@ -116,14 +123,209 @@ skip() {
   fi
 }
 
-# The sections, in file-name order, sourced into this shell so they share
-# FAILED, STRICT and the helpers above. Sourcing rather than running each as a
-# process is the point: one verdict, one strictness, one summary. The files are
-# linted directly (see Lint), so shellcheck has nothing to follow here.
-# shellcheck source=/dev/null
-for section in checks/*.sh; do
-  . "$section"
+# ── Selection ────────────────────────────────────────────────────────────────
+# A section says which paths its checks exercise in lines of its own,
+# `# covers: <pattern> [<pattern>...]`, bash patterns over a repository path
+# in which * also crosses /. A section with no such line runs for every
+# change. Under --staged, a section runs when a staged path matches one of
+# its patterns, and on any doubt every section runs: a staged change to the
+# runner, the hooks, the helpers in checks/lib/, a declaration, a section
+# that comes or goes, or a path under checks/ nobody declares. CI runs
+# everything, so what this tier misses is caught before it can merge.
+SECTIONS=(checks/*.sh)
+
+# Sets PICKED[i]=1 for each section to run, or ALL to the reason every
+# section runs. The staged list goes through a file because it is
+# NUL-separated, which a command substitution cannot hold.
+select_staged() {
+  local list status path i p hit
+  list=$(mktemp) || {
+    echo "check.sh: cannot create a temporary file for the staged paths" >&2
+    return 1
+  }
+  if ! this_repo_git diff --cached --name-status --no-renames -z > "$list"; then
+    ALL="the staged paths could not be read"
+    rm -f "$list"
+    return 0
+  fi
+  for i in "${!SECTIONS[@]}"; do
+    [ -n "${COVERS[i]}" ] || PICKED[i]=1
+  done
+  while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+    case "$path" in
+      check.sh | githooks/* | checks/lib/*)
+        ALL="$path is staged"
+        break
+        ;;
+      checks/[0-9][0-9]-*.sh)
+        hit=
+        for i in "${!SECTIONS[@]}"; do
+          [ "${SECTIONS[i]}" = "$path" ] && hit=$i
+        done
+        # A declaration is compared as the two versions' lines, not read out
+        # of a diff: `git diff | grep -q` dies of SIGPIPE under pipefail
+        # once the diff outgrows a pipe buffer, and a coloured diff hides it.
+        if [ "$status" = A ] || [ "$status" = D ] || [ -z "$hit" ] ||
+          [ "$(this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
+          ALL="$path is staged"
+          break
+        fi
+        # The section itself, and below, whatever declares it as a path.
+        PICKED[hit]=1
+        ;;
+    esac
+    # Globbing is off while the patterns are split: `macos/*` expanded
+    # against the tree would name only the files there now, and a staged
+    # deletion would match nothing.
+    hit=0
+    set -f
+    for i in "${!SECTIONS[@]}"; do
+      # shellcheck disable=SC2086  # split on purpose, globbing off
+      for p in ${COVERS[i]}; do
+        # shellcheck disable=SC2053  # the right side is a pattern on purpose
+        if [[ $path == $p ]]; then
+          PICKED[i]=1
+          hit=1
+        fi
+      done
+    done
+    set +f
+    case "$path" in checks/*) [ "$hit" -eq 1 ] || {
+      ALL="$path is staged"
+      break
+    } ;;
+    esac
+  done < "$list"
+  rm -f "$list"
+}
+
+COVERS=()
+PICKED=()
+ALL=
+for i in "${!SECTIONS[@]}"; do
+  COVERS[i]=$(sed -n 's/^# covers://p' "${SECTIONS[i]}")
 done
+if [ "$STAGED" -eq 0 ]; then
+  ALL=everything
+else
+  select_staged || exit 1
+  if [ -n "$ALL" ]; then
+    printf '\n%sStaged changes select every section: %s%s\n' "$DIM" "$ALL" "$OFF"
+  else
+    unpicked=
+    for i in "${!SECTIONS[@]}"; do
+      [ -n "${PICKED[i]:-}" ] && continue
+      name=${SECTIONS[i]#checks/}
+      unpicked="$unpicked ${name%.sh}"
+    done
+    printf '\n%sStaged changes select %s of %s sections' "$DIM" "${#PICKED[@]}" "${#SECTIONS[@]}"
+    [ -n "$unpicked" ] && printf '; not selected:%s' "$unpicked"
+    printf '%s\n' "$OFF"
+  fi
+fi
+
+# ── Sections ─────────────────────────────────────────────────────────────────
+# The helpers more than one section uses are sourced here, once; then each
+# section runs in a subshell of its own, so it sees STRICT, the helpers above
+# and those in checks/lib/, and nothing another section defines -- a section
+# that leaned on another's function would pass only in file order, and did
+# (three of them, found 2026-10-21). The files are linted directly (see
+# Lint), so shellcheck has nothing to follow here.
+# shellcheck source=/dev/null
+for lib in checks/lib/*.sh; do
+  . "$lib"
+done
+
+# Several sections at once, one per CPU, because the slow ones are slow on
+# waiting rather than on computing: the run takes about as long as its
+# slowest section instead of their sum. Each section's output goes to a file
+# and is printed whole once it and every section before it have finished, so
+# what you read is a sequential run's output, in file order; FAILED is the OR
+# of the sections' statuses, so the verdict and strictness are a sequential
+# run's too. bash 3.2 has no `wait -n`, so the loop polls, every 20 ms: at
+# 100 ms the runner's own checks, ~30 runs of instant fake sections, took 2.4 s
+# longer (measured 2026-10-22). Waiting on the oldest section instead would
+# leave CPUs idle behind a slow one.
+RUN=$(mktemp -d) || {
+  echo "check.sh: cannot create a temporary directory for the sections' output" >&2
+  exit 1
+}
+trap 'rm -rf "$RUN"' EXIT
+JOBS=$(sysctl -n hw.ncpu) || JOBS=1
+
+# The done marker is written after the section's last line: without it, the
+# section stopped early -- an `exit`, a `return`, a syntax error, an unset
+# variable under set -u -- which is a failure even when the status says 0.
+run_section() {
+  # The section runs from a copy of its own name with the marker appended, so
+  # a `return` or a syntax error, which end a sourced file quietly with status
+  # 0, leave the marker unwritten like an `exit` does.
+  mkdir "$RUN/$1.d"
+  local copy="$RUN/$1.d/${SECTIONS[$1]##*/}"
+  {
+    cat "${SECTIONS[$1]}"
+    printf '\n: > "%s/%s.done"\n' "$RUN" "$1"
+  } > "$copy"
+  (
+    FAILED=0
+    # shellcheck source=/dev/null
+    . "$copy"
+    exit "$FAILED"
+  ) > "$RUN/$1.out" 2>&1
+  echo "$?" > "$RUN/$1.status"
+  mv "$RUN/$1.status" "$RUN/$1.rc"
+}
+
+# INT or TERM stop the sections too, and what each started: a section's
+# subshell, the checks it runs and their children would otherwise outlive the
+# runner and write into a scratch directory that is gone. They are found
+# through their parent pids, not a process group: `set -m` gave each section
+# its own group, which took the terminal's ^C away from the runner and stopped
+# any section that read stdin (SIGTTIN; without job control a background
+# job's stdin is /dev/null); both seen 2026-10-22 in a pty.
+kill_tree() {
+  local child
+  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  kill -TERM "$1" 2> /dev/null
+}
+stop_sections() {
+  local job
+  trap '' INT TERM
+  for job in $(jobs -p); do kill_tree "$job"; done
+  exit "$1"
+}
+trap 'stop_sections 130' INT
+trap 'stop_sections 143' TERM
+
+ORDER=()
+for i in "${!SECTIONS[@]}"; do
+  if [ -n "$ALL" ] || [ -n "${PICKED[i]:-}" ]; then ORDER+=("$i"); fi
+done
+started=0
+shown=0
+while [ "$shown" -lt "${#ORDER[@]}" ]; do
+  finished=$(find "$RUN" -name '*.rc' | wc -l)
+  while [ "$started" -lt "${#ORDER[@]}" ] && [ $((started - finished)) -lt "$JOBS" ]; do
+    run_section "${ORDER[started]}" &
+    started=$((started + 1))
+  done
+  i=${ORDER[shown]}
+  if [ ! -e "$RUN/$i.rc" ]; then
+    sleep 0.02
+    continue
+  fi
+  cat "$RUN/$i.out"
+  status=$(cat "$RUN/$i.rc")
+  if [ ! -e "$RUN/$i.done" ]; then
+    name=${SECTIONS[i]#checks/}
+    printf '  %sFAIL%s %s stopped before its last line (exit %s)\n' "$RED" "$OFF" "${name%.sh}" "$status"
+    FAILED=1
+  elif [ "$status" -ne 0 ]; then
+    FAILED=1
+  fi
+  shown=$((shown + 1))
+done
+wait
 
 # ── Result ───────────────────────────────────────────────────────────────────
 if [ "$FAILED" -eq 0 ]; then

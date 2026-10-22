@@ -3,6 +3,8 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# covers: macos/touchid.sh
 
 # ── Touch ID for sudo ────────────────────────────────────────────────────────
 # macos/touchid.sh turns on Touch ID for sudo through /etc/pam.d/sudo_local,

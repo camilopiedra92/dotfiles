@@ -23,7 +23,7 @@ writes only through `sudo`, only for a difference, and never from `check`
 `macos/handlers.sh` change only what differs and skip, without failing, an app
 that is not installed (against a stub `dockutil` and `duti`), that
 `githooks/pre-push` refuses deleting or rewriting the remote's default branch
-and nothing else and `githooks/pre-commit` runs the checks in strict mode and
+and nothing else and `githooks/pre-commit` runs the staged paths' sections in strict mode and
 refuses any commit they fail (through real pushes and commits in scratch
 repositories), that `bump-tools.sh` moves each pin with its checksum and
 refuses a downgrade, a 404 or a pin with no checksum line untouched (under a
@@ -38,6 +38,50 @@ One script is the whole point. You run it by hand, `githooks/pre-commit` runs it
 before every commit, and CI runs that same file rather than reimplementing
 anything — checks written twice drift, and the moment CI and local disagree you
 stop trusting both. To bypass the hook once: `git commit --no-verify`.
+
+### Tiers: what runs when
+
+This section is the one place that says how much runs when; a rule written in
+two places ends by contradicting itself.
+
+| when | what runs | command |
+|---|---|---|
+| commit (the hook) | the sections the staged paths select, plus every section that declares nothing | `./check.sh --strict --staged` |
+| pull request (CI, and the merge gate) | every section | `./check.sh` |
+| by hand | every section, or `--staged` for what the hook would run | `./check.sh` |
+
+A section declares what it exercises in lines of its own,
+`# covers: <pattern> [<pattern>...]`, bash patterns over a repository path in
+which `*` also crosses `/`. A section with none runs for every commit. Under
+`--staged` a section is selected when a staged path matches one of its
+patterns, and on any doubt every section runs: a staged `check.sh`,
+`githooks/`, `checks/lib/`, a section that is added or deleted, a `# covers:`
+line that changed, or a path under `checks/` that no section declares. A rename
+counts as its old path and its new one. The run says which sections it did not
+select. What the hook skips, CI catches before the merge: the tier trades
+latency for a later catch, never coverage.
+
+A declaration nobody checks rots into a hole, so the suite fails on a pattern
+that matches no tracked file (`checks/07-declarations.sh`, which declares
+nothing and so runs in every commit: the commit that renames a file is the one
+that strands its pattern).
+
+There is no pre-push tier: the hook is already cheap and CI runs everything, so
+a third level would repeat one of them.
+
+### How a run executes
+
+Sections run at the same time, at most one per CPU (`sysctl -n hw.ncpu`), each
+in a subshell of its own that sees the runner's helpers and `checks/lib/` and
+nothing another section defines; before this, three sections leaned on
+functions defined by an earlier one and passed only in file order. Each
+section's output is held and printed whole, in file order, once it and every
+section before it have finished, so the output and the verdict are a sequential
+run's. A section that stops before its last line — an `exit`, an unset
+variable, a `return`, a syntax error — fails the run. INT or TERM to the
+runner stops the running sections and what they started. The run takes about as long as its slowest section
+rather than the sum, so one slow section sets the floor: measure it before
+splitting anything else (`specs/004-fast-checks/research.md` has the numbers).
 
 A check either runs (`ok` / `FAIL`) or is skipped because its tool is missing.
 A skip is a hole in coverage, not a neutral third outcome, so both gates —

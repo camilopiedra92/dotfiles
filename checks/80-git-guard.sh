@@ -3,6 +3,10 @@
 # Sourced by check.sh, never run on its own: it uses check, skip, STRICT and the
 # other helpers defined there. The disable is the one check.sh carries: these functions
 # are only ever called through `check`.
+#
+# The last case greps every section for calls that bypass this_repo_git.
+# covers: claude/git-guard.sh claude/settings.json claude/mcp.json install.sh
+# covers: drift.sh Brewfile uv-tools.txt macos/machines/* checks/[0-9][0-9]-*.sh
 
 # ── Git guard ────────────────────────────────────────────────────────────────
 # The guard exists because permission rules cannot express these decisions. A
@@ -207,16 +211,8 @@ hook_git_env_dropped() {
     echo "check.sh never calls drop_hook_git_env"
     return 1
   }
-  # And the kept index has to be the one the calls about this repository read:
-  # an index in which install.sh lost its executable bit, as a `chmod -x` then
-  # `commit -a` would leave it, must fail exec_bits. Only the scratch index is
-  # written; read-tree and --chmod touch nothing else.
-  GIT_INDEX_FILE=$tmp/commit-index git read-tree HEAD &&
-    GIT_INDEX_FILE=$tmp/commit-index git update-index --chmod=-x install.sh || return 1
-  if THIS_INDEX=$tmp/commit-index exec_bits > /dev/null; then
-    echo "exec_bits did not read the commit's index"
-    return 1
-  fi
+  # That the kept index is the one the calls about this repository read is
+  # checked beside exec_bits, in the lint section.
   # Every other call about this repository goes through this_repo_git too:
   # no bare `git ls-files` or `git grep` outside a comment or a `git -C`.
   # Matched anywhere on a line on purpose. A pattern for where a command
