@@ -256,7 +256,7 @@ FAKE
     echo "refused -R o/r"
     return 1
   }
-  if grep -v -- '-R o/r' "$tmp/calls" | grep -q .; then
+  if grep -qv -e '-R o/r' -e '^$' "$tmp/calls"; then
     echo "a call went out without -R o/r:"
     cat "$tmp/calls"
     return 1

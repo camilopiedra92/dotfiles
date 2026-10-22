@@ -166,7 +166,7 @@ install_is_idempotent() {
     return 1
   }
   # find, not a glob, so a hidden backup counts as inside too.
-  if find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*' | grep -q .; then
+  if [ -n "$(find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*')" ]; then
     echo "something in the way was backed up inside ~/.claude/skills"
     return 1
   fi

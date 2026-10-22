@@ -369,7 +369,7 @@ sys.exit(0 if re.fullmatch(r"sdd-pass-[A-Za-z0-9_-]{16,119}", tok) and env.get("
         ;;
     esac
     printf '%s' "$out" | grep -qF claude-oauth || fail "secret in $where: credential not named: $out"
-    printf '%s' "$out" | grep -qF "$claude_secret" && fail "secret in $where: the value was shown"
+    grep -qF "$claude_secret" <<< "$out" && fail "secret in $where: the value was shown"
     [ ! -e "$repo/$f/plan.md" ] && [ ! -e "$repo/$f/.sdd/review.json" ] || fail "secret in $where: something was written"
     clean_after "secret in $where"
   done
@@ -481,7 +481,9 @@ SH
   out=$(admitted anthropic registries 2>&1) || fail "implement: $out"
   [ "$(cat "$repo/src/app.py")" = "print(2)" ] || fail "implement: not applied"
   grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-implement-run1" || fail "implement: not on the implement cache volume"
-  grep -F '"run"' "$sa/calls.jsonl" | grep -qF "sdd-cache-verify-run1" && fail "implement: mounted the verify cache"
+  local runs
+  runs=$(grep -F '"run"' "$sa/calls.jsonl")
+  grep -qF "sdd-cache-verify-run1" <<< "$runs" && fail "implement: mounted the verify cache"
   # The brief comes from the bundle, frozen at start like everything else
   # that governs the run — never read live from dotfiles.
   # It goes to the system prompt; the user prompt is Spec Kit's command alone,
@@ -740,9 +742,15 @@ sys.exit("\n".join(bad) or 0)
   printf 'owner\n' > "$repo/owner.txt" && tgit add owner.txt
   result "planned"
   edit "$f/plan.md" "# Plan"
+  # The commit the pass starts from: `base`, the fixture's commit message, is
+  # no revision, and `base..HEAD` read as an empty history.
+  local base history
+  base=$(tgit rev-parse HEAD)
   out=$(pass agent plan)
-  tgit log --name-only --format= base..HEAD 2> /dev/null | grep -qx owner.txt && fail "staged: the owner's staged file went into a pass commit"
-  tgit log --all --name-only --format= | grep -qx owner.txt && fail "staged: the owner's staged file was committed"
+  history=$(tgit log --name-only --format= "$base..HEAD")
+  grep -qx owner.txt <<< "$history" && fail "staged: the owner's staged file went into a pass commit"
+  history=$(tgit log --all --name-only --format=)
+  grep -qx owner.txt <<< "$history" && fail "staged: the owner's staged file was committed"
   tgit diff --cached --name-only | grep -qx owner.txt || fail "staged: the owner's staged file is no longer staged"
   clean_after staged
   # 22. Repository diff configuration never runs on the host.
@@ -791,7 +799,8 @@ sys.exit("\n".join(bad) or 0)
   edit src/app.py "print(5)"
   if out=$(pass implement); then fail "implement outcome: succeeded"; fi
   # The run's own "sdd: ... before implement" commit is expected; the pass's is not.
-  tgit log --format=%s | grep -q '^implement:' && fail "implement outcome: committed although implement.json was invalid"
+  history=$(tgit log --format=%s)
+  grep -q '^implement:' <<< "$history" && fail "implement outcome: committed although implement.json was invalid"
   [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "implement outcome: applied although implement.json was invalid"
   clean_after "implement outcome"
   # 25. A decomposed (NFD) name reaches the index precomposed, as the owner's

@@ -183,7 +183,7 @@ echo FAIL; exit 1
   printf '%s' "$out" | grep -qF "stopped at convergence:fix_loop:1:fix_stuck:" ||
     fail "nested stop: not reported as a stop at the nested fix_stuck: $(printf '%s' "$out" | tail -2)"
   out=$(sr resume "$rid" retry)
-  printf '%s' "$out" | grep -qF "not stopped at" && fail "nested retry: refused: $(printf '%s' "$out" | tail -1)"
+  grep -qF "not stopped at" <<< "$out" && fail "nested retry: refused: $(printf '%s' "$out" | tail -1)"
   printf '%s' "$out" | grep -qF "sdd-run resume $rid retry" || fail "nested retry: the next stop does not name retry: $(printf '%s' "$out" | tail -1)"
   rm -rf "${tmp:?}"/*
 

@@ -297,7 +297,9 @@ SH
   out=$(sr start "third") || true
   id=$(sr_last_id)
   out=$(sr resume "$id") || fail "resume after Ctrl-C: failed: $out"
-  tail -1 "$SR_SA/specify.jsonl" | grep -qF '"-i"' && fail "resume after Ctrl-C: a verdict was passed"
+  local last
+  last=$(tail -1 "$SR_SA/specify.jsonl")
+  grep -qF '"-i"' <<< "$last" && fail "resume after Ctrl-C: a verdict was passed"
   tail -1 "$SR_SA/specify.jsonl" | grep -qF "\"resume\", \"$id\"" || fail "resume after Ctrl-C: Spec Kit was not resumed"
   # Stuck: retry writes the one-shot verdict, then resumes; abort finishes.
   # One run at a time in a worktree: the previous run, left paused, is ended first.
@@ -318,7 +320,8 @@ SH
   # Stuck again after the one more round, as an always-failing check is.
   out=$(sr resume "$id" retry) || fail "retry: failed: $out"
   [ -e "$SR_SA/retry-seen" ] || fail "retry: no one-shot verdict while Spec Kit resumed"
-  tail -1 "$SR_SA/specify.jsonl" | grep -qF '"-i"' && fail "retry: retry was passed as an input"
+  last=$(tail -1 "$SR_SA/specify.jsonl")
+  grep -qF '"-i"' <<< "$last" && fail "retry: retry was passed as an input"
   rm -f "$SR_SA/specify.sh"
   printf 'sdd.run=%s ' "$id" > "$SR_SA/labels.sdd-$id-plan-1"
   out=$(sr abort "$id") || fail "abort: failed: $out"
@@ -406,7 +409,7 @@ sdd_run_lows() {
     printf '%s\n' "$shape" > "$SR_REPO/.claude/sdd-routing.yml"
     out=$(sr routing) && code=0 || code=$?
     [ "$code" -eq 1 ] || fail "layer '$shape': exit $code, wanted 1"
-    printf '%s' "$out" | grep -q "Traceback" && fail "layer '$shape': a traceback: $(printf '%s' "$out" | tail -1)"
+    grep -q "Traceback" <<< "$out" && fail "layer '$shape': a traceback: $(printf '%s' "$out" | tail -1)"
   done
   rm "$SR_REPO/.claude/sdd-routing.yml"
   printf '{"status":"completed"}\n' > "$SR_SA/state.json"
@@ -461,7 +464,7 @@ JSONL
   local total
   total=$(/usr/bin/python3 -I -c 'import sys; print("%.4f" % (0.75 + float(sys.argv[1])))' "$want_ds")
   printf '%s\n' "$out" | grep -qE "^total +\\\$$total" || fail "usage: the total is not \$$total: $out"
-  printf '%s' "$out" | grep -qF 9.0000 && fail "usage: another run's attempts were counted"
+  grep -qF 9.0000 <<< "$out" && fail "usage: another run's attempts were counted"
   return "$status"
 }
 check "sdd-run usage sums each model's attempts for the named run, prices DeepSeek from models.json, and lists what reported nothing" sdd_run_usage
