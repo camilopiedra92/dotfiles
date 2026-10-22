@@ -209,6 +209,15 @@ class Pass:
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=self.dir)
             if r.returncode != 0:
                 raise PassFailed("extracting the export failed: " + r.stderr.decode(errors="replace").strip())
+        # Spec Kit's per-worktree state, which git archive leaves out since
+        # Spec Kit's own .gitignore ignores it: its scripts rewrite it on
+        # every run, so both trees carry the worktree's copy and the same
+        # content is no change (seen in the real run, 2026-10-21).
+        state = os.path.join(self.run.repo, ".specify", "feature.json")
+        if os.path.isfile(state) and self.landing(".specify/feature.json") == "an ignored path in the worktree":
+            for target in (self.baseline, self.export):
+                os.makedirs(os.path.join(target, ".specify"), exist_ok=True)
+                shutil.copy(state, os.path.join(target, ".specify", "feature.json"))
 
     # 3, 4. Container and limit
     def container(self, command, env, mounts, timeout):
@@ -280,6 +289,20 @@ class Pass:
                 if not (os.path.isdir(full) or os.path.isfile(full) or os.path.islink(full)):
                     raise PassFailed(f"judge: {os.path.relpath(full, self.export)} is not a regular file")
         return out
+
+    def same_local_state(self):
+        """Spec Kit's scripts rewrite .specify/feature.json on each run, in
+        their own format (pretty-printed, a trailing newline): the same
+        feature, written differently, is no change, so the export takes the
+        baseline's bytes back; another feature named there stays a change,
+        which the judge refuses (seen in the real run, 2026-10-21)."""
+        before = os.path.join(self.baseline, ".specify", "feature.json")
+        after = os.path.join(self.export, ".specify", "feature.json")
+        try:
+            if load(before) == load(after):
+                shutil.copy(before, after)
+        except (OSError, ValueError):
+            pass
 
     def isolated_env(self):
         # The bundle lives in the repository's .git, so a no-index diff run
@@ -580,6 +603,7 @@ def run_agent(run, phase, implement=None):
             raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
         if row["agent"] == "pi" and served != row["model"]:
             raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
+        p.same_local_state()
         changes = p.changes()
         patch = p.patch() if changes else b""
         writes = row["writes"]
@@ -593,7 +617,12 @@ def run_agent(run, phase, implement=None):
             # the run writes it into the worktree after the apply, as Spec Kit
             # would (seen in the first real run, 2026-10-21).
             if p.landing(".specify/feature.json") == "an ignored path in the worktree":
-                os.remove(os.path.join(p.export, ".specify", "feature.json"))
+                before = os.path.join(p.baseline, ".specify", "feature.json")
+                after = os.path.join(p.export, ".specify", "feature.json")
+                if os.path.exists(before):
+                    shutil.copy(before, after)
+                else:
+                    os.remove(after)
                 local_state = {"feature_directory": feature}
                 changes = p.changes()
                 patch = p.patch() if changes else b""

@@ -491,6 +491,23 @@ wf_feature_json() {
     echo "specify's spec.md was not committed"
     return 1
   }
+  # Spec Kit's setup-plan.sh rewrites feature.json each time it runs (seen in
+  # the real run, 2026-10-21): the export carries the worktree's copy, so the
+  # same content is no change; another feature named there is refused.
+  wf_edit speckit-plan .specify/feature.json "{\"feature_directory\": \"$WF_F\"}"
+  out=$(wf_resume -i spec_verdict=approve)
+  [ "$(wf_state)" = "paused review_plan" ] || {
+    echo "plan rewriting the same feature.json did not go through: $(wf_state): $(printf '%s' "$out" | tail -3)"
+    return 1
+  }
+  wf_fresh || return 1
+  wf_edit speckit-plan .specify/feature.json '{"feature_directory": "specs/009-elsewhere"}'
+  out=$(wf_start)
+  out=$(wf_resume -i spec_verdict=approve)
+  [ "$(wf_state)" = "failed plan" ] || {
+    echo "plan pointing feature.json elsewhere was not refused: $(wf_state)"
+    return 1
+  }
 }
 if command -v check-jsonschema > /dev/null 2>&1 && command -v specify > /dev/null 2>&1; then
   check "specify's feature.json stays the worktree's own state: validated, written by the run, never committed" wf_feature_json
