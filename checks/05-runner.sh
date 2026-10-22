@@ -606,30 +606,59 @@ section_stdin_is_not_the_terminal() {
 }
 check "a section run from a terminal does not get the terminal as stdin" section_stdin_is_not_the_terminal
 
-# ^C reaches the runner as the terminal sends it, to its foreground group.
-# One attempt hits the runner between two children about one time in six
-# (measured 2026-10-22 on the broken runner), so three go in, 0.4 s apart.
+# ^C reaches the runner as the terminal sends it, to its foreground group. The
+# pty stays open until the runner is gone: closing it hangs up the whole group
+# and the sections die whether or not the runner's INT trap works (a review
+# removed the trap and this case stayed green, 2026-10-22). So the case wants
+# the trap's own work: exit 130, and no section left while the pty is open.
+# One attempt hits the runner between two children about one time in six on
+# the old runner, so three go in, 0.4 s apart.
 ctrl_c_stops_sections() {
-  local tmp left
+  local tmp out
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   command -v python3 > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true'
-  python3 -I - "$tmp/r" << 'PY'
-import os, pty, sys, time
+  out=$(
+    python3 -I - "$tmp/r" << 'PY'
+import os, pty, select, signal, subprocess, sys, time
 pid, fd = pty.fork()
 if pid == 0:
+    # a section runs as a background job, which ignores INT, and exec keeps that
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     os.chdir(sys.argv[1])
     os.execv('/bin/bash', ['bash', './check.sh'])
-time.sleep(1.0)
+def drain(seconds):
+    # a pty nobody reads keeps the process that wrote to it from exiting
+    end = time.time() + seconds
+    while time.time() < end:
+        if select.select([fd], [], [], 0.05)[0]:
+            try:
+                os.read(fd, 4096)
+            except OSError:
+                return
+drain(1.0)
+done = None
 for _ in range(3):
     os.write(fd, b'\x03')
-    time.sleep(0.4)
+    drain(0.4)
+    done, status = os.waitpid(pid, os.WNOHANG)
+    if done:
+        break
+if not done:
+    print('the runner was still running after three ^C')
+    os.kill(pid, 9)
+    sys.exit(1)
+left = subprocess.run(['pgrep', '-f', 'sleep 31.7'], capture_output=True, text=True).stdout.split()
+if not (os.WIFEXITED(status) and os.WEXITSTATUS(status) == 130):
+    print('the runner ended with wait status %d, not exit 130' % status)
+    sys.exit(1)
+if left:
+    print('%d sections still running after the runner ended' % len(left))
+    sys.exit(1)
 PY
-  sleep 0.3
-  left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
-  [ "$left" -eq 0 ] || {
-    echo "after ^C from a terminal, $left sleeps from the sections are still running"
+  ) || {
+    echo "^C from a terminal: $out"
     return 1
   }
 }
