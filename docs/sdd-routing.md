@@ -144,9 +144,13 @@ scratch repository and a bundle in `checks/sdd/bundle.py`'s layout whose
 stand-in `security` answering with **sentinel** credentials (one per item,
 sharing a marker string). `sdd-step prepare-worker` built and checked
 `sdd-worker:52f0ca0e7920`; `sdd-step egress-proxy` started the proxy with
-the sentinels on its stdin (opted in to DeepSeek, so it held both). The
-real credentials were never read; the providers saw only sentinels (DeepSeek's
-`/models` at the proxy's start and two Anthropic `/v1/messages`, all 401).
+the sentinels on its stdin (opted in to DeepSeek, so it held both). That
+setup ran twice: round 1 for attempts 1–4, and round 2 for attempts 5–6,
+with a fresh proxy and the image rebuilt the same way. The real credentials
+were never read. The providers saw only sentinels, and every call got 401:
+- DeepSeek's `/models`, once at each proxy start;
+- Anthropic's `/v1/messages`, twice each in attempts 4 and 5;
+- DeepSeek's `/chat/completions`, once in attempt 6.
 
 **Containment.** The probe, a script run as `node`, tried every route below
 and printed one line per attempt.
@@ -157,14 +161,17 @@ and printed one line per attempt.
 | 2, 19:40Z | the same, probe fixed | As 1, and now `iptables` and `ip6tables` were refused as node ("Permission denied (you must be root)"). The search of the filesystem for a sentinel was killed (`grep -a` exited 137, out of memory), so that one probe is void |
 | 3, 19:41Z | the same, the filesystem searched by a chunked reader that first found a marker planted in `/tmp` | All 59 attempts failed except the two registry reads verify may make, a `GET` and a `HEAD`: 39 were blocked inside the container and 18 refused by the proxy (403/407) |
 | 4, 19:41Z | `sdd-step agent plan`, on a probe image (`FROM` the worker, `claude` replaced by the probe; Anthropic's API alone admitted) | All 59 attempts failed except the two `POST /v1/messages` this pass may make: 39 were blocked inside the container and 18 refused by the proxy. Those two went through the proxy, which swapped the placeholder for the sentinel, and Anthropic answered 401 "OAuth access token is invalid". The probe's writes to `CLAUDE.md` and outside `plan`'s writes were refused by the judge: nothing applied, and no commit |
+| 5, 19:50Z | `sdd-step implement`, the feature's `.sdd/route.json` saying `sonnet`. The probe image now replaces both `claude` and `pi`; Anthropic's API and the registries are admitted, with the volume `sdd-cache-implement-t047probe` at `/cache` | All 60 attempts failed except the four this pass may make. The two `POST /v1/messages` got 401 from Anthropic, as in 4, and the registry `GET` and `HEAD` went through. 39 were blocked in the container and 17 refused by the proxy, among them `/chat/completions` and a `CONNECT` to api.deepseek.com. `/cache` was writable, as this pass kind's own cache. The judge refused `CLAUDE.md`: nothing applied |
+| 6, 19:51Z | `sdd-step implement` with `route.json` saying `deepseek`, `git config sdd.implement deepseek`, and the bundle opted in at start, so the `implement-deepseek` row ran `pi` (the probe). DeepSeek's API and the registries are admitted | All 60 attempts failed except the three this pass may make. `POST /chat/completions` went through the proxy and DeepSeek answered 401 "Your api key: \*\*\*\*d5be is invalid". Those four characters are the DeepSeek sentinel's last four, so the proxy put the sentinel in place of the placeholder. The registry `GET` and `HEAD` went through. 39 were blocked in the container and 18 refused by the proxy, among them every Anthropic endpoint (403) and a `CONNECT` to api.anthropic.com. pi's `models.json` held the proxy as its `baseUrl` and the placeholder as its key. The judge refused `CLAUDE.md`: nothing applied |
 
-Seen blocked in 3 and 4, each named in the pass's own answer (attempt 3 in
-`.sdd/verify.json`'s tail, attempt 4 in `results/`):
+Seen blocked in 3–6, each named in the pass's own answer (attempt 3 in
+`.sdd/verify.json`'s tail, attempts 4–6 in `results/`):
 
 - Reading the host: there is no `/Users` or `/Volumes`, so no `~/.ssh`, no
   Keychain directory and no other repository. There is no `security`
   command, and no `*.keychain*` file on any mounted filesystem. The mounts
-  were `/work` and the read-only `/bundle`, plus `/cache` for verify.
+  were `/work` and the read-only `/bundle`, plus `/cache` for verify and
+  implement.
 - Writing the host: `/Users/...` (permission denied), `/bundle` (read-only),
   `/etc` and `/usr/local/lib/sdd` (permission denied). Writes to the
   container's own `/home/node` and to `/work` (the export) succeeded, as
@@ -186,9 +193,12 @@ Seen blocked in 3 and 4, each named in the pass's own answer (attempt 3 in
   - Judgment pass: `GET /v1/models`, `POST /v1/messages/batches`,
     `POST /v1/files` and `/chat/completions` got 403, and every `CONNECT`
     got 403.
-  - Both passes: a forged or missing token got 407, an absolute-URL request
+  - Claude implement pass: DeepSeek's `/chat/completions` and Anthropic's
+    other endpoints got 403.
+  - pi implement pass: every Anthropic endpoint got 403.
+  - Every pass: a forged or missing token got 407, an absolute-URL request
     403, and `CONNECT` to example.com, upload.pypi.org or api.anthropic.com
-    403.
+    403; from attempt 5 on, `CONNECT` to api.deepseek.com 403 too.
   - Inside an admitted registry tunnel: `PUT`, `POST`, a git-receive-pack
     `POST` and a non-download github.com path got 403.
 
@@ -197,12 +207,14 @@ a second scratch repository's `HEAD` and status, the feature repository's
 log and status) changed in two ways only. The feature repository gained the
 run's own `sdd: … before <phase>` commits. `~/.claude.json` changed too:
 that is the host's own Claude Code session writing its configuration, and
-it did not change during attempt 4. No `t047-probe` file appeared in `~` or
-`~/dotfiles`.
+it did not change during attempts 4–6. No `t047-probe` file appeared in `~`
+or `~/dotfiles`.
 
-Not probed on the real runtime: an implement pass, whose admission is the
-union of a judgment pass's and verify's, and a pi pass (DeepSeek). Check 93
-covers their admissions against the proxy offline.
+A finding, not fixed here: DeepSeek's 401 body quotes the last four
+characters of the key it was sent. With the real key, those four characters
+would reach the agent through the proxy's relayed answer. The judge and the
+withholding of what a pass keeps look for the exact value of the key, not
+for a fragment of it.
 
 **Leak search.** Every search looked for the two sentinel values and their
 marker, printed only counts, and was first seen to find a marker planted on
@@ -210,13 +222,15 @@ purpose. The planted markers were in a 50 GB sparse file, in a gzip layer,
 and in a throwaway container given the marker in its environment and its
 output (`container inspect`, its `config.json`, `runtime-configuration.json`,
 `stdio.log` and `container logs` each found it), plus a host process given
-the marker as an argument (`ps -axww` found it). The search ran three times:
-with the proxy holding the sentinels, after the four passes, and after the
-proxy stopped. It found nothing every time:
+the marker as an argument (`ps -axww` found it). Every planted marker was
+found again in round 2. In each round the search ran three times: with the
+proxy holding the sentinels, after that round's passes, and after the proxy
+stopped. It found nothing every time:
 
-- Image layers: `container image save` of the worker and the probe image,
-  each blob decompressed and read (about 924 MB each), and every blob in the
-  runtime's content store (78 blobs, 1.65 GB decompressed).
+- Image layers: `container image save` of the worker and of each probe
+  image, every blob decompressed and read (about 924 MB per image), and
+  every blob in the runtime's content store (78 in round 1, 70 in round 2,
+  1.65 GB decompressed).
 - The containers' stored configuration: `container inspect` of the proxy and
   of each pass container while it ran. The pass's environment is stored
   there and held only the placeholder. Also every file of the runtime's
@@ -228,7 +242,11 @@ proxy stopped. It found nothing every time:
   `containers/` and 7.1 GB in `snapshots/`. The
   proxy got its credentials on stdin, and its `stdio.log` did not hold them.
 - The runtime's logs: `container logs` and `container logs --boot` of each
-  container, and `container system logs --last 2h` (146 lines).
+  container, and `container system logs --last 2h` (65 to 146 lines per
+  search).
+- The pass containers of attempts 1–6 were searched while each ran:
+  `container inspect` and every file of its on-disk directory. The implement
+  cache volume was searched with the rest of `volumes/`.
 - The host: `ps -axww`, every process's arguments, and every file of the
   scratch run (bundle, `results/`, `usage.jsonl`, the repository and the
   proxy's log). The host processes' environments were **not tested**: on
