@@ -132,7 +132,7 @@ wf_fresh() {
 }
 wf_fx() { mkdir -p "$WF_SA/fixture/by/$1" && printf '%s' "$WF_SA/fixture/by/$1"; }
 wf_result() { # key text [structured]
-  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' \
+  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' \
     "$2" "${3:-null}" > "$(wf_fx "$1")/result.json"
 }
 wf_edit() { # key path content

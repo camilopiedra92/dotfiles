@@ -942,12 +942,24 @@ it before the new start numbers its feature beside it. Check 95, N4.
   never writes the bundle's `feature.json`: they get no `routing.json` in
   their feature, no moved-pointer refusal, and a dead one is told to start
   anew even with phases done. Transitional: it ends with those runs.
-- The usage end line is withheld on its JSON-escaped form (`sdd-pass.py`
+- The usage end line was withheld on its JSON-escaped form (`sdd-pass.py`
   `run_agent`, `run.withhold(..., json.dumps(...))`), so a credential holding
   a character `json.dumps` escapes (`"`, `\`, a control or non-ASCII one)
   would not be replaced there; the line is written before the judge, and the
-  judge's `scan` does not cover it either, since it too reads the usage as
-  `json.dumps(usage)` (read in the code at 052c94b, not tested).
+  judge's `scan` did not cover it either, since it too read `structured` and
+  the usage as `json.dumps(...)` (read in the code at 052c94b). *Fixed*
+  after 2a57cd6 (2026-10-22): `Run.withhold` takes a decoded JSON value too
+  and replaces within its strings, keys included, before the usage line is
+  serialised, and `Pass.scan` matches the raw value in every decoded string
+  of the result's text, `structured_output` and usage (`strings()` in
+  `sdd-pass.py`). Check 91, `sdd_no_leak_escaped`: a sentinel holding a
+  quote, a backslash and U+00E9, returned only in `structured_output`, only in
+  the usage (as a model's name, as a field's value) or in the result's text.
+  Red before the fix: the review in `structured_output` succeeded and wrote
+  the value into `review.json`; both usage cases succeeded and left it,
+  escaped, in `usage.jsonl` and `implement.json`; the result-text case was
+  already refused (the text was scanned raw). Seen red again with each half
+  of the fix reverted by hand.
 
 ## R29 — What an agent said, withheld of every credential before it is kept
 
@@ -974,6 +986,42 @@ it; dropping a pass's answer whenever it holds a credential — loses the one
 record of why the pass failed, which is what `results/` is for (R27);
 refusing the pass alone — the refusal was already there, and the leak was in
 what the run kept after refusing.
+
+## R30 — Claude's usage, held to the contract pi is held to
+
+**Finding** (2026-10-22, reading `sdd-pass.py` at 2a57cd6 against
+contracts/sdd-step.md, implement step 3): the contract fails a pass whose
+response names another model or lacks a usage field, for either implementer,
+but only pi's parser enforced it; Claude's defaulted `total_cost_usd` to 0
+and `modelUsage` to `{}`, so a Claude pass reporting no usage was counted
+free — the defect US2 closed for pi — and its model was taken from the row,
+never from what served.
+
+**Observed** (2026-10-22): `claude -p --output-format json --model
+claude-sonnet-5-5 "Reply with the single word ok."` returns
+`total_cost_usd` (0.1066 in the owner's run, 0.0989 in a second run the same
+day) and `modelUsage` keyed by model id:
+`{"claude-sonnet-5-5": {"inputTokens", "outputTokens", "cacheReadInputTokens",
+"cacheCreationInputTokens", "costUSD", ...}}`, the configured model alone in
+both runs.
+
+**Decision**: a Claude result lacking a numeric `total_cost_usd` or a
+non-empty `modelUsage` object fails the pass, nothing applied. `modelUsage`
+must hold the row's configured model with its tokens (`inputTokens` and
+`outputTokens` integers); otherwise the pass fails naming the models that
+reported tokens. Other models beside it — Claude Code may use an auxiliary
+model for its own background work — are no refusal: implement.json's usage
+and the usage.jsonl end line keep the whole `modelUsage`, and the model
+recorded is the configured one, which served. The end line is written before
+the refusal, as pi's is, so a refused attempt still counts. Contracts are
+silent on judgment passes; they share the parser, so the rule holds for
+every Claude pass (one parser, one rule), and contracts/pass.md step 8 now
+says so. Check 91, `sdd_claude_usage`.
+
+**Alternatives**: requiring `modelUsage` to hold only the configured model —
+it would refuse legitimate runs where Claude Code reports an auxiliary model;
+narrowing the contract to pi — a Claude pass reporting no usage would be
+counted free, the defect US2 closed for pi.
 
 ## R25 — Read-only registries: TLS inspection at the egress proxy
 

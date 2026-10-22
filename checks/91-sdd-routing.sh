@@ -157,9 +157,11 @@ fresh() {
   printf '{"run_id":"run1","pid":%s,"started":"2026-10-21T14:00:00Z","base":"%s"}\n' \
     "$$" "$(tgit rev-parse HEAD)" > "$run/lock.json"
 }
-# The agent's result: text, and structured output when given.
+# The agent's result: text, and structured output when given. Its usage
+# names both Claude models the rows use, so one canned result serves any
+# Claude row: a pass accepts models reported beside its own (research R30).
 result() {
-  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10}}}\n' \
+  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' \
     "$1" "${2:-null}" > "$sa/fixture/result.json"
 }
 edit() { # path content
@@ -750,7 +752,7 @@ sys.exit("\n".join(bad) or 0)
   # usage the schema refuses leaves no commit.
   fresh || return 1
   sonnet_route
-  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[],"total_cost_usd":-1,"modelUsage":{}}\n' > "$sa/fixture/result.json"
+  printf '{"type":"result","is_error":false,"result":"x","permission_denials":[],"total_cost_usd":-1,"modelUsage":{"claude-sonnet-5-5":{"inputTokens":1,"outputTokens":1}}}\n' > "$sa/fixture/result.json"
   edit src/app.py "print(5)"
   if out=$(pass implement); then fail "implement outcome: succeeded"; fi
   # The run's own "sdd: ... before implement" commit is expected; the pass's is not.
@@ -1041,6 +1043,97 @@ else
   skip "the pi pass runs the row's model and effort through the worker, and a response from another model or without usage applies nothing" check-jsonschema
 fi
 
+# Claude's result as `claude -p --output-format json` prints it, with the
+# given total_cost_usd and modelUsage as JSON (`-` leaves the field out).
+claude_says() { # cost-json model-usage-json
+  /usr/bin/python3 -I -c '
+import json, sys
+r = {"type": "result", "is_error": False, "result": "implemented", "structured_output": None, "permission_denials": []}
+for key, value in (("total_cost_usd", sys.argv[1]), ("modelUsage", sys.argv[2])):
+    if value != "-":
+        r[key] = json.loads(value)
+print(json.dumps(r))
+' "$1" "$2" > "$sa/fixture/result.json"
+}
+
+# The Claude implementer meets the usage contract pi does (contracts/sdd-step.md,
+# implement step 3; research R30): a result without a numeric total_cost_usd,
+# without a non-empty modelUsage, or whose modelUsage has no tokens for the
+# row's model fails the pass with nothing applied, naming the models reported.
+# A model reported beside the configured one is recorded, not refused. The
+# same rule holds for a judgment pass, which shares the parser.
+sdd_claude_usage() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code bad
+  local tokens='{"inputTokens":2,"outputTokens":4,"cacheReadInputTokens":17951,"costUSD":0.1}'
+
+  for bad in "no cost" "cost as text" "no modelUsage" "empty modelUsage" "another model" "the model without tokens"; do
+    fresh || return 1
+    route_to sonnet
+    case $bad in
+      "no cost") claude_says - "{\"claude-sonnet-5-5\":$tokens}" ;;
+      "cost as text") claude_says '"0.1"' "{\"claude-sonnet-5-5\":$tokens}" ;;
+      "no modelUsage") claude_says 0.1 - ;;
+      "empty modelUsage") claude_says 0.1 '{}' ;;
+      "another model") claude_says 0.1 "{\"claude-haiku-4-5\":$tokens}" ;;
+      "the model without tokens") claude_says 0.1 '{"claude-sonnet-5-5":{"costUSD":0.1}}' ;;
+    esac
+    edit src/app.py "print(3)"
+    out=$(pass implement)
+    code=$?
+    [ "$code" -eq 1 ] || fail "claude $bad: exit $code, wanted 1: $out"
+    case $bad in
+      "another model") printf '%s' "$out" | grep -qF "claude-haiku-4-5" || fail "claude $bad: the models reported are not named: $out" ;;
+      "the model without tokens") printf '%s' "$out" | grep -qF "no model with tokens" || fail "claude $bad: the missing tokens are not named: $out" ;;
+      # Named by the parser, not refused later by the schema or a crash.
+      *) printf '%s' "$out" | grep -qF "reported no usage" || fail "claude $bad: the missing usage is not named: $out" ;;
+    esac
+    nothing_applied "claude $bad"
+    clean_after "claude $bad"
+  done
+
+  # An auxiliary model beside the configured one: applied, the configured
+  # model recorded as the one that served, the whole modelUsage kept.
+  fresh || return 1
+  route_to sonnet
+  claude_says 0.1 "{\"claude-sonnet-5-5\":$tokens,\"claude-haiku-4-5\":$tokens}"
+  edit src/app.py "print(3)"
+  out=$(pass implement) || fail "claude auxiliary model: refused: $out"
+  [ "$(cat "$repo/src/app.py")" = "print(3)" ] || fail "claude auxiliary model: not applied"
+  /usr/bin/python3 -I -c '
+import json, sys
+bad = []
+d = json.load(open(sys.argv[1]))
+if d["model"] != "claude-sonnet-5-5" or sorted(d["usage"]["modelUsage"]) != ["claude-haiku-4-5", "claude-sonnet-5-5"]:
+    bad.append("implement.json records %s, %s" % (d["model"], d["usage"]))
+end = [e for e in map(json.loads, open(sys.argv[2])) if e["event"] == "end"][-1]
+if end["model"] != "claude-sonnet-5-5" or sorted(end["usage"]["modelUsage"]) != ["claude-haiku-4-5", "claude-sonnet-5-5"]:
+    bad.append("the usage end line is %s" % end)
+sys.exit("claude auxiliary model: " + "; ".join(bad) if bad else 0)
+' "$repo/$f/.sdd/implement.json" "$run/usage.jsonl" || status=1
+  clean_after "claude auxiliary model"
+
+  # A judgment pass: the same parser, the same rule.
+  fresh || return 1
+  claude_says 0.1 '{}'
+  edit "$f/plan.md" "# Plan"
+  if out=$(pass agent plan); then fail "claude plan without usage: succeeded"; fi
+  printf '%s' "$out" | grep -qF "reported no usage" || fail "claude plan without usage: the missing usage is not named: $out"
+  [ ! -e "$repo/$f/plan.md" ] || fail "claude plan without usage: plan.md was applied"
+  tgit log --format=%s | grep -q '^plan:' && fail "claude plan without usage: a plan commit was made"
+  clean_after "claude plan without usage"
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "a Claude pass reporting no usage, or none for its configured model, applies nothing; a model beside it is recorded" sdd_claude_usage
+else
+  skip "a Claude pass reporting no usage, or none for its configured model, applies nothing; a model beside it is recorded" check-jsonschema
+fi
+
 # No credential leaks (FR-009). An agent that returns a credential's exact
 # value — in a file, its result's text, its structured output, its usage or
 # what it prints on failing — is refused with nothing applied and the value shown
@@ -1088,7 +1181,7 @@ sdd_no_leak() {
         ;;
       sonnet/result) result "the token is $secret" ;;
       sonnet/usage)
-        printf '{"type":"result","is_error":false,"result":"implemented","permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"%s":{"inputTokens":1}}}\n' "$secret" > "$sa/fixture/result.json"
+        printf '{"type":"result","is_error":false,"result":"implemented","permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-sonnet-5-5":{"inputTokens":1,"outputTokens":1},"%s":{"inputTokens":1}}}\n' "$secret" > "$sa/fixture/result.json"
         ;;
       sonnet/failure)
         printf '{"type":"result","is_error":true,"result":"401 for %s","permission_denials":[]}\n' "$secret" > "$sa/fixture/result.json"
@@ -1123,10 +1216,10 @@ sdd_no_leak() {
   start_proxy "full passes" || return 1
   mkdir -p "$sa/fixture/by/speckit-plan/edits/$f" "$sa/fixture/by/speckit/edits/src" "$sa/fixture/by/speckit-review"
   printf '# Plan\n' > "$sa/fixture/by/speckit-plan/edits/$f/plan.md"
-  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' > "$sa/fixture/by/speckit-plan/result.json"
+  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' > "$sa/fixture/by/speckit-plan/result.json"
   printf 'print(4)\n' > "$sa/fixture/by/speckit/edits/src/app.py"
   printf '{"type":"message_end","message":{"role":"assistant","model":"deepseek-flash","content":[{"type":"text","text":"done"}],"usage":{"input":1,"cacheRead":0,"output":1}}}\n' > "$sa/fixture/by/speckit/result.json"
-  printf '{"type":"result","is_error":false,"result":"reviewed","structured_output":{"findings":[],"done":["T001"]},"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' > "$sa/fixture/by/speckit-review/result.json"
+  printf '{"type":"result","is_error":false,"result":"reviewed","structured_output":{"findings":[],"done":["T001"]},"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' > "$sa/fixture/by/speckit-review/result.json"
   {
     out=$(pass agent plan) || fail "full passes: plan failed: $out"
     printf '%s\n' "$out"
@@ -1162,7 +1255,7 @@ sdd_no_leak() {
   start_proxy "not opted in" || return 1
   mkdir -p "$sa/fixture/by/speckit-plan/edits/$f" "$sa/fixture/by/speckit-implement/edits/src"
   printf '# Plan\n' > "$sa/fixture/by/speckit-plan/edits/$f/plan.md"
-  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' |
+  printf '{"type":"result","is_error":false,"result":"planned","structured_output":null,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' |
     tee "$sa/fixture/by/speckit-plan/result.json" > "$sa/fixture/by/speckit-implement/result.json"
   printf 'print(5)\n' > "$sa/fixture/by/speckit-implement/edits/src/app.py"
   out=$(pass agent plan) || fail "not opted in: plan failed: $out"
@@ -1178,6 +1271,96 @@ if command -v check-jsonschema > /dev/null 2>&1; then
   check "no credential leaks: an agent returning one is refused unseen, full passes leave none anywhere, and a run not opted in never reads the DeepSeek key" sdd_no_leak
 else
   skip "no credential leaks: an agent returning one is refused unseen, full passes leave none anywhere, and a run not opted in never reads the DeepSeek key" check-jsonschema
+fi
+
+# A credential holding characters JSON escapes — a quote, a backslash, a
+# non-ASCII letter — is matched on its decoded value, not on JSON's text of
+# it (research R28, third round): returned only in structured_output, only in
+# the usage (a model's name, a field's value) or in the result's text, it is
+# refused naming its item, with nothing applied, and its value is in no file
+# under the repository, its bundle (in .git) included, read raw and, for
+# JSON, decoded.
+sdd_no_leak_escaped() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=$'sk-ant-oat01-"q\\b\xc3\xa9-0123456789' deepseek_secret=$'sk-"ds\\k\xc3\xa9y-0123456789'
+  local repo run sa f=specs/001-probe out code where
+  local tokens='{"inputTokens":1,"outputTokens":1}'
+  for where in structured "usage key" "usage value" result; do
+    fresh || return 1
+    route_to sonnet
+    [ "$where" = structured ] || edit src/app.py "print(2)"
+    /usr/bin/python3 -I -c '
+import json, sys
+where, secret, tokens = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+r = {"type": "result", "is_error": False, "result": "done", "structured_output": None, "permission_denials": [],
+     "total_cost_usd": 0.01, "modelUsage": {"claude-opus-5-5": tokens, "claude-sonnet-5-5": tokens}}
+if where == "structured":
+    r["structured_output"] = {"findings": [{"severity": "LOW", "text": secret}], "done": []}
+elif where == "usage key":
+    r["modelUsage"][secret] = tokens
+elif where == "usage value":
+    r["modelUsage"]["claude-sonnet-5-5"] = dict(tokens, note=secret)
+else:
+    r["result"] = "the token is " + secret
+print(json.dumps(r))
+' "$where" "$claude_secret" "$tokens" > "$sa/fixture/result.json"
+    if [ "$where" = structured ]; then
+      out=$(pass agent review)
+    else
+      out=$(pass implement)
+    fi
+    code=$?
+    [ "$code" -ne 0 ] || fail "escaped $where: succeeded"
+    printf '%s' "$out" | grep -qF claude-oauth || fail "escaped $where: the credential is not named: $out"
+    grep -qF "$claude_secret" <<< "$out" && fail "escaped $where: the value was shown"
+    nothing_applied "escaped $where"
+    [ ! -e "$repo/$f/.sdd/review.json" ] || fail "escaped $where: review.json was written"
+    /usr/bin/python3 -I -c '
+import json, os, sys
+where, secret = sys.argv[1], sys.argv[2]
+def strings(v):
+    if isinstance(v, str):
+        yield v
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            yield k
+            yield from strings(x)
+    elif isinstance(v, list):
+        for x in v:
+            yield from strings(x)
+found = []
+for top in sys.argv[3:]:
+    for d, _, names in os.walk(top):
+        for n in names:
+            p = os.path.join(d, n)
+            if not os.path.isfile(p) or os.path.islink(p):
+                continue  # git leaves its fsmonitor socket in .git
+            data = open(p, "rb").read()
+            if secret.encode() in data:
+                found.append(p)
+                continue
+            text = data.decode(errors="replace")
+            docs = []
+            for chunk in [text] + text.splitlines():
+                try:
+                    docs.append(json.loads(chunk))
+                except ValueError:
+                    pass
+            if any(secret in s for doc in docs for s in strings(doc)):
+                found.append(p + " (decoded)")
+sys.exit("escaped %s: the value is in %s" % (where, ", ".join(found[:3])) if found else 0)
+' "$where" "$claude_secret" "$repo" || status=1
+    clean_after "escaped $where"
+  done
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "a credential with a quote, a backslash and a non-ASCII letter is refused and kept nowhere, wherever the agent returns it" sdd_no_leak_escaped
+else
+  skip "a credential with a quote, a backslash and a non-ASCII letter is refused and kept nowhere, wherever the agent returns it" check-jsonschema
 fi
 
 # The run's own machinery (contracts/sdd-step.md): prepare-worker builds the

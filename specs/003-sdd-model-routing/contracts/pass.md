@@ -174,9 +174,12 @@ and no configuration an agent could have written runs during a run.
      the whole diff; git hooks (the repository's `core.hooksPath` and
      `.husky/`), CI workflows (`.github/`), editor tasks and every file whose
      mode becomes 755 are recorded as automation changes (FR-030);
-   - every changed file's bytes, the result's text, `structured_output` and
-     its usage are scanned for the exact value of every credential of the
-     run, failing closed when a credential cannot be read — a second line
+   - every changed file's bytes, and every string of the result's text,
+     `structured_output` and its usage as decoded from JSON, keys included,
+     are scanned for the exact value of every credential of the run (JSON's
+     text escapes a quote, a backslash or a non-ASCII character a credential
+     may hold; research R28, third round), failing closed when a credential
+     cannot be read — a second line
      behind the proxy, since no agent holds one — read from the Keychain into
      the scanner through a pipe and never written; a match stops the pass,
      naming the credential, not showing it (FR-009). The credentials of the
@@ -194,10 +197,15 @@ and no configuration an agent could have written runs during a run.
    bundle lies inside the repository's `.git`.
 8. **Results**: the agent's JSON result is read from the container's stdout:
    `structured_output` to the row's outcome file, the result's text to
-   `result_to`, usage to the run's `usage.jsonl`. What the agent said reaches
-   no log or file unjudged: the usage line, a failing pass's message and the
+   `result_to`, usage to the run's `usage.jsonl`. Every pass's usage is held
+   to contracts/sdd-step.md, implement step 3, judgment rows included: a
+   result without its usage, or without tokens for the row's model, fails
+   the pass with nothing applied; one whose usage names other models still
+   writes its usage line first, so the attempt counts (research R30). What
+   the agent said reaches no log or file unjudged: the usage line, a failing pass's message and the
    answer kept in `results/` have the exact value of every credential of the
-   run replaced by its Keychain item's name first, a credential that cannot
+   run replaced by its Keychain item's name first — the usage line within its
+   decoded strings, before it is serialised — a credential that cannot
    be read withholding the answer whole (FR-009, research R29).
 9. **Clean up**: both exports and the container removed, whatever happened.
    A pass whose own process was killed cannot clean up; `sdd-run start` and

@@ -57,7 +57,7 @@ e2e_fresh() {
 }
 fx() { mkdir -p "$sa/fixture/by/$1" && printf '%s' "$sa/fixture/by/$1"; }
 answer() { # key text [structured]
-  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{}}\n' \
+  printf '{"type":"result","is_error":false,"result":"%s","structured_output":%s,"permission_denials":[],"total_cost_usd":0.01,"modelUsage":{"claude-opus-5-5":{"inputTokens":10,"outputTokens":5},"claude-sonnet-5-5":{"inputTokens":10,"outputTokens":5}}}\n' \
     "$2" "${3:-null}" > "$(fx "$1")/result.json"
 }
 writes() { # key path content

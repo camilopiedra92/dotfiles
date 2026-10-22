@@ -43,6 +43,10 @@ existing directory.
    than the configured one, or lacking a usage field, fails the pass naming
    it, with nothing applied. pi reports each response of a pass apart, and
    the pass's usage is their sum: every one of them must carry its usage.
+   Claude reports a numeric `total_cost_usd` and a non-empty `modelUsage`,
+   which must hold the configured model with its `inputTokens` and
+   `outputTokens`; a model Claude Code reports beside it is recorded, not
+   refused, and the model recorded is the configured one (research R30).
 4. **Record**: `.sdd/implement.json` — the files, the commit, the pass's usage
    — written only here.
 

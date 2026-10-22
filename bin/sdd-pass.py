@@ -130,19 +130,47 @@ class Run:
             services.append("deepseek-api")
         return services
 
-    def withhold(self, agent, text):
-        """Text an agent produced, with the exact value of every credential of
-        the run replaced by its item's name, before it is shown or kept: what
-        a pass prints on failing, its answer in results/ and its usage line
-        are never judged, and no credential may reach a log or a file
-        (FR-009). Fails closed: a credential that cannot be read raises."""
-        for service in self.credentials(agent):
-            text = text.replace(self.secret(service), f"<the credential {service}>")
-        return text
+    def withhold(self, agent, said):
+        """What an agent produced — a text, or a decoded JSON value, keys
+        included — with the exact value of every credential of the run
+        replaced by its item's name, before it is shown or kept: what a pass
+        prints on failing, its answer in results/ and its usage line are
+        never judged, and no credential may reach a log or a file (FR-009).
+        A JSON value is withheld before it is serialised, since JSON's text
+        escapes a quote, a backslash or a non-ASCII character a credential
+        may hold (research R28, third round). Fails closed: a credential
+        that cannot be read raises."""
+        values = {self.secret(service): f"<the credential {service}>" for service in self.credentials(agent)}
+
+        def replace(v):
+            if isinstance(v, str):
+                for value, name in values.items():
+                    v = v.replace(value, name)
+                return v
+            if isinstance(v, dict):
+                return {replace(k): replace(x) for k, x in v.items()}
+            if isinstance(v, list):
+                return [replace(x) for x in v]
+            return v
+
+        return replace(said)
 
     def usage(self, record):
         with open(os.path.join(self.dir, "usage.jsonl"), "a") as f:
             f.write(json.dumps({"run": self.id, "at": now(), **record}) + "\n")
+
+
+def strings(value):
+    """Every string in a decoded JSON value, keys included."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from strings(v)
 
 
 def feature_dir(repo):
@@ -464,19 +492,22 @@ class Pass:
             raise PassFailed("judge: git check-ignore failed: " + r.stderr.decode(errors="replace").strip())
         return None
 
-    def scan(self, changes, blobs, agent):
+    def scan(self, changes, said, agent):
         """The exact value of every credential of the run, in each changed
         file's bytes as the agent left them (a patch encodes binaries) and in
-        what the agent returned. Fails closed: a credential that cannot be
-        read cannot be looked for."""
+        every string of what the agent returned, decoded, keys included: JSON's
+        text of a value escapes what a credential may hold (research R28,
+        third round). Fails closed: a credential that cannot be read cannot
+        be looked for."""
         files = []
         for status, _, path in changes:
             if status != "D":
                 with open(os.path.join(self.export, path), "rb") as f:
                     files.append(f.read())
+        texts = list(strings(said))
         for service in self.run.credentials(agent):
-            value = self.run.secret(service).encode()
-            if any(value in blob for blob in files + blobs):
+            value = self.run.secret(service)
+            if any(value.encode() in blob for blob in files) or any(value in t for t in texts):
                 raise PassFailed(f"the output holds the exact value of the credential {service}; nothing applied")
 
     # 7. Apply
@@ -528,7 +559,7 @@ def agent_schema(step):
     return s
 
 
-def parse_result(agent, stdout):
+def parse_result(agent, stdout, model):
     if agent == "claude":
         try:
             result = json.loads(stdout.strip().splitlines()[-1])
@@ -545,8 +576,20 @@ def parse_result(agent, stdout):
                 what = ask.get("command") or ask.get("file_path") or ask.get("pattern") or ""
                 denied.append(d.get("tool_name", "?") + (f": {str(what)[:200]}" if what else ""))
             raise PassFailed("the agent was denied what its profile does not allow:\n  " + "\n  ".join(denied))
+        # A pass without its usage would be counted free, as pi's was before
+        # (contracts/sdd-step.md, implement step 3; research R30).
+        cost, models = result.get("total_cost_usd"), result.get("modelUsage")
+        if not isinstance(cost, (int, float)) or isinstance(cost, bool) or not isinstance(models, dict) or not models:
+            raise PassFailed("claude reported no usage (a numeric total_cost_usd and a non-empty modelUsage); nothing applied")
+        # Claude Code may report a model of its own beside the configured one;
+        # the configured one must be there, with its tokens, to have served.
+        def tokens(u):
+            return isinstance(u, dict) and all(
+                isinstance(u.get(k), int) and not isinstance(u.get(k), bool) for k in ("inputTokens", "outputTokens"))
+        served = model if tokens(models.get(model)) else (
+            ", ".join(sorted(m for m, u in models.items() if tokens(u))) or "no model with tokens")
         return result.get("result", ""), result.get("structured_output"), {
-            "total_cost_usd": result.get("total_cost_usd", 0), "modelUsage": result.get("modelUsage", {})}
+            "total_cost_usd": cost, "modelUsage": models}, served
     # Each assistant message_end carries that response's own usage (pi 1.3.0
     # docs/json.md): a pass's usage is their sum, its answer the last one's.
     last, total = None, {"input": 0, "cached": 0, "output": 0}
@@ -667,17 +710,14 @@ def run_agent(run, phase, implement=None):
         started = time.time()
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         try:
-            parsed = parse_result(row["agent"], out)
-            text, structured, usage = parsed[0], parsed[1], parsed[2]
+            text, structured, usage, served = parse_result(row["agent"], out, row["model"])
             p.answer = text
-            served = parsed[3] if len(parsed) > 3 else row["model"]
-            run.usage(json.loads(run.withhold(row["agent"], json.dumps(
-                {"event": "end", "phase": phase, "model": served, "effort": row["effort"], "usage": usage,
-                 "exit": code}))))
+            run.usage(run.withhold(row["agent"], {"event": "end", "phase": phase, "model": served,
+                                                  "effort": row["effort"], "usage": usage, "exit": code}))
             if code != 0:
                 raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
-            if row["agent"] == "pi" and served != row["model"]:
-                raise PassFailed(f"pi reported model {served}, not the configured {row['model']}; nothing applied")
+            if served != row["model"]:
+                raise PassFailed(f"{row['agent']} reported {served} serving the pass, not the configured {row['model']}; nothing applied")
         except PassFailed as e:
             # These messages carry what the agent said, unjudged.
             raise PassFailed(run.withhold(row["agent"], str(e))) from None
@@ -701,7 +741,7 @@ def run_agent(run, phase, implement=None):
                 changes = p.changes()
                 patch = p.patch() if changes else b""
         flagged = p.judge(changes, writes, feature, implement)
-        p.scan(changes, [text.encode(), json.dumps(structured).encode(), json.dumps(usage).encode()], row["agent"])
+        p.scan(changes, [text, structured, usage], row["agent"])
         place_outcome = None
         if structured is not None and row.get("schema"):
             place_outcome = stage_outcome(run, feature, row["schema"], structured)
