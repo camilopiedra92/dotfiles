@@ -124,14 +124,15 @@ within() {
   wait "$pid" || RC=$?
 }
 
-# lock_await <text>: waits, up to 5 s, for a line of the shared log. A run
-# logs its start only once it holds the lock and has recorded itself, so the
-# next run is started knowing whom it will find.
+# lock_await <text> [<ticks of 0.05 s>]: waits, up to 5 s unless told
+# otherwise, for a line of the shared log. A run logs its start only once it
+# holds the lock and has recorded itself, so the next run is started knowing
+# whom it will find.
 lock_await() {
   local tries=0
   until grep -qx "$1" "$LOCK_TMP/log"; do
     tries=$((tries + 1))
-    [ "$tries" -lt 100 ] || return 1
+    [ "$tries" -lt "${2:-100}" ] || return 1
     sleep 0.05
   done
 }
@@ -405,10 +406,12 @@ lock_killed_run_frees_the_turn() {
   kill -KILL "$a"
   wait "$a" 2> /dev/null
   lock_start "$tmp/b" "$tmp/B"
-  within 2 "$LOCK_PID" || {
-    echo "B was still waiting 2 s after A was killed"
+  # SC-002: B starts within one second.
+  lock_await "B start" 20 || {
+    echo "B had not started 1 s after A was killed"
     return 1
   }
+  within 2 "$LOCK_PID" || return 1
   lock_expect B "exit" 0 "$RC" || return 1
   lock_expect "B's stderr" "nothing" "" "$(cat "$tmp/B.err")"
 }
