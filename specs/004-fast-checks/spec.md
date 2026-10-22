@@ -172,7 +172,9 @@ section, run the suite, see it fail naming the section and the pattern.
   a quarter of the full run on `main`, and runs none of the sections that
   cover only scripts; measured before and after, recorded in research.md.
 - **SC-002**: The hook on a change to one file a single section covers runs
-  that section and the undeclared ones only; measured before and after.
+  the sections whose declarations match it and the undeclared ones only
+  (`macos/touchid.sh` is also matched by `50-install`'s `macos/*`; measured
+  2026-10-22: 5 of 18 sections), measured before and after.
 - **SC-003**: The full run's wall time is below the sum of its sections'
   times on a machine with more than one CPU: measured before and after.
 - **SC-004**: The full run's verdict and exit status equal a sequential run's

@@ -93,3 +93,11 @@ exists, and each must fail for the reason its case predicts.
 MVP is US1: the hook alone is what every commit waits on. US2 then cuts the
 full run, US3 guards US1's input. Each story ends with the whole suite, the
 hand-breaks, a commit, and a review by a fresh context.
+
+## Phase 7: Convergence
+
+- [x] T022 move `declaration_misses` to checks/lib/declarations.sh and run this repository's declaration check from its own section checks/07-declarations.sh that declares nothing, so a stale pattern fails in the hook too, per US3/AS1 (contradicts)
+- [x] T023 A section that stops early through `return` or a syntax error fails the run with the "stopped before its last line" line, per FR-008 (partial)
+- [x] T024 Add the red cases for the early-stop verdict being the only failure, a bad flag exiting 2, the scratch directory removed after a run, and a staged `D` of a section that still exists in the tree, per constitution III (partial)
+- [x] T025 Kill every running section, and what it started, when check.sh receives INT or TERM, per FR-006 (partial)
+- [x] T026 Correct the text that no longer matches the code: SC-002 and quickstart step 3 (a section whose pattern also covers the path runs too), research.md R7 and the 0.1 s poll, and the garbled comment in checks/05-runner.sh (partial)

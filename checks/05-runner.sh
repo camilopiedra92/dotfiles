@@ -15,9 +15,9 @@
 printf '\n%sRunner%s\n' "$DIM" "$OFF"
 
 # Three fake sections: 10-a covers a/* and checks/fixture/*, 20-b covers b/*,
-# b.txt and checks/*.sh (as a section that reads every section's text does,
-# as the section that reads every section's text does), 30-c declares nothing. Plus the
-# runner's other inputs, so a change to each can be staged.
+# b.txt and checks/[0-9][0-9]-*.sh (as a section that reads every section's
+# text does), 30-c declares nothing. Plus the runner's other inputs, so a
+# change to each can be staged.
 runner_repo() {
   local dir=$1
   git init -q "$dir"
@@ -452,33 +452,8 @@ sections_capped_at_cpus() {
 }
 check "sections run at the same time, no more at once than the CPUs" sections_capped_at_cpus
 
-# US3: a declared pattern that matches no tracked path is a section that has
-# silently stopped being selected. Reads patterns as check.sh does (the
-# `# covers:` lines, split with globbing off, matched with [[ == ]]), over the
-# tracked paths on stdin; prints "<section>: <pattern>" for each miss.
-declaration_misses() {
-  local dir=$1 paths section name patterns pattern path hit
-  paths=$(cat)
-  for section in "$dir"/checks/[0-9][0-9]-*.sh; do
-    name=${section##*/}
-    patterns=$(sed -n 's/^# covers://p' "$section")
-    set -f
-    # shellcheck disable=SC2086  # split on purpose, globbing off
-    for pattern in $patterns; do
-      hit=
-      while IFS= read -r path; do
-        # shellcheck disable=SC2053  # the right side is a pattern on purpose
-        if [[ $path == $pattern ]]; then
-          hit=1
-          break
-        fi
-      done <<< "$paths"
-      [ -n "$hit" ] || printf '%s: %s\n' "${name%.sh}" "$pattern"
-    done
-    set +f
-  done
-}
-
+# US3: the reader is checks/lib/declarations.sh, run on this repository by
+# checks/07-declarations.sh.
 declared_patterns_match_something() {
   local tmp out
   tmp=$(mktemp -d) || return 1
@@ -499,14 +474,117 @@ declared_patterns_match_something() {
 }
 check "a declared pattern that matches no tracked file is reported, with its section" declared_patterns_match_something
 
-# This repository's own declarations.
-this_repo_declarations() {
-  local out
-  out=$(this_repo_git ls-files | declaration_misses .)
-  [ -z "$out" ] || {
-    echo "declared patterns matching no tracked file:"
-    printf '%s\n' "$out"
+# What the second review found (2026-10-22), each case red before its fix.
+
+# A section that stops by `return`, or on a syntax error, is as failed as one
+# that exits. Nothing else fails here, so the verdict is the stop's alone.
+early_stops_alone_fail() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" \
+    '10-a:check "a ran" true; return 3; check "a after return" true' \
+    $'20-b:check "b ran" true\nif then fi\ncheck "b after syntax error" true' \
+    '30-c:check "c ran" true'
+  runner_run "$tmp/r"
+  expect_line "return" "  FAIL 10-a stopped before its last line" || return 1
+  expect_line "syntax error" "  FAIL 20-b stopped before its last line" || return 1
+  expect_line "after them" "  ok   c ran" || return 1
+  [ "$RC" -eq 1 ] || {
+    echo "exit $RC, not 1, when only early stops fail"
+    return 1
+  }
+  expect_line "verdict" "Some checks failed" || return 1
+}
+check "a section that returns or hits a syntax error fails the run, alone" early_stops_alone_fail
+
+# The contract's exit 2 on a flag it does not know, and no scratch left behind.
+runner_usage_and_cleanup() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:check "a ran" true'
+  runner_run "$tmp/r" --bogus
+  [ "$RC" -eq 2 ] || {
+    echo "a flag it does not know: exit $RC, not 2"
+    return 1
+  }
+  expect_line "usage" "usage: ./check.sh [--strict] [--staged]" || return 1
+  # macOS's mktemp ignores TMPDIR when given no template (observed
+  # 2026-10-22), so the scratch is found through a stub that makes everything
+  # under one directory.
+  mkdir "$tmp/scratch" "$tmp/bin"
+  # shellcheck disable=SC2016  # expanded by the stub, not here
+  printf '#!/bin/sh\np=$SCRATCH/m$(ls "$SCRATCH" | wc -l | tr -d " ")\nif [ "$1" = -d ]; then mkdir "$p"; else : > "$p"; fi\necho "$p"\n' > "$tmp/bin/mktemp"
+  chmod +x "$tmp/bin/mktemp"
+  SCRATCH=$tmp/scratch PATH="$tmp/bin:$PATH" runner_run "$tmp/r"
+  [ "$RC" -eq 0 ] || {
+    echo "the run with the stub mktemp: exit $RC"
+    return 1
+  }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "a run left files behind: $(ls -A "$tmp/scratch")"
     return 1
   }
 }
-check "every pattern this repository's sections declare matches a tracked file" this_repo_declarations
+check "an unknown flag exits 2 with the usage line, and a run leaves no scratch behind" runner_usage_and_cleanup
+
+# A section removed from the index but still in the tree is a section that
+# goes: only the status says so, since the file is still there to read.
+staged_removal_from_index() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  runner_repo "$tmp/r"
+  git -C "$tmp/r" rm -q --cached checks/30-c.sh
+  runner_run "$tmp/r" --staged
+  expect_ran "git rm --cached" "a b c" || return 1
+  expect_line "git rm --cached" "every section: checks/30-c.sh is staged" || return 1
+}
+check "--staged selects every section when a section leaves the index but not the tree" staged_removal_from_index
+
+# INT or TERM to the runner takes the running sections, and what they started,
+# with it: they would otherwise go on writing into a scratch directory that
+# is gone. The sleeps carry a length nothing else uses, to find them by.
+signals_stop_sections() {
+  local tmp pid sig left
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
+  sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true' '20-b:sleep 31.7; check "b ran" true'
+  for sig in TERM INT; do
+    (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+    pid=$!
+    sleep 0.6
+    kill -"$sig" "$pid"
+    wait "$pid" 2> /dev/null
+    sleep 0.3
+    left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
+    [ "$left" -eq 0 ] || {
+      echo "after $sig to the runner, $left sleeps from its sections are still running"
+      return 1
+    }
+  done
+}
+check "INT or TERM to the runner stops its sections and what they started" signals_stop_sections
+
+# The declaration check is its own section, declaring nothing, so it runs in
+# every commit. Inside 05-runner, which declares check.sh, a commit that renamed
+# a declared file never reached it (found by review, 2026-10-22).
+declarations_run_in_the_hook() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  runner_repo "$tmp/r"
+  cp -p checks/07-declarations.sh "$tmp/r/checks/"
+  cp -p checks/lib/declarations.sh "$tmp/r/checks/lib/"
+  git -C "$tmp/r" add -A
+  git -C "$tmp/r" -c user.name=t -c user.email=t@t commit -q -m declarations
+  git -C "$tmp/r" mv b.txt b2.txt
+  runner_run "$tmp/r" --staged
+  expect_line "stale pattern" "20-b: b.txt" || return 1
+  [ "$RC" -eq 1 ] || {
+    echo "a rename that strands a declared pattern: exit $RC, not 1"
+    return 1
+  }
+}
+check "a staged rename that strands a declared pattern fails the hook's tier" declarations_run_in_the_hook

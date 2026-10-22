@@ -22,7 +22,7 @@ From the repository root, with the tools `docs/checks.md` lists installed.
 
    ```bash
    echo '# x' >> macos/touchid.sh && git add macos/touchid.sh
-   time githooks/pre-commit # Touch ID for sudo runs, besides the undeclared ones
+   time githooks/pre-commit # Touch ID for sudo runs, with every section whose pattern matches the path (50-install's macos/*) and the undeclared ones
    git restore --staged macos/touchid.sh && git checkout macos/touchid.sh
    ```
 

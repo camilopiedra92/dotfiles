@@ -62,7 +62,9 @@ select. What the hook skips, CI catches before the merge: the tier trades
 latency for a later catch, never coverage.
 
 A declaration nobody checks rots into a hole, so the suite fails on a pattern
-that matches no tracked file (`checks/05-runner.sh`).
+that matches no tracked file (`checks/07-declarations.sh`, which declares
+nothing and so runs in every commit: the commit that renames a file is the one
+that strands its pattern).
 
 There is no pre-push tier: the hook is already cheap and CI runs everything, so
 a third level would repeat one of them.
@@ -76,7 +78,8 @@ functions defined by an earlier one and passed only in file order. Each
 section's output is held and printed whole, in file order, once it and every
 section before it have finished, so the output and the verdict are a sequential
 run's. A section that stops before its last line — an `exit`, an unset
-variable — fails the run. The run takes about as long as its slowest section
+variable, a `return`, a syntax error — fails the run. INT or TERM to the
+runner stops the running sections and what they started. The run takes about as long as its slowest section
 rather than the sum, so one slow section sets the floor: measure it before
 splitting anything else (`specs/004-fast-checks/research.md` has the numbers).
 

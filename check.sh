@@ -254,19 +254,39 @@ trap 'rm -rf "$RUN"' EXIT
 JOBS=$(sysctl -n hw.ncpu) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the
-# section stopped early -- an `exit`, an unset variable under set -u -- which
-# is a failure even when the status says 0.
+# section stopped early -- an `exit`, a `return`, a syntax error, an unset
+# variable under set -u -- which is a failure even when the status says 0.
 run_section() {
+  # The section runs from a copy of its own name with the marker appended, so
+  # a `return` or a syntax error, which end a sourced file quietly with status
+  # 0, leave the marker unwritten like an `exit` does.
+  mkdir "$RUN/$1.d"
+  local copy="$RUN/$1.d/${SECTIONS[$1]##*/}"
+  {
+    cat "${SECTIONS[$1]}"
+    printf '\n: > "%s/%s.done"\n' "$RUN" "$1"
+  } > "$copy"
   (
     FAILED=0
     # shellcheck source=/dev/null
-    . "${SECTIONS[$1]}"
-    : > "$RUN/$1.done"
+    . "$copy"
     exit "$FAILED"
   ) > "$RUN/$1.out" 2>&1
   echo "$?" > "$RUN/$1.status"
   mv "$RUN/$1.status" "$RUN/$1.rc"
 }
+
+# INT or TERM stop the sections too, each as a process group of its own (set
+# -m), because the subshell, the checks it runs and what those started would
+# otherwise outlive the runner and write into a scratch directory that is gone.
+set -m
+stop_sections() {
+  local job
+  trap '' INT TERM
+  for job in $(jobs -p); do kill -TERM -- "-$job" 2> /dev/null; done
+  exit 130
+}
+trap stop_sections INT TERM
 
 ORDER=()
 for i in "${!SECTIONS[@]}"; do

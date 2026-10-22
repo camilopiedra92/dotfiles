@@ -112,7 +112,7 @@ the sections that use them; one nobody declares falls back to everything.
 **Decision**: every run, full or selected, executes each section in its own
 subshell, `( FAILED=0; . section; : > done-marker; exit "$FAILED" )`, with
 stdout and stderr in its own file inside one `mktemp -d` directory, at most
-`sysctl -n hw.ncpu` at once. The parent polls every 0.1 s: it starts a
+`sysctl -n hw.ncpu` at once. The parent polls every 20 ms (0.1 s at first; see Measurements): it starts a
 section whenever fewer than the cap are running, and prints a section's file
 whole as soon as it and every section before it have finished, so the output
 is exactly that of a sequential run, in file order. The verdict is the OR of
@@ -154,7 +154,7 @@ and `git status --porcelain` compared (Measurements).
   helpers and re-parse the arguments — a second runner in every file.
 - `wait <pid>` on the oldest section (a sliding window, no polling). Lost: a
   slow section early in file order holds its slot and every slot behind it
-  idle; polling keeps every CPU busy for 0.1 s of latency.
+  idle; polling keeps every CPU busy for 20 ms of latency.
 - Parallelism inside a section. Out of scope: sections own their scratch
   layout.
 
@@ -178,7 +178,8 @@ every section (R4). `checks/lib/` is not matched by the section glob
 
 | section | covers | why |
 |---|---|---|
-| 05-runner | — | the declarations' check reads every tracked file |
+| 05-runner | `check.sh` | it drives a copy of check.sh; every other input it reads is its own |
+| 07-declarations | — | a pattern goes stale in the commit that renames what it names, which that pattern no longer selects |
 | 10-lint | — | gitleaks reads history and the index, exec bits every tracked file |
 | 15-githooks | `githooks/*` | |
 | 20-tool-versions | — | compares installed tools, machine state |
@@ -188,7 +189,7 @@ every section (R4). `checks/lib/` is not matched by the section glob
 | 55-dev-nuke | `bin/dev-nuke.sh` | |
 | 60-machine-profile | `macos/machine.sh macos/machines/* install.sh Brewfile` | |
 | 70–75 | each `macos/<script>` and the manifests and `macos/machine.sh` it reads | |
-| 80-git-guard | `claude/git-guard.sh claude/settings.json claude/mcp.json install.sh drift.sh Brewfile uv-tools.txt macos/machines/* checks/*.sh` | its last case greps every section for calls that bypass `this_repo_git` |
+| 80-git-guard | `claude/git-guard.sh claude/settings.json claude/mcp.json install.sh drift.sh Brewfile uv-tools.txt macos/machines/* checks/[0-9][0-9]-*.sh` | its last case greps every section for calls that bypass `this_repo_git` |
 | 81-config-guard | `claude/config-guard.sh claude/settings.json install.sh` | |
 | 90-spec-kit | `drift.sh bin/sdd-init.sh bin/merge-on-green.sh bin/repo-rules.sh github/repos.json zsh/.zshenv` | |
 
@@ -197,7 +198,7 @@ commits; a missing one is a hole until CI.
 
 ## R8 — Keeping declarations honest
 
-**Decision**: a check in `checks/05-runner.sh` fails on any pattern that
+**Decision**: a check in `checks/07-declarations.sh`, a section that declares nothing so the hook always runs it (found by review: inside 05-runner it was skipped by the rename that stranded a pattern), fails on any pattern that
 matches no tracked file, naming the section and the pattern (FR-009). It uses
 the runner's own parser, so the check and the selection cannot read a
 declaration differently. It cannot catch the opposite error, a file a section
