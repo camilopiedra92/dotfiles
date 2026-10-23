@@ -66,8 +66,10 @@ drift_speckit_python() {
 }
 check "drift.sh tracks SPECKIT_PYTHON_EXECUTABLE until upstream's fallback ships" drift_speckit_python
 
-# sdd-init against a `specify` that records its arguments and writes the two
-# directories the real one writes. What is under test is the script's own
+# sdd-init against a `specify` that records its arguments and writes the
+# directories the real one writes (observed with specify 1.2.2, 2026-10-22:
+# `.specify/workflows/sdd-routed/` for the workflow, `.pi/` for the pi
+# integration). What is under test is the script's own
 # contract: what it refuses, what it calls, and what lands in its commit.
 sdd_init() {
   local tmp repo out
@@ -81,6 +83,8 @@ case "\$1" in
   init) mkdir -p .specify/memory .claude/skills/speckit-tasks
         echo x > .specify/memory/constitution.md
         echo x > .claude/skills/speckit-tasks/SKILL.md ;;
+  integration) mkdir -p .pi/prompts; echo x > .pi/prompts/speckit.implement.md ;;
+  workflow) mkdir -p .specify/workflows/sdd-routed; echo x > .specify/workflows/sdd-routed/workflow.yml ;;
 esac
 FAKE
   chmod +x "$tmp/bin/specify"
@@ -130,9 +134,16 @@ FAKE
     echo "sdd-init does not install the story-workers preset"
     return 1
   }
+  # Then the pi integration (the DeepSeek pass runs Spec Kit's own pi prompt,
+  # research R27) and the routed workflow, from this repository's copy.
+  workflow=$(realpath "$PWD")/claude/speckit/sdd-routed.yml
+  {
+    echo 'integration install pi'
+    echo "workflow add $workflow"
+  } >> "$tmp/want"
   diff -u "$tmp/want" "$tmp/calls" || return 1
   [ "$(git -C "$repo" diff-tree --no-commit-id --name-only -r HEAD | sort | tr '\n' ' ')" = \
-    ".claude/skills/speckit-tasks/SKILL.md .specify/memory/constitution.md " ] || {
+    ".claude/skills/speckit-tasks/SKILL.md .pi/prompts/speckit.implement.md .specify/memory/constitution.md .specify/workflows/sdd-routed/workflow.yml " ] || {
     echo "the commit holds something else:"
     git -C "$repo" show --stat HEAD
     return 1
@@ -141,6 +152,16 @@ FAKE
     echo "an unrelated file did not stay out of the commit"
     return 1
   }
+  # A new repository has not opted in to DeepSeek, and the line that does
+  # names DeepSeek's terms (spec US3 AS3).
+  if git -C "$repo" config --local sdd.implement > /dev/null; then
+    echo "a fresh repository came out opted in to DeepSeek"
+    return 1
+  fi
+  if ! grep -qF 'git config --local sdd.implement deepseek' <<< "$out" || ! grep -qi "DeepSeek's terms" <<< "$out"; then
+    echo "the opt-in line is missing or does not name DeepSeek's terms: $out"
+    return 1
+  fi
 
   # Something already staged would ride along in the commit, so it refuses
   # before calling anything.
@@ -193,9 +214,28 @@ FAKE
     echo "the hint is not update for an installed preset and add for a missing one: $out"
     return 1
   fi
+  # The routed workflow and the pi integration, too: add (a second add over an
+  # installed workflow installs it again, specify 1.2.2, 2026-10-22) and,
+  # for pi, install, or upgrade once .pi/ is there.
+  workflow=$(realpath "$PWD")/claude/speckit/sdd-routed.yml
+  rm -rf "$repo/.pi"
+  out=$(run) || true
+  if ! grep -qF "specify workflow add $workflow" <<< "$out" ||
+    ! grep -qF "specify integration install pi" <<< "$out"; then
+    echo "the hint does not add the workflow and the pi integration: $out"
+    return 1
+  fi
+  mkdir -p "$repo/.pi/prompts"
+  out=$(run) || true
+  if ! grep -qF "specify integration upgrade pi" <<< "$out" || grep -qF "specify integration install pi" <<< "$out"; then
+    echo "the hint does not upgrade a pi integration that is installed: $out"
+    return 1
+  fi
+  rmdir "$repo/.pi/prompts" "$repo/.pi"
+  out=$(run) || true
   # Then a commit: an update left uncommitted outside the feature directory
   # sends story-workers' next run to core (its v0.2.0 README, Install).
-  if ! grep -qF 'git add .specify .claude/skills && git commit -m "Update Spec Kit presets"' <<< "$out"; then
+  if ! grep -qF 'git add .specify .claude/skills .pi && git commit -m "Update Spec Kit presets"' <<< "$out"; then
     echo "the hint does not end with the commit to paste: $out"
     return 1
   fi
@@ -259,7 +299,7 @@ FAKE
     echo "refused -R o/r"
     return 1
   }
-  if grep -v -- '-R o/r' "$tmp/calls" | grep -q .; then
+  if grep -qv -e '-R o/r' -e '^$' "$tmp/calls"; then
     echo "a call went out without -R o/r:"
     cat "$tmp/calls"
     return 1

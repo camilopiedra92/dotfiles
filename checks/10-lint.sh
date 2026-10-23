@@ -12,7 +12,7 @@ printf '\n%sLint%s\n' "$DIM" "$OFF"
 
 if command -v shellcheck > /dev/null 2>&1; then
   # -x follows sourced files, catching breakage across file boundaries.
-  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh
+  check "shellcheck" shellcheck -x ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh ./checks/lib/*.sh
 else
   skip "shellcheck" "brew install shellcheck"
 fi
@@ -21,7 +21,7 @@ fi
 # the editor, this check and the hook cannot drift apart if there is only one
 # definition to read.
 if command -v shfmt > /dev/null 2>&1; then
-  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh
+  check "shfmt" shfmt -d ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh ./checks/lib/*.sh
 else
   skip "shfmt" "brew install shfmt"
 fi
@@ -62,7 +62,7 @@ else
   skip "gitleaks" "brew install gitleaks"
 fi
 
-syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./checks/*.sh ./checks/lib/*.sh; do bash -n "$f" || return 1; done; }
+syntax_bash() { for f in ./*.sh ./bin/*.sh ./claude/*.sh ./githooks/* ./macos/*.sh ./containers/worker/*.sh ./checks/*.sh ./checks/lib/*.sh; do bash -n "$f" || return 1; done; }
 check "bash syntax" syntax_bash
 
 if command -v zsh > /dev/null 2>&1; then
@@ -107,6 +107,20 @@ exec_bits() {
   return "$bad"
 }
 check "tracked scripts are executable in git" exec_bits
+
+# No compiled Python is tracked: a .pyc is a build product of whichever
+# interpreter last ran the file, stale after the next edit (one was committed
+# by a check that imported bin/sdd-egress-proxy.py, review of Phase 2b).
+no_bytecode() {
+  local found
+  found=$(this_repo_git ls-files | grep -E '(^|/)__pycache__/|\.py[co]$')
+  [ -z "$found" ] || {
+    echo "compiled Python is tracked:"
+    printf '%s\n' "$found"
+    return 1
+  }
+}
+check "no compiled Python is tracked" no_bytecode
 
 # The index check.sh keeps for the calls about this repository (THIS_INDEX)
 # has to be the one they read: an index in which install.sh lost its

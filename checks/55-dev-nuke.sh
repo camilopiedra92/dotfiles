@@ -120,7 +120,7 @@ STUB
 }
 
 dev_nuke() {
-  local tmp out pid line term kill
+  local tmp out pid line term kill rms
   tmp=$(mktemp -d) || return 1
   trap '/bin/rm -rf "$tmp"' RETURN
   dev_nuke_stubs "$tmp/bin" || {
@@ -217,7 +217,7 @@ PROCS
     echo "socket: removed a file beside the socket"
     return 1
   }
-  if grep '^as=[a-z]* rm ' "$tmp/calls" | grep -vqxF "as=root rm -f $tmp/sock/.s.PGSQL.5432"; then
+  if rms=$(grep '^as=[a-z]* rm ' "$tmp/calls") && grep -vqxF "as=root rm -f $tmp/sock/.s.PGSQL.5432" <<< "$rms"; then
     echo "socket: rm was asked for something besides the socket: $(grep ' rm ' "$tmp/calls")"
     return 1
   fi

@@ -171,7 +171,7 @@ install_is_idempotent() {
     return 1
   }
   # find, not a glob, so a hidden backup counts as inside too.
-  if find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*' | grep -q .; then
+  if [ -n "$(find "$tmp/home/.claude/skills" -mindepth 1 -maxdepth 1 -name '*backup*')" ]; then
     echo "something in the way was backed up inside ~/.claude/skills"
     return 1
   fi
@@ -187,6 +187,16 @@ install_is_idempotent() {
     echo "the second run linked the skill inside itself"
     return 1
   }
+  # The routed Spec Kit commands (specs/003-sdd-model-routing): sdd-run is
+  # what the owner runs, sdd-step what the workflow's steps run; both find
+  # their dotfiles by resolving these links.
+  local cmd
+  for cmd in sdd-run sdd-step; do
+    [ "$(readlink "$tmp/home/.local/bin/$cmd")" = "$tmp/dotfiles/bin/$cmd.sh" ] || {
+      echo "$tmp/home/.local/bin/$cmd is not a link to bin/$cmd.sh: $(readlink "$tmp/home/.local/bin/$cmd")"
+      return 1
+    }
+  done
   # ssh checks the config file's own owner and mode, not the directory's; the
   # 700 is for the private key step 4b will put next to it, and asserting it
   # here is what proves an inherited looser mode gets converged.

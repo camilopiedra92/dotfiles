@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "deny": [
+      "Agent",
+      "Task"
+    ]
+  },
+  "disableAllHooks": true
+}

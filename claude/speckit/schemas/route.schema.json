@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:route:1",
+  "title": "Which agent implements, as decided at the route step",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:route:1"
+    },
+    "step": {
+      "const": "route"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "agent": {
+      "enum": [
+        "deepseek",
+        "sonnet"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "agent"
+  ],
+  "additionalProperties": false
+}

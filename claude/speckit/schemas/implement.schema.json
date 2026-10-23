@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:implement:1",
+  "title": "One implementation pass, written only by sdd-step implement",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:implement:1"
+    },
+    "step": {
+      "const": "implement"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "agent": {
+      "enum": [
+        "deepseek",
+        "sonnet"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pi_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "usage": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cached": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "input",
+            "cached",
+            "output"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "total_cost_usd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "modelUsage": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "total_cost_usd",
+            "modelUsage"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "dropped": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "paths the pass wrote that the repository ignores: dropped from its patch, never written (research R27)"
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "agent",
+    "model",
+    "pi_version",
+    "commit",
+    "files",
+    "usage",
+    "seconds"
+  ],
+  "additionalProperties": false
+}

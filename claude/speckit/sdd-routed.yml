@@ -1,0 +1,203 @@
+# The routed Spec Kit workflow (specs/003-sdd-model-routing,
+# contracts/workflow.md). It owns order, checkpoints, loops and resume, and
+# names no model, effort or permission: every agent step is a shell step
+# running "$SDD_STEP" agent <phase>, which takes all of that from the
+# phase's row of the run's frozen routing table (contracts/routing.md).
+#
+# Started and resumed only by sdd-run, which exports SDD_RUN_DIR (the run
+# bundle), SDD_STEP (the absolute path of sdd-step) and
+# SPECKIT_WORKFLOW_RUN_ID. Branches compare only the fixed tokens sdd-step
+# prints, never an agent's text (FR-016). Step ids use "_": the engine's
+# expressions would read "-" as a minus.
+#
+# Every agent step's timeout is its row's max_timeout plus 300, so the
+# dispatcher's own limit always fires first (research R11); ./check.sh
+# asserts that this file and routing.yml agree.
+schema_version: "1.0"
+workflow:
+  id: "sdd-routed"
+  name: "Routed Spec Kit cycle"
+  version: "1.0.0"
+  author: "camilopiedra92"
+  description: "specify through build, each phase on its routed model, every agent step contained"
+
+requires:
+  speckit_version: ">=1.2.2"
+
+inputs:
+  spec:
+    type: string
+    required: true
+    prompt: "Describe what you want to build"
+  resume_from:
+    type: string
+    default: ""
+    enum: ["", "specify", "plan", "tasks", "build"]
+  clarify_verdict:
+    type: string
+    default: ""
+    enum: ["", "approve", "reject"]
+  spec_verdict:
+    type: string
+    default: ""
+    enum: ["", "approve", "reject"]
+  plan_verdict:
+    type: string
+    default: ""
+    enum: ["", "approve", "reject"]
+  done_verdict:
+    type: string
+    default: ""
+    enum: ["", "approve", "reject"]
+
+steps:
+  - id: specify_phase
+    type: if
+    condition: "{{ inputs.resume_from == '' or inputs.resume_from == 'specify' }}"
+    then:
+      - id: specify
+        type: shell
+        run: '"$SDD_STEP" agent specify'
+        timeout: 7500
+      - id: clarify_ask
+        type: shell
+        run: '"$SDD_STEP" agent clarify-ask'
+        timeout: 7500
+      - id: has_questions
+        type: shell
+        run: '"$SDD_STEP" outcome clarify'
+      - id: clarify
+        type: if
+        condition: "{{ steps.has_questions.output.stdout == 'yes' }}"
+        then:
+          - id: answer_clarify
+            type: gate
+            message: >-
+              Answer the questions in clarify-questions.md in the feature
+              directory, then: sdd-run resume <run id> approve (or reject).
+            show_file: clarify-questions.md
+            options: [approve, reject]
+            on_reject: abort
+            verdict_input: clarify_verdict
+          - id: clarify_apply
+            type: shell
+            run: '"$SDD_STEP" agent clarify-apply'
+            timeout: 7500
+      - id: review_spec
+        type: gate
+        message: "Review spec.md, then: sdd-run resume <run id> approve (or reject)."
+        options: [approve, reject]
+        on_reject: abort
+        verdict_input: spec_verdict
+      - id: specify_done
+        type: shell
+        run: '"$SDD_STEP" phase-done specify'
+
+  - id: plan_phase
+    type: if
+    condition: "{{ inputs.resume_from == '' or inputs.resume_from == 'specify' or inputs.resume_from == 'plan' }}"
+    then:
+      - id: plan
+        type: shell
+        run: '"$SDD_STEP" agent plan'
+        timeout: 7500
+      - id: checklist
+        type: shell
+        run: '"$SDD_STEP" agent checklist'
+        timeout: 7500
+      # The owner's fresh review of each checklist, before tasks.
+      - id: checklist_review
+        type: shell
+        run: '"$SDD_STEP" agent checklist-review'
+        timeout: 7500
+      - id: plan_done
+        type: shell
+        run: '"$SDD_STEP" phase-done plan'
+
+  - id: tasks_phase
+    type: if
+    condition: "{{ inputs.resume_from != 'build' }}"
+    then:
+      - id: tasks
+        type: shell
+        run: '"$SDD_STEP" agent tasks'
+        timeout: 3900
+      # Spec Kit's order: analyze compares spec, plan and tasks.
+      - id: analyze
+        type: shell
+        run: '"$SDD_STEP" agent analyze'
+        timeout: 7500
+      # The checkpoint before any code: the plan, the tasks, the analysis and
+      # every checklist item left unchecked. Approving answers implement's
+      # unchecked-items question (the owner's process, research R27).
+      - id: review_plan
+        type: gate
+        message: "Review the plan, tasks, analysis.md and the unchecked checklist items, then: sdd-run resume <run id> approve (or reject)."
+        show_file: analysis.md
+        options: [approve, reject]
+        on_reject: abort
+        verdict_input: plan_verdict
+      - id: tasks_done
+        type: shell
+        run: '"$SDD_STEP" phase-done tasks'
+
+  - id: route
+    type: shell
+    run: '"$SDD_STEP" route'
+
+  # Each pass implements, verifies, reviews and converges. "sdd-step stuck"
+  # decides whether another runs: "clear" ends a loop, "again" runs the next
+  # of three, "retry" runs exactly one more after the owner's one-shot
+  # `sdd-run resume <id> retry`; past three with no retry it fails the step,
+  # which stops the run for the owner (FR-014, FR-015). Not gates: a gate's
+  # approving verdict is never reset and would answer every later occurrence
+  # (research R3, T004). max_iterations is only a safety bound.
+  - id: convergence
+    type: do-while
+    max_iterations: 50
+    condition: "{{ steps.converge_stuck.output.stdout != 'clear' }}"
+    steps:
+      - id: fix_loop
+        type: do-while
+        max_iterations: 50
+        condition: "{{ steps.fix_stuck.output.stdout != 'clear' }}"
+        steps:
+          - id: implement
+            type: shell
+            run: '"$SDD_STEP" implement'
+            timeout: 3900
+          - id: verify
+            type: shell
+            run: '"$SDD_STEP" verify'
+            timeout: 3600
+          - id: fix_stuck
+            type: shell
+            run: '"$SDD_STEP" stuck fix'
+      - id: review
+        type: shell
+        run: '"$SDD_STEP" agent review'
+        timeout: 7500
+      - id: converge
+        type: shell
+        run: '"$SDD_STEP" agent converge'
+        timeout: 7500
+      - id: converge_stuck
+        type: shell
+        run: '"$SDD_STEP" stuck converge'
+
+  - id: review_done
+    type: gate
+    message: >-
+      Review .sdd/review.json and the check and automation changes in
+      .sdd/verify.json, then: sdd-run resume <run id> approve (or reject).
+    options: [approve, reject]
+    on_reject: abort
+    verdict_input: done_verdict
+
+  - id: mark
+    type: shell
+    run: '"$SDD_STEP" mark'
+
+  - id: build_done
+    type: shell
+    run: '"$SDD_STEP" phase-done build'

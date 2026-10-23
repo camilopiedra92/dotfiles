@@ -7,6 +7,12 @@ brew "bat"
 # Resource monitor. Not a development tool in the strict sense, and here anyway:
 # what you reach for when a build pins a core or a container eats the machine.
 brew "btop"
+# Apple's runtime for Linux containers, one lightweight VM per container. Runs
+# every agent step and verify of a routed Spec Kit run, behind a firewall that
+# reaches only the run's egress proxy (specs/003-sdd-model-routing, research R5,
+# R23); chosen over Docker Desktop and colima on 2026-10-21 after it granted
+# NET_ADMIN to an iptables deny-by-default probe and isolated each VM.
+brew "container"
 # Edits the Dock from the command line, so its layout can be scripted instead of
 # dragged into place by hand on a new machine.
 brew "dockutil"

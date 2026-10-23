@@ -51,6 +51,7 @@ jobs:
       # Bare, as actionlint's: the tag carries a v, the filenames do not.
       ZIZMOR_VERSION: 1.30.1
       GITLEAKS_VERSION: 8.30.1
+      UV_VERSION: 0.13.0
     steps:
       # Pinned to a commit SHA rather than a tag: a tag can be moved to point at
       # different code, a SHA cannot.
@@ -161,6 +162,26 @@ jobs:
           unzip -q "$gt_file" -d "$RUNNER_TEMP/ghostty"
           ln -sf "$RUNNER_TEMP/ghostty/Ghostty.app/Contents/MacOS/ghostty" /usr/local/bin/ghostty
 
+          # uv's artifact name carries no version; the checksum line names it
+          # with one (bump-tools.sh), so the file is saved under that name.
+          uv_file="uv-${UV_VERSION}-aarch64-apple-darwin.tar.gz"
+          [ "$sc_arch" = aarch64 ] || { echo "::error::no uv artifact recorded for $sc_arch"; exit 1; }
+          curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-apple-darwin.tar.gz" -o "$uv_file"
+          verify "$uv_file" "$uv_file"
+          tar -xzf "$uv_file" --strip-components=1 -C /usr/local/bin uv-aarch64-apple-darwin/uv uv-aarch64-apple-darwin/uvx
+
+      # The routed Spec Kit checks (checks/91-sdd-routing.sh) run the real
+      # Spec Kit engine and check-jsonschema, so CI installs the uv tools at the
+      # pins uv-tools.txt declares, the way install.sh does (specs/003-sdd-model-
+      # routing, research R10).
+      - name: Install the uv tools
+        run: |
+          while read -r name ref; do
+            [ -n "$name" ] || continue
+            uv tool install --from "$ref" "$name"
+          done < <(sed 's/#.*//' uv-tools.txt)
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       # Presence used to be asserted here, with a hand-written list of tool
       # names, because check.sh silently skipped anything it could not find.
       # The list is gone: check.sh fails on a skip whenever CI is set, so a
@@ -196,6 +217,10 @@ jobs:
           }
           [ "$(zizmor --version)" = "zizmor $ZIZMOR_VERSION" ] || {
             echo "::error::unexpected zizmor: $(zizmor --version)"
+            exit 1
+          }
+          [ "$(uv --version | awk '{ print $2 }')" = "$UV_VERSION" ] || {
+            echo "::error::unexpected uv: $(uv --version)"
             exit 1
           }
           [ "$(gitleaks version)" = "$GITLEAKS_VERSION" ] || {

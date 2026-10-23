@@ -131,6 +131,12 @@ link "$DOTFILES/bin/sdd-init.sh" "$HOME/.local/bin/sdd-init"
 link "$DOTFILES/bin/merge-on-green.sh" "$HOME/.local/bin/merge-on-green"
 # Same. Reads github/repos.json, which it finds by resolving this link.
 link "$DOTFILES/bin/repo-rules.sh" "$HOME/.local/bin/repo-rules"
+# Same. The routed Spec Kit workflow (specs/003-sdd-model-routing): sdd-run is
+# what the owner runs; sdd-step is what the workflow's steps run, by the
+# absolute path sdd-run freezes. Both find the schemas, the routing table and
+# the worker's recipe by resolving their links.
+link "$DOTFILES/bin/sdd-run.sh" "$HOME/.local/bin/sdd-run"
+link "$DOTFILES/bin/sdd-step.sh" "$HOME/.local/bin/sdd-step"
 # Not a command you run: it is what ~/.claude.json points the ynab MCP server
 # at, so the server logs into its own directory instead of into whichever
 # repository the editor was started in. See the file.
@@ -417,6 +423,19 @@ mise install
 if ! rustc --version > /dev/null 2>&1; then
   log "Installing the Rust toolchain"
   /opt/homebrew/opt/rustup/bin/rustup default stable
+fi
+
+# --- 6b. Container kernel ---
+# Apple's `container` (Brewfile) runs Linux VMs from a default kernel it
+# downloads on its first start, to ~/Library/Application Support/
+# com.apple.container/kernels/ — machine state no manifest names, so it is
+# applied here and reported by drift.sh. `container system start` also
+# registers launchd services, which do not survive a reboot; sdd-run starts
+# them when a routed run needs them (specs/003-sdd-model-routing, research R5).
+CONTAINER_KERNEL="$HOME/Library/Application Support/com.apple.container/kernels/default.kernel-arm64"
+if [ ! -e "$CONTAINER_KERNEL" ]; then
+  log "Installing the container runtime's default kernel"
+  container system start --enable-kernel-install
 fi
 
 # --- 7. CLI tools from uv ---

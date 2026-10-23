@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:phases:1",
+  "title": "The phases a run finished, in order",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "urn:dotfiles:sdd:phases:1"
+    },
+    "step": {
+      "const": "phases"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "done": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "enum": [
+              "specify",
+              "plan",
+              "tasks",
+              "build"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "phase",
+          "at"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "step",
+    "at",
+    "done"
+  ],
+  "additionalProperties": false
+}

@@ -125,6 +125,7 @@ Why things are the way they are, one file per subject:
 - [Checks](docs/checks.md): what `check.sh` runs, and how configs are validated against schemas.
 - [macOS](docs/macos.md): defaults, power, Touch ID, firewall, Dock, file handlers and more than one Mac.
 - [Maintenance](docs/maintenance.md): finding drift and updating the pins.
+- [Routed Spec Kit runs](docs/sdd-routing.md): `sdd-run`, a feature through Spec Kit's phases, each on its own model, contained.
 
 ## Changing something
 

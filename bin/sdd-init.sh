@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Puts Spec Kit into the current repository with the constitution-authoring
-# and story-workers presets, as one commit of its own.
+# and story-workers presets, Spec Kit's pi integration and the routed workflow
+# (specs/003-sdd-model-routing), as one commit of its own.
 #
 # Usage:  sdd-init        from the root of the repository, at its first feature
 #
@@ -17,6 +18,13 @@
 # a Sonnet worker, the main session verifying; released on the owner's
 # acceptance, not on a measured saving (its README, "The owner's decision").
 set -euo pipefail
+
+# The routed workflow is this repository's copy, resolved from the script's own
+# place so a link in ~/.local/bin finds it. Spec Kit's pi integration is what
+# the DeepSeek pass runs as /speckit.implement (research R27); it is installed
+# for every repository, opted in or not, so the opt-in is one git config.
+self=$(realpath "${BASH_SOURCE[0]}")
+workflow=$(dirname "$(dirname "$self")")/claude/speckit/sdd-routed.yml
 
 PRESET_CONSTITUTION_AUTHORING_URL=https://github.com/camilopiedra92/spec-kit-preset-constitution-authoring/archive/refs/tags/v1.2.1.zip
 PRESET_STORY_WORKERS_URL=https://github.com/camilopiedra92/spec-kit-preset-story-workers/archive/refs/tags/v0.2.0.zip
@@ -45,9 +53,18 @@ if [ -e .specify ]; then
       echo "          specify preset add --from $url" >&2
     fi
   done
+  # The workflow is added the same way to install and to bring up to date
+  # (a second add over an installed one installs it again: specify 1.2.2,
+  # 2026-10-22). pi's integration has its own upgrade once installed.
+  echo "          specify workflow add $workflow" >&2
+  if [ -d .pi ]; then
+    echo "          specify integration upgrade pi" >&2
+  else
+    echo "          specify integration install pi" >&2
+  fi
   # Committed, as init's own files are: from story-workers v0.2.0, a change left
   # uncommitted outside the feature directory sends the next run to core.
-  echo '          git add .specify .claude/skills && git commit -m "Update Spec Kit presets"' >&2
+  echo '          git add .specify .claude/skills .pi && git commit -m "Update Spec Kit presets"' >&2
   exit 1
 fi
 if ! git diff --cached --quiet; then
@@ -67,10 +84,17 @@ specify init --here --force --integration claude
 for url in "${presets[@]}"; do
   specify preset add --from "$url"
 done
+specify integration install pi
+specify workflow add "$workflow"
 
 # Only what init and the presets wrote. .claude/skills/ is committed whatever
 # init's closing advice says about .claude/: that advice is about credentials,
 # and the skills are what makes the workflow the same on every checkout.
-git add .specify .claude/skills
-git commit -q -m "Initialize Spec Kit with the constitution-authoring and story-workers presets"
+git add .specify .claude/skills .pi
+git commit -q -m "Initialize Spec Kit with the constitution-authoring and story-workers presets, pi and the routed workflow"
 echo "sdd-init: committed. Next: /speckit-constitution"
+# Off until the owner says so, per repository: the code the DeepSeek pass reads
+# is sent to DeepSeek (spec US3 AS3).
+echo "sdd-init: implementation runs on Sonnet. To implement on DeepSeek instead, whose terms"
+echo "          of service and privacy policy then apply to the code it reads (DeepSeek's terms):"
+echo "          git config --local sdd.implement deepseek"

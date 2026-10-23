@@ -1,0 +1,114 @@
+# A routing table for checks/95-sdd-run.sh: every row of contracts/routing.md,
+# synthetic values; the real table is claude/speckit/routing.yml.
+phases:
+  specify:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-specify"
+    writes: ["specs/<new>/spec.md"]
+    timeout: 3600
+    max_timeout: 7200
+  clarify-ask:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-clarify"
+    writes: ["<f>/clarify-questions.md"]
+    schema: clarify
+    timeout: 3600
+    max_timeout: 7200
+  clarify-apply:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-clarify"
+    writes: ["<f>/spec.md"]
+    timeout: 3600
+    max_timeout: 7200
+  plan:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-plan"
+    writes: ["<f>/plan.md"]
+    timeout: 3600
+    max_timeout: 7200
+  checklist:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-checklist"
+    writes: ["<f>/checklists/**"]
+    timeout: 3600
+    max_timeout: 7200
+  checklist-review:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "Checklist-review: mark what you verify"
+    writes: ["<f>/checklists/**"]
+    timeout: 3600
+    max_timeout: 7200
+  analyze:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: reader
+    prompt: "/speckit-analyze"
+    writes: []
+    result_to: analysis.md
+    timeout: 3600
+    max_timeout: 7200
+  tasks:
+    agent: claude
+    model: claude-sonnet-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-tasks"
+    writes: ["<f>/tasks.md"]
+    timeout: 1800
+    max_timeout: 3600
+  implement-deepseek:
+    agent: pi
+    model: deepseek-flash
+    effort: high
+    prompt: "/speckit-implement"
+    writes: ["**"]
+    timeout: 1800
+    max_timeout: 3600
+  implement-sonnet:
+    agent: claude
+    model: claude-sonnet-5-5
+    effort: medium
+    profile: implementer
+    prompt: "/speckit-implement"
+    writes: ["**"]
+    timeout: 1800
+    max_timeout: 3600
+  review:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: reader
+    prompt: "/speckit-review"
+    writes: []
+    schema: review
+    timeout: 3600
+    max_timeout: 7200
+  converge:
+    agent: claude
+    model: claude-opus-5-5
+    effort: medium
+    profile: author
+    prompt: "/speckit-converge"
+    writes: ["<f>/tasks.md"]
+    schema: converge
+    timeout: 3600
+    max_timeout: 7200

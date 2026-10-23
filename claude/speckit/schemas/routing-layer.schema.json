@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dotfiles:sdd:routing-layer:1",
+  "title": "A routing layer over the defaults: only model, effort and timeout per phase",
+  "$comment": "agent, profile, prompt, schema, result_to, writes and max_timeout belong to the defaults alone, so a layer cannot change provider, widen permissions or drop a rule (contracts/routing.md). A model's family is checked against its row's agent by sdd-run, which knows the row.",
+  "type": "object",
+  "properties": {
+    "phases": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "specify",
+          "clarify-ask",
+          "clarify-apply",
+          "plan",
+          "checklist",
+          "checklist-review",
+          "analyze",
+          "tasks",
+          "implement-deepseek",
+          "implement-sonnet",
+          "review",
+          "converge"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^claude-[a-z0-9-]+$"
+              },
+              {
+                "type": "string",
+                "pattern": "^deepseek-[a-z0-9.-]+$"
+              }
+            ]
+          },
+          "effort": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
+          "timeout": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
+      }
+    }
+  },
+  "required": [
+    "phases"
+  ],
+  "additionalProperties": false
+}

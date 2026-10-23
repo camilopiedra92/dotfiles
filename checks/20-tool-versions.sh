@@ -36,6 +36,7 @@ installed() {
     taplo) taplo --version | awk '{ print $2 }' ;;
     zizmor) zizmor --version | awk '{ print $2 }' ;;
     gitleaks) gitleaks version ;;
+    uv) uv --version | awk '{ print $2 }' ;;
   esac
 }
 
@@ -43,7 +44,7 @@ versions_match() {
   local status=0 tool var want have
   for pair in shellcheck:SHELLCHECK_VERSION shfmt:SHFMT_VERSION \
     actionlint:ACTIONLINT_VERSION ghostty:GHOSTTY_VERSION taplo:TAPLO_VERSION \
-    zizmor:ZIZMOR_VERSION gitleaks:GITLEAKS_VERSION; do
+    zizmor:ZIZMOR_VERSION gitleaks:GITLEAKS_VERSION uv:UV_VERSION; do
     tool=${pair%%:*}
     var=${pair##*:}
     # A missing tool is already reported by its own check above; repeating it
@@ -156,9 +157,10 @@ env:
   TAPLO_VERSION: 0.9.0
   ZIZMOR_VERSION: 1.30.0
   GITLEAKS_VERSION: 8.30.0
+  UV_VERSION: 0.12.0
 steps:
   - run: echo "${SHELLCHECK_VERSION} ${SHFMT_VERSION} ${ACTIONLINT_VERSION} ${GHOSTTY_VERSION}"
-  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION}"
+  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION} ${UV_VERSION}"
 YML
     cat > "$dir/.github/tool-checksums.txt" << 'SUMS'
 # fixture
@@ -169,6 +171,7 @@ dddd  ghostty-1.10.0-macos-universal.zip
 eeee  taplo-darwin-aarch64.gz
 ffff  zizmor-aarch64-apple-darwin.tar.gz
 9999  gitleaks_8.30.0_darwin_arm64.tar.gz
+8888  uv-0.12.0-aarch64-apple-darwin.tar.gz
 SUMS
     cp "$dir/.github/workflows/ci.yml" "$dir/ci.before"
     cp "$dir/.github/tool-checksums.txt" "$dir/sums.before"
@@ -184,6 +187,7 @@ repos/ghostty-org/ghostty/tags?per_page=100 v1.10.0
 repos/tamasfe/taplo/releases/latest 0.9.0
 repos/zizmorcore/zizmor/releases/latest v1.30.0
 repos/gitleaks/gitleaks/releases/latest v8.30.0
+repos/astral-sh/uv/releases/latest 0.12.0
 LATEST
   }
   latest() { edit "$dir/latest" "s|^\\($1\\) .*|\\1 $2|"; }
@@ -217,6 +221,7 @@ LATEST
   latest repos/tamasfe/taplo/releases/latest 0.10.0
   latest repos/zizmorcore/zizmor/releases/latest v1.31.0
   latest repos/gitleaks/gitleaks/releases/latest v8.31.0
+  latest repos/astral-sh/uv/releases/latest 0.13.0
   out=$(run) || {
     echo "move: refused newer, downloadable releases: $out"
     return 1
@@ -230,9 +235,10 @@ env:
   TAPLO_VERSION: 0.10.0
   ZIZMOR_VERSION: 1.31.0
   GITLEAKS_VERSION: 8.31.0
+  UV_VERSION: 0.13.0
 steps:
   - run: echo "${SHELLCHECK_VERSION} ${SHFMT_VERSION} ${ACTIONLINT_VERSION} ${GHOSTTY_VERSION}"
-  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION}"
+  - run: echo "${TAPLO_VERSION} ${ZIZMOR_VERSION} ${GITLEAKS_VERSION} ${UV_VERSION}"
 YML
   cat > "$dir/sums.want" << SUMS
 # fixture
@@ -243,9 +249,10 @@ $(sum_of https://release.files.ghostty.org/1.11.0/ghostty-macos-universal.zip)  
 $(sum_of $gh/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz)  taplo-darwin-aarch64.gz
 $(sum_of $gh/zizmorcore/zizmor/releases/download/v1.31.0/zizmor-aarch64-apple-darwin.tar.gz)  zizmor-aarch64-apple-darwin.tar.gz
 $(sum_of $gh/gitleaks/gitleaks/releases/download/v8.31.0/gitleaks_8.31.0_darwin_arm64.tar.gz)  gitleaks_8.31.0_darwin_arm64.tar.gz
+$(sum_of $gh/astral-sh/uv/releases/download/0.13.0/uv-aarch64-apple-darwin.tar.gz)  uv-0.13.0-aarch64-apple-darwin.tar.gz
 SUMS
   as_expected || {
-    echo "move: each pin, its spelling and its checksum line are not what moving all seven gives:"
+    echo "move: each pin, its spelling and its checksum line are not what moving all eight gives:"
     differences
     return 1
   }

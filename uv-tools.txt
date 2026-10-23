@@ -31,3 +31,10 @@
 # machine, and this line has to follow. drift.sh reports the gap until it does,
 # and reports the tag going stale against upstream's releases before that.
 specify-cli  git+https://github.com/github/spec-kit.git@v1.2.2
+
+# JSON Schema validator for the routed Spec Kit runs' outcome files and routing
+# table (specs/003-sdd-model-routing, research R10): the contract each file is
+# checked against is the schema, read by a tool other than the code that writes
+# it. python-jsonschema's own CLI. Pinned to a release tag, like specify-cli, so
+# drift.sh can tell when upstream moves; approved by the owner on 2026-10-21.
+check-jsonschema  git+https://github.com/python-jsonschema/check-jsonschema.git@0.38.2

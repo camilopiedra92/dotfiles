@@ -659,6 +659,120 @@ report "no pinned uv tool is behind upstream" \
   "bump the tag in uv-tools.txt, then ./install.sh" \
   "$(stale_uv_pins)"
 
+# The worker image of the routed Spec Kit workflow pins its base by digest and
+# each tool by version (containers/worker/Containerfile); like the uv pins
+# above, each was the latest the day it was written and stops being so with
+# nothing here changing. worker_pins_latest asks upstream, worker_pin_report
+# compares; split so the comparison can be checked without the network.
+worker_pins_latest() {
+  python3 - << 'PY'
+import json
+import urllib.request
+
+
+def fetch(url, headers=None, method="GET"):
+    request = urllib.request.Request(url, headers=headers or {}, method=method)
+    return urllib.request.urlopen(request, timeout=20)
+
+
+def answer(get):
+    try:
+        return get()
+    except Exception as err:
+        return {"error": str(err)}
+
+
+def node_digest():
+    scope = "repository:library/node:pull"
+    token = json.load(fetch("https://auth.docker.io/token?service=registry.docker.io&scope=" + scope))["token"]
+    # The multi-arch index, the digest the Containerfile pins.
+    accept = "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json"
+    response = fetch("https://registry-1.docker.io/v2/library/node/manifests/24-bookworm-slim",
+                     {"Authorization": "Bearer " + token, "Accept": accept}, "HEAD")
+    return response.headers["Docker-Content-Digest"]
+
+
+def npm(package):
+    return json.load(fetch("https://registry.npmjs.org/%s/latest" % package))["version"]
+
+
+def github(repo):
+    url = "https://api.github.com/repos/%s/releases/latest" % repo
+    return json.load(fetch(url, {"Accept": "application/vnd.github+json"}))["tag_name"]
+
+
+print(json.dumps({
+    "node": answer(node_digest),
+    "claude_code": answer(lambda: npm("@anthropic-ai/claude-code")),
+    "pi": answer(lambda: npm("@earendil-works/pi-coding-agent")),
+    "mise": answer(lambda: github("jdx/mise")),
+    "uv": answer(lambda: github("astral-sh/uv")),
+}))
+PY
+}
+
+# Usage: worker_pin_report <worker dir> <latest json> <today as YYYYMMDD>
+worker_pin_report() {
+  python3 - "$1" "$2" "$3" << 'PY'
+import datetime
+import json
+import os
+import re
+import sys
+
+worker, latest, today = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
+text = open(os.path.join(worker, "Containerfile"), encoding="utf-8").read()
+try:
+    lock = json.load(open(os.path.join(worker, "package-lock.json"), encoding="utf-8"))["packages"]
+except (OSError, ValueError, KeyError):
+    lock = {}
+
+
+def recipe(pattern):
+    match = re.search(pattern, text, re.M)
+    return match.group(1) if match else None
+
+
+def locked(package):
+    # The top-level install of the package; nested copies are other
+    # packages' dependencies, moved by the lockfile, not pinned here.
+    return (lock.get("node_modules/" + package) or {}).get("version")
+
+
+pins = [
+    ("node:24-bookworm-slim", "node", recipe(r"^FROM \S*node:24-bookworm-slim@(sha256:[0-9a-f]+)"), "the Containerfile"),
+    ("Claude Code", "claude_code", locked("@anthropic-ai/claude-code"), "package-lock.json"),
+    ("pi", "pi", locked("@earendil-works/pi-coding-agent"), "package-lock.json"),
+    ("mise", "mise", recipe(r"^ARG MISE_VERSION=(\S+)"), "the Containerfile"),
+    ("uv", "uv", recipe(r"^ARG UV_VERSION=(\S+)"), "the Containerfile"),
+]
+for name, key, pinned, where in pins:
+    now = latest.get(key)
+    if not pinned:
+        print("%s: no pin found in %s" % (name, where))
+    elif isinstance(now, dict) or not now:
+        print("%s: could not ask upstream (%s)" % (name, (now or {}).get("error", "no answer")))
+    elif key == "node":
+        if now != pinned:
+            print("%s: pinned to %s, the tag now points at %s" % (name, pinned, now))
+    elif now.lstrip("v") != pinned.lstrip("v"):
+        print("%s: pinned to %s, upstream now releases %s" % (name, pinned, now.lstrip("v")))
+
+# The snapshot has no "latest": the base's packages, and those added from
+# the same moment, get Debian's security updates only when it moves.
+snapshot = recipe(r"^ARG DEBIAN_SNAPSHOT=(\d{8})T\d{6}Z")
+if not snapshot:
+    print("Debian snapshot: no pin found in the Containerfile")
+else:
+    age = (datetime.datetime.strptime(today, "%Y%m%d") - datetime.datetime.strptime(snapshot, "%Y%m%d")).days
+    if age > 30:
+        print("Debian snapshot: pinned to %s, %d days old" % (recipe(r"^ARG DEBIAN_SNAPSHOT=(\S+)"), age))
+PY
+}
+report "no worker image pin is behind upstream" \
+  "move the pin (Containerfile: the base's digest and its snapshot together, a tool with its checksum; package.json then npm install --package-lock-only), regenerate inventory.txt, then sdd-step prepare-worker" \
+  "$(worker_pin_report containers/worker "$(worker_pins_latest)" "$(date -u +%Y%m%d)")"
+
 # SPECKIT_PYTHON_EXECUTABLE in zsh/.zshenv is upstream's own answer to
 # github/spec-kit#4443 (shipped in #4445): its scripts run on python3 and need
 # PyYAML once a project has a preset. #4674 adds a fallback through
@@ -1018,6 +1132,12 @@ for problem in problems:
     print(problem)
 PY
 }
+# The container runtime's default kernel, which install.sh applies on a first
+# start (step 6b): without it every routed Spec Kit run fails at its first pass.
+report "the container runtime has its default kernel" \
+  "./install.sh, or: container system start --enable-kernel-install" \
+  "$([ -e "$HOME/Library/Application Support/com.apple.container/kernels/default.kernel-arm64" ] || echo 'default.kernel-arm64 is missing')"
+
 report "every command on PATH can run" \
   "remove the link, or reinstall whatever put it there" \
   "$(broken_commands)"

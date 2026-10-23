@@ -1,0 +1,9 @@
+{
+  "name": "sdd-worker-tools",
+  "private": true,
+  "description": "The agents the worker image runs, installed with npm ci from package-lock.json (specs/003-sdd-model-routing, FR-032, research R26).",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.306",
+    "@earendil-works/pi-coding-agent": "1.3.0"
+  }
+}
