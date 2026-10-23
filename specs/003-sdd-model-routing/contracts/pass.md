@@ -60,12 +60,19 @@ so no credential outlives the run's process. It:
   read-only into the proxy's container, which looks each request's token up
   there, so a judgment pass cannot reach the registries and a Claude pass
   cannot reach DeepSeek;
-- answers a provider's 401 or 403 — the provider refusing the credential the
-  proxy put in — with that status and a JSON body of its own,
-  `{"error": {"type": "provider_refused_credential", "status", "message"}}`,
-  never the provider's body or headers, which can describe the credential
-  (DeepSeek's quoted its last four characters, T047); the refusal is logged
-  with its status, host and path, never its body (research R31);
+- relays a provider's answer only when it is a 2xx. Any other status keeps
+  its code and gets a JSON body of the proxy's own,
+  `{"error": {"type": "provider_refused" (401, 403) | "provider_rate_limited"
+  (429) | "provider_error", "status", "message"}}`, the message saying only
+  that the provider answered that status and its own message is not relayed:
+  it claims no reason, since a 403 may be a firewall's or a model not
+  allowed, not only a refused credential. Headers are the body's
+  `Content-Type` and `Content-Length`, and `Retry-After` when the provider's
+  is a plain number of seconds (so retries on 429 and 529 keep working); no
+  `Location`, `Set-Cookie`, `WWW-Authenticate` or request id, since any
+  provider text can describe the credential (DeepSeek's 401 quoted its last
+  four characters, T047). The answer is logged with its status, provider,
+  host and path, never its body (research R31, R33);
 - exits by itself when `admissions/heartbeat`, which `sdd-run` touches, has
   not changed for its `heartbeat_seconds` (a change, not a timestamp, since
   the host's and the container's clocks may differ).
@@ -180,7 +187,7 @@ and no configuration an agent could have written runs during a run.
      the whole diff; git hooks (the repository's `core.hooksPath` and
      `.husky/`), CI workflows (`.github/`), editor tasks and every file whose
      mode becomes 755 are recorded as automation changes (FR-030);
-   - every changed file's bytes, and every string of the result's text,
+   - every changed file's name and bytes, and every string of the result's text,
      `structured_output` and its usage as decoded from JSON, keys included,
      are scanned for the exact value of every credential of the run (JSON's
      text escapes a quote, a backslash or a non-ASCII character a credential
@@ -191,7 +198,8 @@ and no configuration an agent could have written runs during a run.
      naming the credential, not showing it (FR-009). The credentials of the
      run are Claude's always and DeepSeek's for a pi pass or a run opted in
      at start: a run not opted in never reads the DeepSeek key.
-   A path or entry the judge refuses is named; nothing is applied.
+   A path or entry the judge refuses is named, with any credential in it
+   replaced by its item's name; nothing is applied.
 7. **Apply**: the outcome file — `implement.json` included, its commit
    filled in after — is validated first, and an implement pass's check and
    automation changes kept, so an invalid outcome leaves no commit and no
@@ -209,7 +217,9 @@ and no configuration an agent could have written runs during a run.
    the pass with nothing applied; one whose usage names other models still
    writes its usage line first, so the attempt counts (research R30). An
    agent that exits non-zero fails the pass as `the agent exited <code>:
-   <the last 300 characters of its stderr>`, whatever its stdout held — a
+   <the last 300 characters of its stderr>`, the credentials withheld before
+   the cut, never after it (a credential across the cut would print as a
+   fragment; research R33), whatever its stdout held — a
    result without usage, or none — and the usage it did report is still
    written first. What
    the agent said reaches no log or file unjudged: the usage line, a failing pass's message and the

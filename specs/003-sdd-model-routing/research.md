@@ -1031,8 +1031,9 @@ the key's last four characters, and the proxy relayed the provider's answer
 verbatim, body and headers. With the real key, part of it would reach the
 agent. The judge and the withholding (R29) look for the exact value only.
 
-**Decision**: when a provider whose credential the proxy injects (Anthropic,
-DeepSeek) answers 401 or 403, the proxy relays the status with a JSON body of
+**Decision** (superseded by R33: the rewrite became an allow-list of 2xx, the
+block-list of statuses having been found too narrow): when a provider whose
+credential the proxy injects (Anthropic, DeepSeek) answers 401 or 403, the proxy relays the status with a JSON body of
 its own, `{"error": {"type": "provider_refused_credential", "status",
 "message"}}`, naming the status and that the provider refused the run's
 credential, and none of the provider's body or headers (`WWW-Authenticate`
@@ -1214,3 +1215,50 @@ or the `claude` process; the provider's
 prepaid balance is the hard ceiling; each worker outcome records pi's reported
 tokens, and `sdd-run usage` prices them from `models.json` (FR-018). macOS has
 no `timeout`; the limit is the script's own, around `container stop`.
+
+## R33 — The fresh review of US2 (T048)
+
+**Findings** (2026-10-22, a review in a fresh context; each fixed test first,
+seen red for the predicted reason, then the fix, then the fix broken by hand
+and seen red again):
+
+1. pi's missing-usage guard was unguarded by a check (`if False:` kept the
+   case green: the traceback it left satisfied "exit 1 and the word usage"),
+   and `usage: {}` was accepted as zero tokens, a null or text count raised an
+   uncaught TypeError. pi's usage is now an integer `input` and `output` (and
+   an integer `cacheRead` when present), else a clean PassFailed.
+2. The proxy's 401/403 rewrite (R31) was a block-list; see the decision below.
+3. Withholding ran after truncation (the stderr tail, the error result, a
+   denied request's input), so a credential across the cut stopped matching and
+   a fragment printed. Withhold first, cut after. The tail of the schema
+   validator's message in `stage_outcome` is not changed: it can only echo what
+   the scan has already passed, since the scan runs on the structured output
+   before the outcome is staged, so no credential can be in it.
+4. Changed file names were not scanned, and the judge's messages, which name
+   paths, were not withheld. Names are scanned like content; judge, scan and
+   the non-regular-file message are withheld.
+5. A Claude result line that is not an object (`[]`, `"x"`, `null`) raised
+   AttributeError; it is now "the agent returned no JSON object result".
+
+**Decision for 2**: an allow-list. A 2xx is relayed unchanged, streaming as
+before. Every other status keeps its code and gets the proxy's own JSON body,
+`{"error": {"type", "status", "message"}}`, `type` being `provider_refused`
+(401, 403), `provider_rate_limited` (429) or `provider_error`, and a message
+that says only that the provider answered that status and its own message is
+not relayed: it does not claim a refused credential, since a WAF's 403 or a
+model-not-allowed 403 is not one (the review's LOW finding 6). Headers are
+those of the proxy's own body and a `Retry-After` that is a plain number of
+seconds, so retries on 429 and 529 keep working; no `Location`, `Set-Cookie`,
+`WWW-Authenticate` or request id. The log line has status, provider, host and
+path. What is lost: the provider's own error text, kept out on purpose; the
+owner reads the status and the proxy's log. Check 93 `ep_refusal`, against a
+stand-in quoting the credential's tail in the body and in several headers, covers
+400, 401, 402, 403, 407, 429, 500, 503 and a 302 with a Location, and a 200
+unchanged; red before the change, and red again with the allow-list put back
+to the block-list, with `Retry-After` relayed unchecked and with it dropped.
+
+**Alternatives**: keeping the block-list and extending it to the statuses seen
+— the next status or header would need its own rule, where relaying nothing of
+a non-2xx needs none; relaying a status class (4xx) — a 400 or 402 body can
+quote a key as well as a 401; relaying a `Retry-After` verbatim — it is
+provider text like any header, so only a number is let through.

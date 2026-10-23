@@ -7,8 +7,8 @@ the run's provider credentials -- no agent does -- and:
 
 - forwards plain-HTTP requests to the provider of the pass that sent them,
   over TLS, with the pass's token replaced by the provider's credential, and
-  answers the provider's 401 or 403 in its own words, since the provider's
-  can describe that credential (research R31);
+  answers anything but a 2xx in its own words, since the provider's can
+  describe that credential (research R31, R33);
 - answers CONNECT to a package registry, for implement and verify passes,
   with a certificate its own authority signed, and forwards what comes
   through it to the real registry over verified TLS -- GET and HEAD only, so
@@ -315,20 +315,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (OSError, http.client.HTTPException) as e:
             log("%s %s %s -> upstream error %s" % (who(token), self.command, self.path.split("?")[0], type(e).__name__))
             return self.refuse(502, "upstream unreachable", token)
-        if r.status in (401, 403):
-            # The provider refused the credential this proxy put in, and its
-            # refusal can describe that credential: DeepSeek's 401 quoted its
-            # last four characters (T047, 2026-10-22). The agent gets the
-            # status in the proxy's words, none of the provider's body or
-            # headers; the log names the refusal, never its body (research R31).
-            log("%s %s %s:%d%s -> %s %s: the provider refused the run's credential"
+        if not 200 <= r.status < 300:
+            # Only a 2xx is relayed. Any other answer can describe the
+            # credential this proxy put in: DeepSeek's 401 quoted its last
+            # four characters (T047, 2026-10-22), and a block-list of the
+            # statuses seen would miss the next. The agent gets the status in
+            # the proxy's own JSON, never the provider's body or headers, a
+            # Location and Set-Cookie included; only a Retry-After that is a
+            # plain delay in seconds goes through, so retries on 429 and 529
+            # keep working. The log names the status, provider, host and path,
+            # never the body (research R31, R33).
+            log("%s %s %s:%d%s -> %s %s: the provider's own message is not relayed"
                 % (who(token), self.command, c.host, c.port, self.path.split("?")[0], name, r.status))
-            body = json.dumps({"error": {"type": "provider_refused_credential", "status": r.status,
-                                         "message": "%s answered %d: the provider refused the run's credential"
+            kind = {401: "provider_refused", 403: "provider_refused", 429: "provider_rate_limited"}.get(r.status, "provider_error")
+            body = json.dumps({"error": {"type": kind, "status": r.status,
+                                         "message": "%s answered %d; the provider's own message is not relayed (research R31)"
                                          % (name, r.status)}}).encode()
+            retry = r.getheader("Retry-After") or ""
             self.send_response(r.status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            if re.fullmatch(r"[0-9]{1,9}", retry):
+                self.send_header("Retry-After", retry)
             self.end_headers()
             self.wfile.write(body)
             return

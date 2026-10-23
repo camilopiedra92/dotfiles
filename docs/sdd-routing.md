@@ -217,9 +217,13 @@ would have reached the agent through the proxy's relayed answer, and the
 judge and the withholding of what a pass keeps look for the exact value of
 the key, not for a fragment of it. The proxy now answers a provider's 401 or
 403 with the status and a body of its own, none of the provider's body or
-headers, and logs the refusal without its body (research R31; check 93 "a
-provider refusing the run's credential…", against a stand-in provider, not
-re-run against DeepSeek).
+headers, and logs the refusal without its body (research R31). The review of
+the story found that block-list too narrow: a provider can quote the key in
+any non-2xx answer or header, so the proxy relays only a 2xx and answers every
+other status in its own words, keeping a numeric `Retry-After` (research R33;
+check 93 "a provider answering anything but 2xx…", against a stand-in
+provider, not re-run against DeepSeek). What is lost: the provider's own error
+text, kept out on purpose; the owner reads the status and the proxy's log.
 
 **Leak search.** Every search looked for the two sentinel values and their
 marker, printed only counts, and was first seen to find a marker planted on

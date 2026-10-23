@@ -56,9 +56,10 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.path == "/models":
             out = json.dumps({"object": "list", "data": [{"id": "deepseek-flash", "name": "DeepSeek-Stand-In"}]}).encode()
         elif "?refuse=" in self.path:
-            # A provider refusing the credential as DeepSeek did in T047: its
-            # body, and here its headers too, quote the key's last four
-            # characters (docs/sdd-routing.md).
+            # A provider answering with an error as DeepSeek did in T047 with
+            # a 401: its body, and here its headers too (a redirect's
+            # Location, a cookie, a request id, a Retry-After), quote the
+            # key's last four characters (docs/sdd-routing.md).
             status = int(self.path.rpartition("=")[2])
             out = json.dumps({"error": {"message": "Your api key: ****%s is invalid" % auth[-4:]}}).encode()
         else:
@@ -67,6 +68,15 @@ class H(http.server.BaseHTTPRequestHandler):
         if status != 200:
             self.send_header("WWW-Authenticate", 'Bearer error="invalid_token", key="****%s"' % auth[-4:])
             self.send_header("X-Key-Hint", auth[-4:])
+            self.send_header("Set-Cookie", "key=%s" % auth[-4:])
+            self.send_header("X-Request-Id", "req-" + auth[-4:])
+            if status == 302:
+                self.send_header("Location", "https://example.invalid/login?key=" + auth[-4:])
+            # A delay in seconds is what a retry needs; a 500's is not one.
+            if status in (429, 503):
+                self.send_header("Retry-After", "7")
+            elif status == 500:
+                self.send_header("Retry-After", "later-" + auth[-4:])
         self.send_header("Content-Length", str(len(out)))
         self.end_headers()
         self.wfile.write(out)
@@ -402,39 +412,49 @@ PY
 }
 check "a pass's request reaches its provider with its token replaced by the credential fed at start" ep_injects
 
-# A provider refusing the credential the proxy injected answers in its own
-# words, and DeepSeek's quoted the key's last four characters (T047,
-# docs/sdd-routing.md): the agent gets the status and the proxy's own body,
-# none of the provider's body or headers, and the log names the refusal
-# without its body (research R31). A 200 passes through unchanged.
+# A provider answering anything but 2xx has its own words kept from the agent
+# (research R31, R33): DeepSeek's 401 quoted the key's last four characters
+# (T047, docs/sdd-routing.md), and any status may. The agent gets the status,
+# the proxy's own JSON body and, for a delay in seconds, the Retry-After a
+# retry needs: none of the provider's body, other headers or Location. The log
+# names status, provider, host and path, never the body. A 2xx passes through.
 ep_refusal() {
-  local judge impl status=0 name code token path tail
+  local judge impl status=0 name code kind token path tail
   judge=$(ep_admit '["anthropic"]')
   impl=$(ep_admit '["deepseek"]')
-  while read -r name code token path tail; do
+  while read -r name code kind token path tail; do
     ep_client api-raw "$EP_API" "$token" "$path?refuse=$code" > "$EP_TMP/refusal.json"
-    python3 -I - "$EP_TMP/refusal.json" "$name" "$code" "$tail" "$EP_TMP/$name.jsonl" << 'PY' || status=1
+    python3 -I - "$EP_TMP/refusal.json" "$name" "$code" "$kind" "$tail" "$EP_TMP/$name.jsonl" << 'PY' || status=1
 import json, sys
-got, name, code, tail, record = sys.argv[1:6]
+got, name, code, kind, tail, record = sys.argv[1:7]
 r = json.load(open(got))
 upstream = json.loads(open(record).read().splitlines()[-1])
+who = "%s %s" % (name, code)
 if "?refuse=" + code not in upstream["path"]:
-    sys.exit("%s %s: the request never reached the provider: %s" % (name, code, upstream["path"]))
+    sys.exit("%s: the request never reached the provider: %s" % (who, upstream["path"]))
 if r["status"] != int(code):
-    sys.exit("%s %s: the agent got status %s" % (name, code, r["status"]))
+    sys.exit("%s: the agent got status %s" % (who, r["status"]))
 if tail in r["body"] or any(tail in k or tail in v for k, v in r["headers"]):
-    sys.exit("%s %s: the provider's refusal reached the agent: %r" % (name, code, r))
-if any(k.lower() in ("www-authenticate", "x-key-hint") for k, _ in r["headers"]):
-    sys.exit("%s %s: the provider's headers reached the agent: %r" % (name, code, r["headers"]))
+    sys.exit("%s: the provider's words reached the agent: %r" % (who, r))
+# Only the proxy's own body, and the delay a retry needs.
+names = {k.lower() for k, _ in r["headers"]}
+extra = names - {"content-type", "content-length", "retry-after", "server", "date"}
+if extra:
+    sys.exit("%s: the provider's headers reached the agent: %s" % (who, sorted(extra)))
+retry = [v for k, v in r["headers"] if k.lower() == "retry-after"]
+if retry != (["7"] if code in ("429", "503") else []):
+    sys.exit("%s: Retry-After is %r" % (who, retry))
 try:
-    text = json.dumps(json.loads(r["body"]))
+    body = json.loads(r["body"])
 except ValueError:
-    sys.exit("%s %s: the body is not the proxy's JSON: %r" % (name, code, r["body"]))
-if code not in text or "credential" not in text:
-    sys.exit("%s %s: the proxy's body names neither the status nor the refused credential: %r" % (name, code, text))
+    sys.exit("%s: the body is not the proxy's JSON: %r" % (who, r["body"]))
+want = {"error": {"type": kind, "status": int(code),
+                  "message": "%s answered %s; the provider's own message is not relayed (research R31)" % (name, code)}}
+if body != want:
+    sys.exit("%s: the body is %r, wanted %r" % (who, body, want))
 PY
     grep "localhost" "$EP_TMP/main.log" | grep -F "$path" | grep -q " $code" || {
-      echo "$name $code: the refusal is not logged with its status, host and path"
+      echo "$name $code: the answer is not logged with its status, host and path"
       status=1
     }
     ! grep -qF "$tail" "$EP_TMP/main.log" || {
@@ -442,9 +462,16 @@ PY
       status=1
     }
   done << EOF
-anthropic 401 $judge /v1/messages ${EP_CRED_ANTHROPIC: -4}
-deepseek 403 $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
-deepseek 401 $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+anthropic 401 provider_refused $judge /v1/messages ${EP_CRED_ANTHROPIC: -4}
+deepseek 403 provider_refused $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+deepseek 401 provider_refused $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+deepseek 400 provider_error $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+deepseek 402 provider_error $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+deepseek 407 provider_error $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+anthropic 429 provider_rate_limited $judge /v1/messages ${EP_CRED_ANTHROPIC: -4}
+deepseek 500 provider_error $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
+anthropic 503 provider_error $judge /v1/messages ${EP_CRED_ANTHROPIC: -4}
+deepseek 302 provider_error $impl /chat/completions ${EP_CRED_DEEPSEEK: -4}
 EOF
   local out
   out=$(ep_client api "$EP_API" "$judge" POST /v1/messages)
@@ -454,7 +481,7 @@ EOF
   }
   return "$status"
 }
-check "a provider refusing the run's credential reaches the agent as its status and the proxy's own words, never the provider's" ep_refusal
+check "a provider answering anything but 2xx reaches the agent as its status and the proxy's own words, never the provider's" ep_refusal
 
 ep_judgment_confined() {
   local judge before out
