@@ -451,7 +451,7 @@ the workflow's own limit for the step sits just above the ceiling),
     after it, and there is no `fix-stuck` stop. Both arms run as contained
     passes, and inside a pass the preset's fragment is expected to fall back
     to core (the export has no `.git`; research R27, R35), so the baseline
-    would launch no workers: not observed yet, T050b observes it. If it does
+    launched no workers in the one baseline-shaped pass T050b ran (2026-10-22, `docs/sdd-routing.md`), and every pass profile denies the Agent tool. If it does
     launch them (Eval 001 measured the preset at +65% usage on a small
     fixture), the baseline starts higher for a reason unrelated to routing and
     the comparison needs a third arm, the routed workflow with the workers, to

@@ -272,6 +272,73 @@ while a container's environment held it. That search was never seen red. It
 shows the log does not record a container's environment or arguments; it
 does not show the search would catch a credential there.
 
+## Story-workers inside a pass (T050b)
+
+story-workers' fragment tells the implementing session to start a worker per
+phase with the Agent tool, and to fall back to core's own behaviour with no
+Agent tool, a worker error, or a project that is not a git repository. An
+interactive session follows that; a routed pass follows `routing.yml`. They do
+not meet inside a pass, by two guarantees of different strength:
+
+- **By construction (status: built, T048b; probed 2026-10-23, research R35).**
+  Every pass profile denies `Agent` and `Task`, so the subagent tool is not
+  offered to the model even when the repository's own settings allow it, and
+  story-workers' fragment cannot launch a worker in a pass.
+- **Observed here (2026-10-22, below).** In one Sonnet implement pass and one
+  Opus implement pass, with story-workers installed by `sdd-init`, the fragment
+  fell back to core and the pass was the only worker.
+
+**What was run**, on 2026-10-22, Apple `container` 1.6.0 running, real
+`claude-oauth` credential, DeepSeek not used (the repository was not opted in):
+
+```sh
+git init -b main rt && cd rt            # seed commit with check.sh (python3 -m unittest) and tests/
+sdd-init                                # this branch's bin/sdd-init.sh: both presets, pi, sdd-routed; one commit
+# a three-line constitution, committed; git config --local sdd.check ./check.sh
+sdd-run start "A slugify module with two functions: slugify(text) ... unique_slug(text, taken) ..."
+sdd-run resume bd7f158e2612 approve     # after answering the one clarify question "A"; again at review_spec, review_plan
+```
+
+then, on the same feature reset to the commit before implement, a second run
+that puts the implement pass on the strongest model (the shape of SC-001's
+baseline arm):
+
+```sh
+sdd-run start --from specs/001-slugify-module --set implement-sonnet.model=claude-opus-5-5
+sdd-run resume 83261390f272 approve
+```
+
+**Observed.**
+
+- (a) Both implement passes (`results/implement-sonnet-*.md`, runs `bd7f158e2612`
+  on `claude-sonnet-5-5` and `83261390f272` on `claude-opus-5-5`) went to core.
+  The Sonnet answer: "The project isn't a git repository, so I didn't use
+  workers and did every task myself ... Carried out in this session:
+  T001-T015." The Opus answer: "The workspace isn't a git repository (`git`
+  isn't installed), so the Fallback rule applied: no phases went to separate
+  workers ... Carried out in this session: T001-T015." Both pass runs wrote
+  the code and tests themselves, and `./check.sh` passed (6 and 12 tests). Neither
+  answer names the missing Agent tool as the reason: the pass has two reasons
+  to fall back (no `.git`, no Agent tool) and these answers cannot separate
+  them. That the pass is the only worker holds for both.
+- (b) No pass failed with a permission denial (a denied tool fails the pass
+  naming it), and each implement pass's `modelUsage` lists only its own model
+  (`claude-sonnet-5-5`; `claude-opus-5-5`), so no worker on another model ran.
+  Not observed: whether the model tried the Agent tool. The result line has
+  no list of tool calls, and under `deny` the tool is not offered.
+- (c) The baseline arm as a contained pass, run once on Opus with story-workers
+  installed: no workers launched (answer and `modelUsage` above). So the answer
+  to SC-001's open question is no, on one sample, for a reason that holds in
+  every pass, with or without the `.git`: the profile denies the tool. T052
+  needs no third arm.
+
+**Found, not fixed** (outside T050b): in both runs the `review` pass failed
+after the implement pass applied cleanly: "judge refused the patch:
+`__pycache__/slugify.cpython-311.pyc`: outside this step's writes". The
+read-only review agent ran the tests with its shell, which wrote bytecode into
+`/work`; the implement answers say that agent deleted its own `__pycache__`.
+A routed run on a Python project will hit this at review.
+
 ## Why some things are the way they are
 
 - **Agents use the shell inside the container.** Allowing commands one by one
