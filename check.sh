@@ -88,6 +88,88 @@ for arg in "$@"; do
   esac
 done
 
+# ── One run at a time ────────────────────────────────────────────────────────
+# One top-level run per user on this machine runs its sections at a time,
+# whichever worktree or clone it was started in; a second waits for the first
+# and says once for whom (specs/006-check-lock). Observed 2026-10-22: four
+# suites from different worktrees overlapped, each over every CPU, the laptop
+# ran hot for hours and one section failed under the contention alone.
+#
+# The turn is a flock(2) taken through macOS's /usr/bin/lockf on descriptor 9,
+# open on a per-user file: the kernel drops it when the last holder of that
+# open file closes it, on any exit, SIGKILL included, so a dead run blocks
+# nobody and no age or pid decides staleness (probed 2026-10-22, research R2).
+# The file's existence means nothing, and the `<pid> <path>` line the holder
+# writes into it only words the waiting line, never makes anyone wait. It
+# names the run that holds the turn, or nobody: the holder empties it as it
+# exits, while the turn is still its own, and a waiter names nobody for a pid
+# that is gone -- the record of a run killed outright, or stopped before its
+# EXIT trap was set, which never emptied it. What remains: such a record
+# whose pid is still taken -- by the dead run until its parent reaps it, or
+# by another process the system has given it since -- read in the instant
+# between the next holder taking the turn and writing its own, or while
+# something other than a run (a bare lockf) holds it, names that pid (R4).
+#
+# The place is asked of the system with getconf and not read from TMPDIR: an
+# environment variable a tool or sandbox may point elsewhere would give two
+# runs two different locks, and they would overlap in silence (R6).
+#
+# A run started from within a run -- 05-runner's ~30 copies of this file, or
+# anything a section starts -- is part of it: CHECK_SH_RUN, exported once the
+# turn is taken, makes it skip all of this. Without that it would wait forever
+# for the parent that waits for it. Exporting it by hand bypasses the lock.
+#
+# Taken after the arguments, so a usage error never waits, and before the
+# selection, so a run that waited reads the index as it is when its turn comes
+# and has printed nothing but its waiting line (R7).
+if [ -z "${CHECK_SH_RUN:-}" ]; then
+  lock=$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock
+  # The braces keep bash's own message about a failed open off stderr while
+  # the descriptor itself stays open in this shell.
+  { exec 9>> "$lock"; } 2> /dev/null || {
+    echo "check.sh: cannot take the run lock $lock" >&2
+    exit 1
+  }
+  lock_status=0
+  lockf -s -t 0 9 || lock_status=$?
+  # 75 is EX_TEMPFAIL, "held by another process" (man lockf).
+  if [ "$lock_status" -eq 75 ]; then
+    holder_pid='' holder_path=''
+    read -r holder_pid holder_path < "$lock"
+    if [ -n "$holder_pid" ] && kill -0 "$holder_pid" 2> /dev/null; then
+      echo "check.sh: waiting for the run of pid $holder_pid in $holder_path to finish" >&2
+    else
+      echo "check.sh: waiting for another run to finish" >&2
+    fi
+    # The wait is a background lockf the runner `wait`s for, not a foreground
+    # one: bash defers a trapped signal until its foreground child returns,
+    # and `wait` returns as soon as one arrives (research R3). The lockf goes
+    # with the runner: left behind, it would take the turn when the holder
+    # ends (06-lock, "TERM while waiting", red that way 2026-10-22). It locks
+    # the open file it shares with this shell, so this shell holds the turn
+    # once it has exited. The traps are set first, so no signal lands between
+    # the start and the trap; the runner's own come later, with the sections.
+    lock_waiter=''
+    trap 'kill "$lock_waiter" 2> /dev/null; exit 130' INT
+    trap 'kill "$lock_waiter" 2> /dev/null; exit 143' TERM
+    lockf -s 9 &
+    lock_waiter=$!
+    lock_status=0
+    wait "$lock_waiter" || lock_status=$?
+    trap - INT TERM
+  fi
+  [ "$lock_status" -eq 0 ] || {
+    echo "check.sh: cannot take the run lock $lock" >&2
+    exit 1
+  }
+  # Truncates the same inode: the lock on the open file stays.
+  printf '%s %s\n' "$$" "$PWD" > "$lock"
+  export CHECK_SH_RUN=$$
+  # Emptied by the EXIT trap below. Set only here, so a nested run, which
+  # holds nothing, empties nothing.
+  lock_record=$lock
+fi
+
 # Report every failure in one run rather than dying on the first. When you are
 # about to commit, knowing there are three problems beats finding them one
 # restart at a time.
@@ -139,13 +221,13 @@ SECTIONS=(checks/*.sh)
 # NUL-separated, which a command substitution cannot hold.
 select_staged() {
   local list status path i p hit
-  list=$(mktemp) || {
+  list=$(exec 9>&- && mktemp) || {
     echo "check.sh: cannot create a temporary file for the staged paths" >&2
     return 1
   }
-  if ! this_repo_git diff --cached --name-status --no-renames -z > "$list"; then
+  if ! this_repo_git diff --cached --name-status --no-renames -z > "$list" 9>&-; then
     ALL="the staged paths could not be read"
-    rm -f "$list"
+    rm -f "$list" 9>&-
     return 0
   fi
   for i in "${!SECTIONS[@]}"; do
@@ -166,7 +248,7 @@ select_staged() {
         # of a diff: `git diff | grep -q` dies of SIGPIPE under pipefail
         # once the diff outgrows a pipe buffer, and a coloured diff hides it.
         if [ "$status" = A ] || [ "$status" = D ] || [ -z "$hit" ] ||
-          [ "$(this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
+          [ "$(exec 9>&- && this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(exec 9>&- && this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
           ALL="$path is staged"
           break
         fi
@@ -196,14 +278,14 @@ select_staged() {
     } ;;
     esac
   done < "$list"
-  rm -f "$list"
+  rm -f "$list" 9>&-
 }
 
 COVERS=()
 PICKED=()
 ALL=
 for i in "${!SECTIONS[@]}"; do
-  COVERS[i]=$(sed -n 's/^# covers://p' "${SECTIONS[i]}")
+  COVERS[i]=$(exec 9>&- && sed -n 's/^# covers://p' "${SECTIONS[i]}")
 done
 if [ "$STAGED" -eq 0 ]; then
   ALL=everything
@@ -246,17 +328,45 @@ done
 # 100 ms the runner's own checks, ~30 runs of instant fake sections, took 2.4 s
 # longer (measured 2026-10-22). Waiting on the oldest section instead would
 # leave CPUs idle behind a slow one.
-RUN=$(mktemp -d) || {
+#
+# The EXIT trap goes in before the scratch directory is made, so a signal
+# landing once RUN holds its path still removes it; with the trap after
+# mktemp, one landing between the two left it (05-runner, "TERM right after
+# the scratch directory is made", red that way 2026-10-22). What stays open is
+# a signal inside mktemp itself: bash dies before assigning RUN, and the
+# directory, made but never named, stays. RUN is emptied first so a value
+# from the environment is never what the trap removes (05-runner, "TERM
+# before the scratch directory spares a RUN from the environment", red
+# without the emptying 2026-10-22). The run's record goes
+# with it too (One run at a time, above). A run that stops before this trap
+# leaves it, as a run killed outright does.
+RUN=''
+trap '[ -z "$RUN" ] || rm -rf "$RUN" 9>&-; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
+RUN=$(exec 9>&- && mktemp -d) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
 }
-trap 'rm -rf "$RUN"' EXIT
-JOBS=$(sysctl -n hw.ncpu) || JOBS=1
+JOBS=$(exec 9>&- && sysctl -n hw.ncpu) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the
 # section stopped early -- an `exit`, a `return`, a syntax error, an unset
 # variable under set -u -- which is a failure even when the status says 0.
 run_section() {
+  # Only the runner's own shell holds the run lock (descriptor 9, "One run at
+  # a time" above): flock belongs to the open file, so any process that
+  # inherited the descriptor keeps the turn while it lives. Probed 2026-10-22
+  # (research R2): a child holding it kept the lock after its parent's
+  # SIGKILL, one started after `exec 9>&-` did not. Closed here, at the top of
+  # the background subshell this function runs in, and not only in the
+  # section's own subshell below: this one waits for the section, so a runner
+  # killed outright would otherwise leave it holding the turn as long as the
+  # section ran (06-lock, "a run killed outright frees the turn", red that
+  # way). A no-op in a nested run, which never opened it. The runner's own
+  # commands after the turn is taken each carry `9>&-` for the same reason,
+  # and each `$(...)` starts with `exec 9>&-`, which closes it in the fork the
+  # substitution is, not in the runner: the fork holds the lock until its
+  # command returns otherwise (research R8).
+  exec 9>&-
   # The section runs from a copy of its own name with the marker appended, so
   # a `return` or a syntax error, which end a sourced file quietly with status
   # 0, leave the marker unwritten like an `exit` does.
@@ -285,13 +395,13 @@ run_section() {
 # job's stdin is /dev/null); both seen 2026-10-22 in a pty.
 kill_tree() {
   local child
-  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  for child in $(exec 9>&- && pgrep -P "$1"); do kill_tree "$child"; done
   kill -TERM "$1" 2> /dev/null
 }
 stop_sections() {
   local job
   trap '' INT TERM
-  for job in $(jobs -p); do kill_tree "$job"; done
+  for job in $(exec 9>&- && jobs -p); do kill_tree "$job"; done
   exit "$1"
 }
 trap 'stop_sections 130' INT
@@ -304,18 +414,18 @@ done
 started=0
 shown=0
 while [ "$shown" -lt "${#ORDER[@]}" ]; do
-  finished=$(find "$RUN" -name '*.rc' | wc -l)
+  finished=$(exec 9>&- && find "$RUN" -name '*.rc' | wc -l)
   while [ "$started" -lt "${#ORDER[@]}" ] && [ $((started - finished)) -lt "$JOBS" ]; do
     run_section "${ORDER[started]}" &
     started=$((started + 1))
   done
   i=${ORDER[shown]}
   if [ ! -e "$RUN/$i.rc" ]; then
-    sleep 0.02
+    sleep 0.02 9>&-
     continue
   fi
-  cat "$RUN/$i.out"
-  status=$(cat "$RUN/$i.rc")
+  cat "$RUN/$i.out" 9>&-
+  status=$(exec 9>&- && cat "$RUN/$i.rc")
   if [ ! -e "$RUN/$i.done" ]; then
     name=${SECTIONS[i]#checks/}
     printf '  %sFAIL%s %s stopped before its last line (exit %s)\n' "$RED" "$OFF" "${name%.sh}" "$status"
