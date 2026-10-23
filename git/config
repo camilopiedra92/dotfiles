@@ -106,9 +106,11 @@
 	# is how the ignore file sitting there stopped being read at all.
 	#
 	# No fsmonitor or untrackedCache. Both speed up `git status` on very large
-	# trees, and measured here they bought nothing: on 2026-10-22, `git status`
-	# with and without fsmonitor in every repository under ~/Development and
-	# ~/dotfiles took 0-20 ms either way, the largest (5,136 files) 10 ms both.
+	# trees, and measured here they bought nothing. 2026-10-22, median of 9
+	# runs, wall clock: rea (5,136 files) 23 ms with both on, 24 ms with both
+	# off; renta (866) and riso (473) 23 ms on, 14 ms off. Every repository
+	# under ~/Development and ~/dotfiles answers `git status` within 25 ms
+	# either way, and where they differ the daemon is the slower.
 	# Set globally, fsmonitor started a daemon for every repository git
 	# touched, throwaway ones included, alive as long as its directory: 613 from
 	# one project's pytest temp dirs on 2026-10-08, 71 on 2026-10-22. A
