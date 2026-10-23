@@ -470,3 +470,16 @@ After: pending (SC-001, T-close).
 7. CI minutes: macOS runners on a public repository are assumed free; confirm
    on the first run.
 8. The imported commit messages end with `Claude-Session: https://claude.ai/code/session_...` trailers and the spec text names local paths and the owner's machine: acceptable in a public repository, or scrubbed (a message rewrite, which only `git filter-repo --message-callback` does cleanly)?
+
+## Decisions on the open questions (2026-10-23)
+
+Taken by the orchestrating session on the owner's delegation ("haz lo mas recomendado"), each with its reason; the owner can overrule any.
+
+1. **History: the native route.** `git fast-export <ref> -- <paths> | git fast-import`. The owner's own `git-guard.sh` names `git filter-repo` as having no safe form, and the dry run needs nothing it would add: 117 commits, 61 files, the 61 blobs at the tip identical to the source's, renames followed by `git log --follow`, the same tip commit id on a rerun. Residual accepted: hashes quoted inside commit messages are not rewritten.
+2. **The pin is a tag, protected.** It is the precedent (presets, `uv-tools.txt`) and constitution V's upgrade path is built on it; a tag moves on a force-push, so the new repository carries a ruleset that forbids deleting or moving tags, and dotfiles' drift report names a tag behind the latest release. A commit pin was rejected: it hides the version a person reads in the diff.
+3. **The three `grep -q .` rewrites are rescued as a small direct change** to dotfiles' `main` (they are bug fixes of the SIGPIPE class found on 2026-10-22, unrelated to the harness); dropping them with the branch would lose them.
+4. **The harness owns installing its workflow into a repository** (003's T050): `sdd-init.sh` stays presets-only, and the harness gets the verb that copies its workflow in. The workflow, the routing and the installer then version together.
+5. **GitHub Releases are cut for each tag**, immutable where the account offers it; without Releases dotfiles' stale-pin report cannot see a newer version.
+6. **Default branch `main`, and the `check`-required ruleset from the first commit**, declared in `github/repos.json` and applied by `bin/repo-rules.sh` like every repository dotfiles governs.
+7. **macOS runners are free on a public repository** (GitHub's published terms for standard runners); the first CI run records duration and whether minutes were billed (T015).
+8. **Imported trailers and local paths stay.** Dotfiles' public `main` already carries `Claude-Session:` trailers and the same kind of local paths; no credential is in them (the leak scans of check 91 and gitleaks run on the import); rewriting messages would break the hash parity this extraction proves.
