@@ -7,6 +7,11 @@
       "Edit",
       "Write",
       "Bash"
+    ],
+    "deny": [
+      "Agent",
+      "Task"
     ]
-  }
+  },
+  "disableAllHooks": true
 }

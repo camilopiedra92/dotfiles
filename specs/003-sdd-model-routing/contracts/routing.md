@@ -134,7 +134,7 @@ never enters the container (contracts/pass.md); the container's home holds no se
 server and no CLAUDE.md of the owner's, so a step loads only the export's
 tracked files — its skills and CLAUDE.md, through `--setting-sources project`
 (research R24) — and its profile (FR-026). A pi row runs `pi -p --mode json
---no-session --model deepseek/<row.model> --thinking <row.effort>`, its provider's `baseUrl` the
+--no-session --no-approve --model deepseek/<row.model> --thinking <row.effort>`, its provider's `baseUrl` the
 proxy and its key a placeholder, the same way. Then, on the host:
 
 - a result with `is_error` true, a `permission_denials` entry, or no result

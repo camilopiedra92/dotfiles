@@ -5,6 +5,11 @@
       "Glob",
       "Grep",
       "Bash"
+    ],
+    "deny": [
+      "Agent",
+      "Task"
     ]
-  }
+  },
+  "disableAllHooks": true
 }

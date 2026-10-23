@@ -543,7 +543,7 @@ def agent_command(row, prompt, schema, system=None):
         if system:
             cmd += ["--append-system-prompt", system]
         return cmd
-    cmd = ["pi", "-p", "--mode", "json", "--no-session", "--model", f"deepseek/{row['model']}",
+    cmd = ["pi", "-p", "--mode", "json", "--no-session", "--no-approve", "--model", f"deepseek/{row['model']}",
            "--thinking", row["effort"]]
     if system:
         cmd += ["--append-system-prompt", system]

@@ -938,6 +938,36 @@ else
   skip "an opted-in implement without its DeepSeek key stops before any container; one opted out since start runs on Sonnet and says so" check-jsonschema
 fi
 
+# Every pass profile turns the repository's hooks off and withholds the
+# subagent tool (research R34, R35; observed 2026-10-23). Both names are denied:
+# the tool's name depends on the Claude Code version, and a deny list holding
+# one leaves the other open. No model call here: the probes in R34/R35 are the
+# evidence, this guards the setting.
+sdd_profiles_close_hooks_and_agents() {
+  local p status=0 n=0
+  for p in claude/speckit/profiles/*.json; do
+    n=$((n + 1))
+    /usr/bin/python3 -I -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+bad = []
+if d.get("disableAllHooks") is not True:
+    bad.append("disableAllHooks is not true")
+deny = d.get("permissions", {}).get("deny", [])
+for tool in ("Agent", "Task"):
+    if tool not in deny:
+        bad.append("permissions.deny lacks " + tool)
+sys.exit(sys.argv[1] + ": " + "; ".join(bad) if bad else 0)
+' "$p" || status=1
+  done
+  [ "$n" -gt 0 ] || {
+    echo "no profiles under claude/speckit/profiles"
+    return 1
+  }
+  return "$status"
+}
+check "every pass profile disables hooks and denies the Agent and Task tools" sdd_profiles_close_hooks_and_agents
+
 # The pi pass (contracts/pass.md, contracts/routing.md, contracts/sdd-step.md
 # "implement" steps 2-4). That the worker runs every command as `node`
 # behind a firewall that reaches the proxy alone is check 92's
@@ -996,7 +1026,7 @@ if argv[-1] != "/speckit.implement specs/001-probe":
     bad.append("deepseek: pi was not given /speckit.implement alone: %r" % argv[-1][:80])
 if "--append-system-prompt" not in argv or "Brief" not in argv[argv.index("--append-system-prompt") + 1]:
     bad.append("deepseek: the brief is not appended to the system prompt of pi")
-want = ["-p", "--mode", "json", "--no-session", "--model", "deepseek/deepseek-flash", "--thinking", "xhigh"]
+want = ["-p", "--mode", "json", "--no-session", "--no-approve", "--model", "deepseek/deepseek-flash", "--thinking", "xhigh"]
 if name != "pi" or argv[:len(want)] != want:
     bad.append("deepseek: pi not run as %s: %s %s" % (" ".join(want), name, argv[:len(want)]))
 if m["models"][0]["name"] != "FROZEN-IN-BUNDLE":
