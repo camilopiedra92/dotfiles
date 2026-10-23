@@ -447,9 +447,22 @@ the workflow's own limit for the step sits just above the ceiling),
   - **The baseline**: the same steps, run with a routing layer that puts
     every Claude step on the most capable model (FR-027), and each convergence pass's implement-and-verify loop
     replaced by one Spec Kit implement step on that model, with the
-    story-workers preset as `sdd-init` installs it today (its workers on the
-    lighter model, its decision 0001); verify runs once after it, and there
-    is no `fix-stuck` stop.
+    story-workers preset as `sdd-init` installs it today; verify runs once
+    after it, and there is no `fix-stuck` stop. Both arms run as contained
+    passes, and inside a pass the preset's fragment is expected to fall back
+    to core (the export has no `.git`; research R27, R35), so the baseline
+    would launch no workers: not observed yet, T050b observes it. If it does
+    launch them (Eval 001 measured the preset at +65% usage on a small
+    fixture), the baseline starts higher for a reason unrelated to routing and
+    the comparison needs a third arm, the routed workflow with the workers, to
+    separate them; T052 does not start before T050b says which.
+  - **What the comparison isolates**: the whole workflow against the whole
+    baseline, not routing alone. Three things differ between the arms: the
+    model of each phase, the external provider for implementation, and the
+    convergence loop against one implement step. The criterion asks whether
+    the workflow the owner would move to costs 40% less; it does not
+    attribute the saving to one of the three, and a result must not be read
+    as if it did.
   - **Checkpoints**: `review-done` is approved; a stop at `fix-stuck` or
     `converge-stuck` is answered `sdd-run abort`. The same rule counts runs in
     both arms: a run counts only if its last verify passed; one that reaches
