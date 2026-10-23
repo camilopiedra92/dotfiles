@@ -35,6 +35,7 @@ any of them. The last group came from the fresh-context review of
 - Q: After a failed check command, how many fix rounds go back to the implementing agent before the run stops for the owner? → A: Two per convergence pass; then the run pauses, and work never moves to another agent on its own.
 - Q: What does SC-001's usage count? → A: Every attempt of every Claude step, failed and resumed ones included, at list price, as each reports it.
 - Q: Does this feature's success decide the move to the smaller plan? → A: No; the feature succeeds at SC-001's 40%, and the move is decided from a week of real usage afterwards.
+- Q: Does this feature merge before SC-001 and SC-002 are measured? → A: Yes (owner, 2026-10-22): the paid runs are not spent now. The feature merges with both open and says so; the follow-up feature measures them.
 - Q: How do clarify's questions reach the owner, given a workflow step gets no terminal? → A: Through a file in the feature directory, which the owner answers before approving the checkpoint.
 - Q: How do agents hand over and how does the run decide what comes next? → A: Every step writes its outcome to a JSON file in the feature directory, validated against a schema; the run branches only on what a deterministic reader finds in valid outcome files, never on an agent's printed text, and a missing or invalid outcome fails the step. Proposed by the owner; checked against Anthropic's engineering posts "How we built our multi-agent research system" (subagent output to a filesystem, to avoid a "game of telephone") and "Effective harnesses for long-running agents" (state in a progress file, a JSON feature list and git; JSON because the model is less likely to overwrite it than Markdown; passing only after testing).
 - Q: Does verify need a model? → A: No; whether the check command passed is its exit status, so verify is a deterministic step and models are kept for judgment.
@@ -460,6 +461,12 @@ the workflow's own limit for the step sits just above the ceiling),
     is met or not by that feature's recorded result, as it comes out.
     Whether the owner moves to the smaller plan is decided afterwards, from a
     week of real usage, not here.
+  - **Status, 2026-10-22: not measured.** The owner decided not to spend the
+    paid runs this measurement needs. SC-001 and SC-002 are open, neither met
+    nor failed, and nothing in this repository claims otherwise. They are
+    measured by the follow-up feature in the story-workers repository (tasks
+    T052-T053), after this one merges; its recorded result then settles them
+    and is linked from `docs/sdd-routing.md`.
 - **SC-002**: On each fixture, the lowest number of held-out acceptance tests
   any of the routed arm's three counted runs passes is at least the baseline's
   median over its three, and the routed arm's own check command passes in
