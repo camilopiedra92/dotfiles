@@ -536,9 +536,13 @@ the workflow's own limit for the step sits just above the ceiling),
   from private repositories such as `renta` or `tli` leaves the machine only
   by the owner's explicit choice. What the provider retains is governed by its
   own terms, which this feature names but cannot change.
-- That the implementing agent follows the test-first rules in its brief is an
-  assumption, not a guarantee: the final patch cannot show whether a test was
-  seen to fail first. SC-002's held-out tests and FR-019's review are what
+- That the implementing agent works test-first is an assumption, not a
+  guarantee. Observed 2026-10-23: the brief (`claude/speckit/brief.md`) holds
+  no test-first rule and the contained agent does not read the owner's global
+  instructions; test-first reaches it only through the order of `tasks.md`
+  (`/speckit-tasks` puts a story's test tasks first) and Spec Kit's implement
+  command. One mechanism, deliberately not repeated in the brief. The final
+  patch cannot show whether a test was seen to fail first. SC-002's held-out tests and FR-019's review are what
   measure the result; the order of work is not measured.
 - The 40% target in SC-001 is the owner's goal (Pro is a fifth of Max 5x's
   allowance) discounted for what routing cannot move: the judgment phases stay

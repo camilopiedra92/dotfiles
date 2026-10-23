@@ -1262,3 +1262,13 @@ to the block-list, with `Retry-After` relayed unchecked and with it dropped.
 a non-2xx needs none; relaying a status class (4xx) — a 400 or 402 body can
 quote a key as well as a 401; relaying a `Retry-After` verbatim — it is
 provider text like any header, so only a number is let through.
+
+## R34 — A pass does not run the repository's hooks
+
+**Observed 2026-10-23** (`claude -p "Reply with the single word ok." --model claude-sonnet-5-5 --setting-sources project --settings <profile>`, in a scratch directory whose `.claude/settings.json` holds a Stop hook that touches a marker): with a profile of `{}` the marker appeared (the hook ran); with `{"disableAllHooks": true}` it did not.
+
+**Finding** (from an outside analysis, checked against the code): passes load the repository's project settings (`bin/sdd-pass.py` `--setting-sources project`), so a hook the repository carries runs inside every pass. Nothing is installed that way today: no repository has a Stop hook, and the archived test-first preset is installed nowhere but its own repository. A blocking Stop hook would make the model continue until the pass's timeout; no containment is lost (the hook runs inside the same sandbox), but a pass's behaviour should not depend on a repository's hooks.
+
+**Decision:** each profile sets `disableAllHooks: true` (task T048b). Rejected: dropping `--setting-sources project` (the profile's permissions and the project's rules ride on it); a check that spends a model call on every run (non-hermetic, paid; the probe above is the evidence, the structural check guards the setting).
+
+**Not probed:** pi's project extensions (`.pi/`): the judge refuses any change under `.pi/`, and no repository ships one today.
