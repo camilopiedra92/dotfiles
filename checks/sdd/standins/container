@@ -117,17 +117,29 @@ while time.monotonic() - since < window:
     echo "container stand-in: nothing mounted at /work" >&2
     exit 125
   }
+  # A /work mounted :ro is read-only to the command: the host directory is made
+  # unwritable for its run (what the real runtime's mount does in the VM), and
+  # given back after. ro.off: a runtime that does not enforce it, so a case can
+  # see the judge refuse what the mount would have stopped.
+  work_ro=$(printf '%s' "$mounts" | tr ';' '\n' | awk -F: '$2 == "/work" && $3 == "ro" { print "ro" }')
+  [ -e "$here/ro.off" ] && work_ro=''
   cmd=$1
   shift
   # Inside the container the agent is on PATH; here the stand-ins are.
   [ -x "$here/$cmd" ] && cmd=$here/$cmd
   cd "$work" || exit 125
+  [ -n "$work_ro" ] && chmod -R a-w "$work"
   [ -n "$name" ] && echo $$ >"$here/running.$name"
-  env -i PATH=/usr/bin:/bin SDD_STANDIN_MOUNTS="$mounts" SDD_STANDIN_DIR="$here" "${env[@]}" "$cmd" "$@" &
+  # The container's own /tmp, which a case may give a place it can read
+  # (tmpdir beside this file): the pass runs this with a cleaned environment,
+  # so the host's TMPDIR never reaches it.
+  tmpdir=$(cat "$here/tmpdir" 2>/dev/null)
+  env -i PATH=/usr/bin:/bin ${tmpdir:+TMPDIR="$tmpdir"} SDD_STANDIN_MOUNTS="$mounts" SDD_STANDIN_DIR="$here" "${env[@]}" "$cmd" "$@" &
   child=$!
   [ -n "$name" ] && echo "$child" >"$here/running.$name"
   wait "$child"
   status=$?
+  [ -n "$work_ro" ] && chmod -R u+w "$work"
   # --rm: a finished pass container is gone.
   rm -f "$here/running.$name" "$here/labels.$name"
   exit "$status"

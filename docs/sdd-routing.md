@@ -332,12 +332,18 @@ sdd-run resume 83261390f272 approve
   every pass, with or without the `.git`: the profile denies the tool. T052
   needs no third arm.
 
-**Found, not fixed** (outside T050b): in both runs the `review` pass failed
-after the implement pass applied cleanly: "judge refused the patch:
+**Found, then fixed** (outside T050b; research R36): in both runs the `review`
+pass failed after the implement pass applied cleanly: "judge refused the patch:
 `__pycache__/slugify.cpython-311.pyc`: outside this step's writes". The
-read-only review agent ran the tests with its shell, which wrote bytecode into
-`/work`; the implement answers say that agent deleted its own `__pycache__`.
-A routed run on a Python project will hit this at review.
+read-only review agent ran the tests with its shell, and the task list told it
+to run `python3 -I`, which ignores `PYTHONDONTWRITEBYTECODE`. Now a row that may
+write nothing (analyze, review) has `/work` mounted read-only, so no tool can
+leave a cache; a test that needs a scratch file must use `/tmp`. Observed
+2026-10-23: in the worker image with a read-only mount, `python3 -I` imports a
+module and writes nothing, `mkdir .pytest_cache` and `touch x` fail with
+"Read-only file system"; and `sdd-step agent review` on the failed run's bundle
+(`83261390f272`, same repository) now passes (60 s, $0.25). Whether that
+agent ran Python in that pass is not known. Check 91 covers the rest.
 
 ## Why some things are the way they are
 

@@ -261,7 +261,7 @@ class Pass:
                 raise PassFailed("extracting the export failed: " + r.stderr.decode(errors="replace").strip())
 
     # 3, 4. Container and limit
-    def container(self, command, env, mounts, timeout):
+    def container(self, command, env, mounts, timeout, work_ro=False):
         rt = self.run.tool("container")
         proxy = load(os.path.join(self.run.dir, "proxy.json"))
         image = load(os.path.join(self.run.dir, "worker.json"))["image"]
@@ -270,7 +270,7 @@ class Pass:
                "-e", f"SDD_PROXY={proxy['address']}:{proxy['port']}", "-e", f"SDD_PASS_TOKEN={self.token}"]
         for k, v in env.items():
             cmd += ["-e", f"{k}={v}"]
-        cmd += ["-v", f"{self.export}:/work"]
+        cmd += ["-v", f"{self.export}:/work" + (":ro" if work_ro else "")]
         for m in mounts:
             cmd += ["-v", m]
         cmd += [image, *command]
@@ -719,7 +719,11 @@ def run_agent(run, phase, implement=None):
         p.admit(hosts)
         run.usage({"event": "start", "phase": phase, "model": row["model"], "effort": row["effort"]})
         started = time.time()
-        code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
+        # A row that may write nothing gets /work read-only: the tests it runs
+        # cannot leave a cache the judge would refuse, whichever tool or flag
+        # writes it (python -I ignores PYTHONDONTWRITEBYTECODE; research R36).
+        code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"],
+                                     work_ro=not row["writes"])
         try:
             try:
                 text, structured, usage, served = parse_result(

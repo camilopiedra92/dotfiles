@@ -635,14 +635,48 @@ sys.exit("\n".join(bad) or 0)
   /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if ".venv/lib/evil.pth" in d.get("dropped", []) else "ignored path: implement.json does not record what was dropped: %s" % d.get("dropped"))' \
     "$repo/$f/.sdd/implement.json" || status=1
   clean_after "ignored path"
-  # A reading phase whose test run left an ignored cache still writes nothing.
+  # A reading phase that runs the project's tests writes nothing, whatever the
+  # repository ignores. The real runs of 2026-10-22 had no .gitignore, and the
+  # reviewer ran `python3 -I ... import slugify` (the task list says so): -I
+  # ignores PYTHONDONTWRITEBYTECODE, so the environment alone left
+  # __pycache__ and the judge refused the pass (research R36). A row with an
+  # empty writes list gets /work read-only, so no tool can leave a cache.
   fresh || return 1
-  printf '__pycache__/\n' > "$repo/.gitignore"
-  tgit add .gitignore && tgit commit -qm ignore
   result "reviewed" '{"findings":[],"done":[]}'
-  edit src/__pycache__/app.cpython-311.pyc "bytecode"
-  out=$(pass agent review) || fail "reader cache: refused: $out"
-  clean_after "reader cache"
+  # The host's python is set not to write bytecode beside the source; the
+  # worker's Debian python under -I writes it, as this does.
+  {
+    printf 'cd /work\n'
+    printf '/usr/bin/python3 -I -c "import sys; sys.dont_write_bytecode = False; sys.pycache_prefix = None; sys.path.insert(0, \\"src\\"); import app"\n'
+    printf 'mkdir -p .pytest_cache 2>/dev/null && echo cache > .pytest_cache/README.md\n'
+    printf 'true\n'
+  } > "$sa/fixture/script"
+  out=$(pass agent review) || fail "reader tests: the test run's caches failed the pass: $out"
+  clean_after "reader tests"
+  # And the mount is the layer that stops it: where a runtime did not enforce
+  # it, the judge still refuses what an agent wrote outside an empty list.
+  fresh || return 1
+  touch "$sa/ro.off"
+  result "reviewed" '{"findings":[],"done":[]}'
+  edit src/app.py "print(9)"
+  before=$(commits)
+  if out=$(pass agent review); then fail "reader write: a file the reader wrote was accepted"; fi
+  printf '%s' "$out" | grep -qF "src/app.py: outside this step's writes" || fail "reader write: not refused for the right reason: $out"
+  [ "$(commits)" -eq "$before" ] && [ "$(cat "$repo/src/app.py")" = "print(1)" ] || fail "reader write: something was applied"
+  clean_after "reader write"
+  # The mount itself, as the runtime would receive it.
+  fresh || return 1
+  result "reviewed" '{"findings":[],"done":[]}'
+  pass agent review > /dev/null || fail "reader mount: the pass failed"
+  grep -q ':/work:ro' "$sa/calls.jsonl" || fail "reader mount: a row with no writes got /work read-write"
+  fresh || return 1
+  sonnet_route
+  result "implemented"
+  edit src/app.py "print(3)"
+  pass implement > /dev/null || fail "writer mount: the pass failed"
+  grep -q ':/work"' "$sa/calls.jsonl" || fail "writer mount: a row with writes did not get /work read-write"
+  grep -q ':/work:ro' "$sa/calls.jsonl" && fail "writer mount: a row with writes got /work read-only"
+  clean_after "writer mount"
   # Only the repository's own ignore rules count: git also reads the owner's
   # ~/.config/git/ignore, which says nothing about this repository.
   fresh || return 1
@@ -1244,7 +1278,8 @@ fi
 # verify — neither credential is in any recorded argument, in the
 # environment of any host tool the run started or of any container, or in
 # any file under the scratch repository and its bundle, the stand-ins'
-# records or the temporary directories. A run not opted in never reads the
+# records or the case's own temporary directory (never another session's
+# files in the shared one). A run not opted in never reads the
 # DeepSeek key from the Keychain.
 sdd_no_leak() {
   local tmp status=0
@@ -1308,11 +1343,23 @@ sdd_no_leak() {
     clean_after "$agent $where $service"
   done
 
-  # Full passes, opted in. A marker dates what the run wrote in the
-  # temporary directories.
-  local marker=$tmp/marker pid beater
+  # Full passes, opted in.
+  local pid beater
   fresh || return 1
-  : > "$marker"
+  # Another session's files in the shared temporary directory are not this
+  # check's to read (a git fast-export dump holding these very sentinels made
+  # it fail once, 2026-10-22): one is planted there while the passes run, and
+  # the scan below must not depend on it.
+  local sibling
+  sibling=$(mktemp -d "${TMPDIR:-/tmp}/sdd-sibling.XXXXXX") || return 1
+  trap 'rm -rf "$tmp" "$sibling"' RETURN
+  printf '%s %s\n' "$claude_secret" "$deepseek_secret" > "$sibling/dump"
+  # What the passes write to a temporary directory goes to this case's own,
+  # which the scan reads: host steps that take TMPDIR from the case's
+  # environment (the run's Python tools), and the container stand-in, which
+  # hands it to the agent stand-ins as the container's /tmp.
+  mkdir "$tmp/tmpdir" && local TMPDIR=$tmp/tmpdir && export TMPDIR
+  printf '%s' "$TMPDIR" > "$sa/tmpdir"
   tgit config sdd.implement deepseek
   route_to deepseek
   start_proxy "full passes" || return 1
@@ -1340,12 +1387,9 @@ sdd_no_leak() {
   # Keychain's own store, secrets/, is the one place the values belong.
   [ -s "$sa/host-env.txt" ] || fail "full passes: no host tool recorded its environment"
   local leaks
-  local tmpdir=${TMPDIR:-/tmp}
   leaks=$(
-    {
-      find "$tmp" -path "$sa/secrets" -prune -o -type f -print0
-      find "${tmpdir%/}" /private/tmp -path "$tmp" -prune -o -type f -newer "$marker" -user "$(id -u)" -print0 2> /dev/null
-    } | xargs -0 grep -lF -e "$claude_secret" -e "$deepseek_secret" 2> /dev/null
+    find "$tmp" -path "$sa/secrets" -prune -o -type f -print0 |
+      xargs -0 grep -lF -e "$claude_secret" -e "$deepseek_secret" 2> /dev/null
   )
   [ -z "$leaks" ] || fail "full passes: a credential is in $(printf '%s' "$leaks" | head -5 | tr '\n' ' ')"
   clean_after "full passes"

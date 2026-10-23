@@ -126,7 +126,9 @@ and no configuration an agent could have written runs during a run.
    (FR-019).
 3. **Container**: the worker image (built and checked by `prepare-worker`,
    which `sdd-run start` runs before the workflow), the export mounted alone
-   at `/work`, the inputs
+   at `/work` — read-only (`:ro`) for a row whose `writes` is empty, so the
+   tests a reading pass runs cannot leave a cache for the judge to refuse
+   (research R36); read-write for every row that may write — the inputs
    above, a cache volume of the pass's own kind — `sdd-cache-implement-<run_id>`
    for implement passes, `sdd-cache-verify-<run_id>` for verify, never shared
    between the two, so nothing an implementer leaves in a cache is run by
