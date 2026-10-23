@@ -246,3 +246,28 @@ release 006's lock, and a stopped section has not finished its checks.
 - **SC-004 after** (T0xx, pending), **SC-002 five runs** (T040, pending after
   003 merges), **CI durations** (T041, pending).
 - Probe table above (R1-R5): 26/111/23 ms spawn cost, 12 ms cleanup, 6.4 ms perl.
+
+## R13 — Slicing: this feature ships the visibility and iteration tools; budgets and the stop become 009
+
+**Decision (owner, 2026-10-23):** split by the evidence of what cost time.
+007 keeps US4 (named sections), US2 (durations) and US3 (the verification
+policy); US1 (per-section budgets and the process-group stop) becomes its own
+feature, 009, built after 007 merges. Nothing in US4/US2/US3 depends on
+US1; the stop mechanism's research (R1-R6), the contract's budget part and
+tasks T009-T028, T040-T043 move to 009 with their evidence.
+
+**Why:** on 2026-10-22/23 the measured losses were invisibility (no section
+timings) and repeated runs (an agent pre-running the staged selection the
+commit hook runs again, about 2 min each; per-agent scratch runners to run
+one section). The one hang seen was a test bug 006 fixed with watchdogs, not
+a missing budget. Smaller batches also land the tools every later round
+uses sooner (about 1.2 h against about 2.7 h).
+
+**Rejected:** keeping one feature in story order US4, US1, US2, US3 (the
+tools wait behind the largest and riskiest story); dropping budgets
+(nothing bounds a hung section in a future check).
+
+**Consequences:** 009's default budget is measured with check 96 present
+(it exists on branch 003-sdd-model-routing); whether to split check 96 by
+case is decided from 007's durations, not guessed (004 asked to measure
+first).
