@@ -42,7 +42,10 @@ existing directory.
 3. **Check the response** before applying: a response reporting a model other
    than the configured one, or lacking a usage field, fails the pass naming
    it, with nothing applied. pi reports each response of a pass apart, and
-   the pass's usage is their sum: every one of them must carry its usage.
+   the pass's usage is their sum: every one of them must carry its usage,
+   an integer `input` and `output` (and an integer `cacheRead` when present):
+   `{}`, a null or a text count is no usage, and refuses the pass in the
+   parser's own words (research R33).
    Claude reports a numeric `total_cost_usd` and a non-empty `modelUsage`,
    which must hold the configured model with its `inputTokens` and
    `outputTokens`; a model Claude Code reports beside it is recorded, not

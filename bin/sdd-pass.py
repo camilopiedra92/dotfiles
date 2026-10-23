@@ -331,7 +331,8 @@ class Pass:
             for name in dirs + files:
                 full = os.path.join(root, name)
                 if not (os.path.isdir(full) or os.path.isfile(full) or os.path.islink(full)):
-                    raise PassFailed(f"judge: {os.path.relpath(full, self.export)} is not a regular file")
+                    raise PassFailed(self.run.withhold(
+                        self.run.rows[self.phase]["agent"], f"judge: {os.path.relpath(full, self.export)} is not a regular file"))
         return out
 
     def drop_ignored(self, changes):
@@ -494,8 +495,9 @@ class Pass:
 
     def scan(self, changes, said, agent):
         """The exact value of every credential of the run, in each changed
-        file's bytes as the agent left them (a patch encodes binaries) and in
-        every string of what the agent returned, decoded, keys included: JSON's
+        file's name and bytes as the agent left them (a patch encodes
+        binaries) and in every string of what the agent returned, decoded,
+        keys included: JSON's
         text of a value escapes what a credential may hold (research R28,
         third round). Fails closed: a credential that cannot be read cannot
         be looked for."""
@@ -504,7 +506,7 @@ class Pass:
             if status != "D":
                 with open(os.path.join(self.export, path), "rb") as f:
                     files.append(f.read())
-        texts = list(strings(said))
+        texts = list(strings(said)) + [path for _, _, path in changes]
         for service in self.run.credentials(agent):
             value = self.run.secret(service)
             if any(value.encode() in blob for blob in files) or any(value in t for t in texts):
@@ -559,14 +561,23 @@ def agent_schema(step):
     return s
 
 
-def parse_result(agent, stdout, model):
+def count(v):
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def parse_result(agent, stdout, model, withhold=str):
+    """What the agent returned. `withhold` clears a string of the run's
+    credentials, and runs before any string is cut to size: a credential
+    across the cut stops matching and its fragment would print (research R33)."""
     if agent == "claude":
         try:
             result = json.loads(stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             raise PassFailed("the agent returned no JSON result")
+        if not isinstance(result, dict):
+            raise PassFailed("the agent returned no JSON object result")
         if result.get("is_error"):
-            raise PassFailed("the agent reported an error: " + str(result.get("result", ""))[:300])
+            raise PassFailed("the agent reported an error: " + withhold(str(result.get("result", "")))[:300])
         if result.get("permission_denials"):
             # Each denial with what it asked for — a command, a path — so the
             # owner can tell a gap in the profile from an agent overreaching.
@@ -574,7 +585,7 @@ def parse_result(agent, stdout, model):
             for d in result["permission_denials"][:5]:
                 ask = d.get("tool_input") or {}
                 what = ask.get("command") or ask.get("file_path") or ask.get("pattern") or ""
-                denied.append(d.get("tool_name", "?") + (f": {str(what)[:200]}" if what else ""))
+                denied.append(d.get("tool_name", "?") + (f": {withhold(str(what))[:200]}" if what else ""))
             raise PassFailed("the agent was denied what its profile does not allow:\n  " + "\n  ".join(denied))
         # A pass without its usage would be counted free, as pi's was before
         # (contracts/sdd-step.md, implement step 3; research R30).
@@ -584,8 +595,7 @@ def parse_result(agent, stdout, model):
         # Claude Code may report a model of its own beside the configured one;
         # the configured one must be there, with its tokens, to have served.
         def tokens(u):
-            return isinstance(u, dict) and all(
-                isinstance(u.get(k), int) and not isinstance(u.get(k), bool) for k in ("inputTokens", "outputTokens"))
+            return isinstance(u, dict) and all(count(u.get(k)) for k in ("inputTokens", "outputTokens"))
         served = model if tokens(models.get(model)) else (
             ", ".join(sorted(m for m, u in models.items() if tokens(u))) or "no model with tokens")
         return result.get("result", ""), result.get("structured_output"), {
@@ -604,9 +614,10 @@ def parse_result(agent, stdout, model):
             u = m.get("usage")
             # The pass's usage is the sum of every response's: one without
             # its own would be counted as free (contracts/sdd-step.md,
-            # implement step 3).
-            if not isinstance(u, dict):
-                raise PassFailed("pi reported a response without its usage; nothing applied")
+            # implement step 3), and `{}` or a null or text count is none.
+            if not (isinstance(u, dict) and count(u.get("input")) and count(u.get("output"))
+                    and ("cacheRead" not in u or count(u["cacheRead"]))):
+                raise PassFailed("pi reported a response without its usage (integer input and output tokens); nothing applied")
             total["input"] += u.get("input", 0)
             total["cached"] += u.get("cacheRead", 0)
             total["output"] += u.get("output", 0)
@@ -711,20 +722,21 @@ def run_agent(run, phase, implement=None):
         code, out, err = p.container(agent_command(row, prompt, schema, system), env, mounts, row["timeout"])
         try:
             try:
-                text, structured, usage, served = parse_result(row["agent"], out, row["model"])
+                text, structured, usage, served = parse_result(
+                    row["agent"], out, row["model"], lambda s: run.withhold(row["agent"], s))
             except PassFailed as e:
                 # An agent that failed says why on its exit and stderr, and in
                 # the error result it may still have returned (Claude Code's -p
                 # exits non-zero on one, its stderr often empty): the owner
                 # reads both, never only that usage is missing.
                 if code != 0:
-                    raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}; {e}") from None
+                    raise PassFailed(f"the agent exited {code}: {run.withhold(row['agent'], err).strip()[-300:]}; {e}") from None
                 raise
             p.answer = text
             run.usage(run.withhold(row["agent"], {"event": "end", "phase": phase, "model": served,
                                                   "effort": row["effort"], "usage": usage, "exit": code}))
             if code != 0:
-                raise PassFailed(f"the agent exited {code}: {err.strip()[-300:]}")
+                raise PassFailed(f"the agent exited {code}: {run.withhold(row['agent'], err).strip()[-300:]}")
             if served != row["model"]:
                 raise PassFailed(f"{row['agent']} reported {served} serving the pass, not the configured {row['model']}; nothing applied")
         except PassFailed as e:
@@ -749,8 +761,12 @@ def run_agent(run, phase, implement=None):
                 local_state = {"feature_directory": feature}
                 changes = p.changes()
                 patch = p.patch() if changes else b""
-        flagged = p.judge(changes, writes, feature, implement)
-        p.scan(changes, [text, structured, usage], row["agent"])
+        try:
+            flagged = p.judge(changes, writes, feature, implement)
+            p.scan(changes, [text, structured, usage], row["agent"])
+        except PassFailed as e:
+            # A refusal names paths, and a path may hold a credential.
+            raise PassFailed(run.withhold(row["agent"], str(e))) from None
         place_outcome = None
         if structured is not None and row.get("schema"):
             place_outcome = stage_outcome(run, feature, row["schema"], structured)

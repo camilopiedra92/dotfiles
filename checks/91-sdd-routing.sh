@@ -1028,7 +1028,11 @@ sys.exit("deepseek: the pi container %s: %s" % (", ".join(bad), run) if bad else
   # A response pi reports from another model, or without usage, fails the
   # pass naming it, with nothing applied (contracts/sdd-step.md, step 3).
   local bad
-  for bad in "another model" "no usage" "one response without usage"; do
+  # Usage is an integer input and output (and an integer cacheRead when
+  # present): `{}` or a null or text count would read as a free response, or
+  # crash the parser, and the owner reads the exact refusal, never a traceback.
+  local usage_refusal="pi reported a response without its usage (integer input and output tokens); nothing applied"
+  for bad in "another model" "no usage" "one response without usage" "empty usage" "null input" "text output" "text cacheRead"; do
     fresh || return 1
     route_to deepseek
     tgit config sdd.implement deepseek
@@ -1036,6 +1040,10 @@ sys.exit("deepseek: the pi container %s: %s" % (", ".join(bad), run) if bad else
       "another model") pi_says deepseek-v4-pro '{"input":1,"cacheRead":0,"output":1}' "done" ;;
       "no usage") pi_says deepseek-flash - "done" ;;
       "one response without usage") pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":1}' "reading" deepseek-flash - "done" ;;
+      "empty usage") pi_says deepseek-flash '{}' "done" ;;
+      "null input") pi_says deepseek-flash '{"input":null,"cacheRead":0,"output":1}' "done" ;;
+      "text output") pi_says deepseek-flash '{"input":1,"cacheRead":0,"output":"1"}' "done" ;;
+      "text cacheRead") pi_says deepseek-flash '{"input":1,"cacheRead":"0","output":1}' "done" ;;
     esac
     edit src/app.py "print(3)"
     out=$(pass implement)
@@ -1043,8 +1051,9 @@ sys.exit("deepseek: the pi container %s: %s" % (", ".join(bad), run) if bad else
     [ "$code" -eq 1 ] || fail "pi $bad: exit $code, wanted 1: $out"
     case $bad in
       "another model") printf '%s' "$out" | grep -qF "deepseek-v4-pro" || fail "pi $bad: the model is not named: $out" ;;
-      *) printf '%s' "$out" | grep -qi "usage" || fail "pi $bad: the missing usage is not named: $out" ;;
+      *) printf '%s' "$out" | grep -qF "$usage_refusal" || fail "pi $bad: the missing usage is not refused in the parser's own words: $out" ;;
     esac
+    ! printf '%s' "$out" | grep -qF "Traceback" || fail "pi $bad: the parser crashed: $out"
     nothing_applied "pi $bad"
     clean_after "pi $bad"
   done
@@ -1424,6 +1433,109 @@ if command -v check-jsonschema > /dev/null 2>&1; then
   check "a credential with a quote, a backslash and a non-ASCII letter is refused and kept nowhere, wherever the agent returns it" sdd_no_leak_escaped
 else
   skip "a credential with a quote, a backslash and a non-ASCII letter is refused and kept nowhere, wherever the agent returns it" check-jsonschema
+fi
+
+# A credential is withheld before anything is cut to size, and one in a
+# changed file's name is refused like one in its content (research R33): a
+# credential straddling the cut of a stderr tail, an error result, a denied
+# request or a failure message stops matching once cut and a fragment of it
+# prints. The cases put it across the cut and ask that no run of 8 of its
+# characters reaches the output, and that a file named after it applies nothing.
+sdd_withhold_before_cut() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  # No 8 characters in common with the marker that replaces a credential
+  # ("<the credential deepseek-api>"), which a cut may leave in part.
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-ZQXWpiV9TOKEN0123456789
+  local repo run sa f=specs/001-probe out code where agent secret service
+  local pad pad185
+  pad=$(printf 'z%.0s' $(seq 285))
+  pad185=$(printf 'y%.0s' $(seq 185))
+
+  for where in "sonnet stderr claude-oauth" "sonnet errorresult claude-oauth" "sonnet denial claude-oauth" "pi stderr deepseek-api" \
+    "sonnet filename claude-oauth" "sonnet judged claude-oauth"; do
+    read -r agent where service <<< "$where"
+    secret=$claude_secret
+    [ "$service" = deepseek-api ] && secret=$deepseek_secret
+    fresh || return 1
+    tgit config sdd.implement deepseek
+    case $agent in
+      pi) route_to deepseek ;;
+      sonnet) route_to sonnet ;;
+    esac
+    edit src/app.py "print(2)"
+    result "implemented"
+    case $where in
+      # The tail kept is 300 characters: 15 of the secret's end are in it.
+      stderr)
+        rm -f "$sa/fixture/result.json"
+        printf '%s%s\n' "$secret" "$pad" > "$sa/fixture/say.err"
+        printf 'cat "%s" >&2\n' "$sa/fixture/say.err" > "$sa/fixture/script"
+        echo 2 > "$sa/fixture/exit"
+        ;;
+      # The result's first 300 characters hold 15 of the secret's start.
+      errorresult)
+        printf '{"type":"result","is_error":true,"result":"%s%s","permission_denials":[]}\n' "$(printf 'y%.0s' $(seq 285))" "$secret" > "$sa/fixture/result.json"
+        ;;
+      denial)
+        printf '{"type":"result","is_error":false,"result":"x","permission_denials":[{"tool_name":"Bash","tool_input":{"command":"%s%s"}}],"total_cost_usd":0.01,"modelUsage":{"claude-sonnet-5-5":{"inputTokens":1,"outputTokens":1}}}\n' "$pad185" "$secret" > "$sa/fixture/result.json"
+        ;;
+      filename) edit "src/$secret.txt" "x" ;;
+      judged) edit ".gitx-$secret" "x" ;;
+    esac
+    out=$(pass implement)
+    code=$?
+    [ "$code" -ne 0 ] || fail "$agent $where: succeeded"
+    # No run of 8 characters of the credential, whichever end the cut left.
+    /usr/bin/python3 -I -c 'import sys; s, o = sys.argv[1:3]; sys.exit(0 if any(s[i:i + 8] in o for i in range(len(s) - 7)) else 1)' \
+      "$secret" "$out" && fail "$agent $where: a fragment of the credential was shown: $out"
+    case $where in
+      filename | judged) printf '%s' "$out" | grep -qF "$service" || fail "$agent $where: the credential is not named: $out" ;;
+    esac
+    ! printf '%s' "$out" | grep -qF "Traceback" || fail "$agent $where: the pass crashed: $out"
+    nothing_applied "$agent $where"
+    [ -z "$(find "$run" "$repo" -name "*$secret*" -print -quit 2> /dev/null)" ] || fail "$agent $where: a file in the run or the repository is named for the credential"
+    grep -rqF "$secret" "$run" "$repo" 2> /dev/null && fail "$agent $where: the value is in $(grep -rlF "$secret" "$run" "$repo" | head -3)"
+    clean_after "$agent $where"
+  done
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "a credential is withheld before any cut to size, and one in a changed file's name is refused" sdd_withhold_before_cut
+else
+  skip "a credential is withheld before any cut to size, and one in a changed file's name is refused" check-jsonschema
+fi
+
+# A Claude result line that is not a JSON object is no result (research R33):
+# `[]`, `"x"` and `null` said the pass was stopped by a traceback.
+sdd_claude_nonobject() {
+  local tmp status=0
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  local dotfiles=$PWD step=$PWD/bin/sdd-step.sh
+  local claude_secret=sk-ant-oat01-FAKEclaudeTOKEN0123456789 deepseek_secret=sk-FAKEdeepseekKEY0123456789
+  local repo run sa f=specs/001-probe out code line
+  for line in '[]' '"x"' 'null'; do
+    fresh || return 1
+    route_to sonnet
+    edit src/app.py "print(2)"
+    printf '%s\n' "$line" > "$sa/fixture/result.json"
+    out=$(pass implement)
+    code=$?
+    [ "$code" -eq 1 ] || fail "claude result $line: exit $code, wanted 1: $out"
+    printf '%s' "$out" | grep -qF "the agent returned no JSON object result" || fail "claude result $line: not refused in the parser's own words: $out"
+    ! printf '%s' "$out" | grep -qF "Traceback" || fail "claude result $line: the parser crashed: $out"
+    nothing_applied "claude result $line"
+    clean_after "claude result $line"
+  done
+  return "$status"
+}
+if command -v check-jsonschema > /dev/null 2>&1; then
+  check "a Claude result line that is not a JSON object fails the pass cleanly" sdd_claude_nonobject
+else
+  skip "a Claude result line that is not a JSON object fails the pass cleanly" check-jsonschema
 fi
 
 # The run's own machinery (contracts/sdd-step.md): prepare-worker builds the
