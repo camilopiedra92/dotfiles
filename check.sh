@@ -221,13 +221,13 @@ SECTIONS=(checks/*.sh)
 # NUL-separated, which a command substitution cannot hold.
 select_staged() {
   local list status path i p hit
-  list=$(mktemp) || {
+  list=$(mktemp 9>&-) || {
     echo "check.sh: cannot create a temporary file for the staged paths" >&2
     return 1
   }
-  if ! this_repo_git diff --cached --name-status --no-renames -z > "$list"; then
+  if ! this_repo_git diff --cached --name-status --no-renames -z > "$list" 9>&-; then
     ALL="the staged paths could not be read"
-    rm -f "$list"
+    rm -f "$list" 9>&-
     return 0
   fi
   for i in "${!SECTIONS[@]}"; do
@@ -248,7 +248,7 @@ select_staged() {
         # of a diff: `git diff | grep -q` dies of SIGPIPE under pipefail
         # once the diff outgrows a pipe buffer, and a coloured diff hides it.
         if [ "$status" = A ] || [ "$status" = D ] || [ -z "$hit" ] ||
-          [ "$(this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
+          [ "$(this_repo_git show "HEAD:$path" 9>&- | sed -n 's/^# covers://p' 9>&-)" != "$(this_repo_git show ":$path" 9>&- | sed -n 's/^# covers://p' 9>&-)" ]; then
           ALL="$path is staged"
           break
         fi
@@ -278,14 +278,14 @@ select_staged() {
     } ;;
     esac
   done < "$list"
-  rm -f "$list"
+  rm -f "$list" 9>&-
 }
 
 COVERS=()
 PICKED=()
 ALL=
 for i in "${!SECTIONS[@]}"; do
-  COVERS[i]=$(sed -n 's/^# covers://p' "${SECTIONS[i]}")
+  COVERS[i]=$(sed -n 's/^# covers://p' "${SECTIONS[i]}" 9>&-)
 done
 if [ "$STAGED" -eq 0 ]; then
   ALL=everything
@@ -341,12 +341,12 @@ done
 # with it too (One run at a time, above). A run that stops before this trap
 # leaves it, as a run killed outright does.
 RUN=''
-trap '[ -z "$RUN" ] || rm -rf "$RUN"; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
-RUN=$(mktemp -d) || {
+trap '[ -z "$RUN" ] || rm -rf "$RUN" 9>&-; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
+RUN=$(mktemp -d 9>&-) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
 }
-JOBS=$(sysctl -n hw.ncpu) || JOBS=1
+JOBS=$(sysctl -n hw.ncpu 9>&-) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the
 # section stopped early -- an `exit`, a `return`, a syntax error, an unset
@@ -361,7 +361,9 @@ run_section() {
   # section's own subshell below: this one waits for the section, so a runner
   # killed outright would otherwise leave it holding the turn as long as the
   # section ran (06-lock, "a run killed outright frees the turn", red that
-  # way). A no-op in a nested run, which never opened it.
+  # way). A no-op in a nested run, which never opened it. The runner's own
+  # commands after the turn is taken each carry `9>&-` for the same reason
+  # (research R8).
   exec 9>&-
   # The section runs from a copy of its own name with the marker appended, so
   # a `return` or a syntax error, which end a sourced file quietly with status
@@ -391,7 +393,7 @@ run_section() {
 # job's stdin is /dev/null); both seen 2026-10-22 in a pty.
 kill_tree() {
   local child
-  for child in $(pgrep -P "$1"); do kill_tree "$child"; done
+  for child in $(pgrep -P "$1" 9>&-); do kill_tree "$child"; done
   kill -TERM "$1" 2> /dev/null
 }
 stop_sections() {
@@ -410,18 +412,18 @@ done
 started=0
 shown=0
 while [ "$shown" -lt "${#ORDER[@]}" ]; do
-  finished=$(find "$RUN" -name '*.rc' | wc -l)
+  finished=$(find "$RUN" -name '*.rc' 9>&- | wc -l 9>&-)
   while [ "$started" -lt "${#ORDER[@]}" ] && [ $((started - finished)) -lt "$JOBS" ]; do
     run_section "${ORDER[started]}" &
     started=$((started + 1))
   done
   i=${ORDER[shown]}
   if [ ! -e "$RUN/$i.rc" ]; then
-    sleep 0.02
+    sleep 0.02 9>&-
     continue
   fi
-  cat "$RUN/$i.out"
-  status=$(cat "$RUN/$i.rc")
+  cat "$RUN/$i.out" 9>&-
+  status=$(cat "$RUN/$i.rc" 9>&-)
   if [ ! -e "$RUN/$i.done" ]; then
     name=${SECTIONS[i]#checks/}
     printf '  %sFAIL%s %s stopped before its last line (exit %s)\n' "$RED" "$OFF" "${name%.sh}" "$status"

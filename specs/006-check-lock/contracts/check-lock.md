@@ -20,15 +20,18 @@ selection and output there are unchanged.
 
 - File: `$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock`, per user.
   Its existence means nothing; only a live `flock(2)` on it does.
-- Held by: the runner's own shell, on descriptor 9. Each section's
-  subshell closes it before the section runs; the runner's own short
-  commands (its 20 ms poll's `sleep`, `find`, `cat`) inherit it. So no
-  process holding it can outlive the runner by more than the command in
-  flight: a child holding descriptor 9 delays the release only for its own
-  remaining life (R2), and git's fsmonitor daemon, which a run's git may
-  start, does not keep it (probed 2026-10-22: a shell holding the lock ran
-  `git status` with `core.fsmonitor` on, the daemon started, and the lock
-  was free once the shell exited).
+- Held by: the runner's own shell, on descriptor 9; no other process holds
+  it. Each section's subshell closes it before the section runs, and every
+  external command the runner starts after taking the turn (its 20 ms
+  poll's `sleep`, `find`, `wc`, `cat`, `mktemp`, `sysctl`, `pgrep`, and
+  under `--staged` `git`, `sed`, `rm`) is started with `9>&-`. So the lock
+  is free the instant the runner ends, by any means (R2, R8), and git's
+  fsmonitor daemon, which a run's git may start, does not keep it (probed
+  2026-10-22: a shell holding the lock ran `git status` with
+  `core.fsmonitor` on, the daemon started, and the lock was free once the
+  shell exited). The one exception in time is the instant between a
+  background section's fork and its first instruction, `exec 9>&-`, a
+  fork of the runner's own shell and not a command it starts.
 - Scope: every `check.sh` of this repository run by the user — any worktree,
   any clone, any flags.
 

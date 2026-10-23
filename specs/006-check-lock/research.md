@@ -66,7 +66,7 @@ in a scratch directory):
   `lockf -s -t 0 9` on its own open of the file returned 75. After `kill -9`
   of the holder, the second still got 75 **while a child the holder had
   started with fd 9 inherited was alive**, and 0 once that child was gone; a
-  child started with `exec 9>&-` did not hold it. Hence R5.
+  child started with `exec 9>&-` did not hold it. Hence R5 and R8.
 - Probe: a waiter ran `lockf -s 9 &` and `wait $!` under a TERM trap that
   kills the background `lockf`; TERM ended it at once with 143 and no `lockf`
   process was left. A waiter whose background `lockf` acquired the lock and
@@ -290,3 +290,42 @@ hold until the case has seen their waiters waiting, which is also
 deterministic under load: the section alone went from about 17.5 s to 9.8 s
 (two runs, 9.76 and 9.85 s, in a scratch runner holding only it). The full
 suite was not rerun after that change (the owner's limit on full runs).
+
+## R8 — Commands the runner starts must not hold the turn
+
+**Observed**: on GitHub's runner (PR #159, 2026-10-22), 06-lock's "a run
+killed outright frees the turn" failed: `B's stderr: expected nothing`, B had
+printed `check.sh: waiting for another run to finish`. It never failed
+locally.
+
+**Root cause**: `exec 9>>lock` leaves descriptor 9 inheritable, so every
+external command the runner runs while holding the turn holds the lock's open
+file description (the R2 probe): the 20 ms poll's `sleep`, `find`, `wc`,
+`cat`, and under `--staged` `git`, `sed`, `rm`, `mktemp`. A SIGKILL landing
+while one is alive keeps the lock until it exits, and B's first non-blocking
+try in that window prints the waiting line, which SC-002 forbids ("starts
+within one second with no waiting line, every time"). The window is as long as
+one `sleep 0.02`, so a slower machine hits it more often. An earlier review
+had flagged the exposure; the contract then excused it ("no process holding
+it can outlive the runner by more than the command in flight"), a concession
+to a defect and not a design.
+
+**Decision**: every external command the runner starts after taking the turn
+carries `9>&-` (audited with `grep` over `check.sh` after the lock block).
+
+**Alternatives**:
+- Tolerating the window in the test (retry, or accept the waiting line when a
+  child was alive). Lost: SC-002 is a promise to users, and the line is
+  wrong, not flaky; a test that forgives it would pass the defect.
+- Opening the lock on a fresh descriptor per use, or a helper function that
+  wraps every command. Lost: the runner holds the turn for its whole life on
+  one open file, and a wrapper hides at each call site what a redirection
+  states there.
+
+**Proof**: 06-lock "a run killed while a command it started is alive frees
+the turn" stubs `sleep` to block the runner's first poll, checks with `lsof`
+that the runner alone holds the lock, kills it and starts B (red before the
+fix: lsof listed the sleep too); "no command the runner starts holds the
+lock" stubs `sleep find wc cat sed rm git sysctl pgrep mkdir mktemp` to record
+an open descriptor 9, over a `--staged` run and a TERM. Reached by neither:
+the `rm -f "$list"` after a failed `git diff` in `select_staged`.

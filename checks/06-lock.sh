@@ -503,6 +503,91 @@ lock_killed_run_frees_the_turn() {
 }
 check "a run killed outright frees the turn" lock_killed_run_frees_the_turn
 
+# A runner killed while a command IT started is alive. bash leaves
+# `exec 9>>lock` inheritable, so such a command holds the lock's open file
+# description and the turn stays taken until it exits: on GitHub's runner,
+# "a run killed outright frees the turn" printed B's waiting line (PR #159,
+# 2026-10-22), never once locally, because the window is the length of one
+# 20 ms `sleep`. Here the window is made certain: a `sleep` stub on PATH
+# blocks the runner's first poll and tells the case, which then asks lsof
+# who holds the lock, kills A and starts B at that instant.
+lock_killed_run_with_a_child_alive() {
+  local tmp a holders n=0
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  # shellcheck disable=SC2016  # expanded by the stub, not here
+  printf '#!/bin/sh\nif [ "$1" = 0.02 ] && mkdir "%s/stuck" 2> /dev/null; then echo $$ > "%s/stuck/pid"; echo $$ >> "%s/pids"; exec /bin/sleep 20; fi\nexec /bin/sleep "$@"\n' \
+    "$tmp" "$tmp" "$tmp" > "$tmp/bin/sleep"
+  chmod +x "$tmp/bin/sleep"
+  lock_repo "$tmp/a" A 5
+  lock_repo "$tmp/b" B 0.1
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  until [ -s "$tmp/stuck/pid" ]; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ] || {
+      echo "A's poll never reached the stubbed sleep"
+      return 1
+    }
+    /bin/sleep 0.05
+  done
+  # Structural: only the runner holds the lock, not the sleep it started.
+  holders=$(lsof -t "$LOCK_FILE" 2> /dev/null | sort -u | tr '\n' ' ')
+  lock_expect "the processes holding the lock" "the runner alone" "$a " "$holders" || return 1
+  kill -KILL "$a"
+  wait "$a" 2> /dev/null
+  lock_start "$tmp/b" "$tmp/B"
+  lock_await "B start" 20 || {
+    printf 'B had not started 1 s after A was killed; its stderr:\n%s\n' "$(cat "$tmp/B.err")"
+    return 1
+  }
+  within 2 "$LOCK_PID" || return 1
+  lock_expect B "exit" 0 "$RC" || return 1
+  lock_expect "B's stderr" "nothing" "" "$(cat "$tmp/B.err")"
+}
+check "a run killed while a command it started is alive frees the turn" lock_killed_run_with_a_child_alive
+
+# No command the runner starts holds the lock. Each name below is a stub that
+# records "<name> holds fd 9" when it finds descriptor 9 open, then execs the
+# real one; the case runs the runner through everything it starts after the
+# turn -- polling, the scratch directory, the staged selection, a TERM that
+# walks the process tree -- and expects the record empty. A command the stub
+# list does not name is not covered (the audit is in check.sh's grep).
+lock_children_do_not_hold_it() {
+  local tmp name real held a
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  : > "$tmp/held"
+  mv "$tmp/bin/mktemp" "$tmp/mktemp.orig"
+  for name in sleep find wc cat sed rm git sysctl pgrep mkdir mktemp; do
+    if [ "$name" = mktemp ]; then real=$tmp/mktemp.orig; else real=$(command -v "$name") || return 1; fi
+    # shellcheck disable=SC2016  # expanded by the stub, not here
+    printf '#!/bin/sh\nif ( : >&9 ) 2> /dev/null; then echo "%s holds fd 9" >> "%s/held"; fi\nexec %s "$@"\n' \
+      "$name" "$tmp" "$real" > "$tmp/bin/$name"
+    chmod +x "$tmp/bin/$name"
+  done
+  lock_repo "$tmp/a" A 0.3
+  git -C "$tmp/a" add -A > /dev/null
+  git -C "$tmp/a" -c user.name=t -c user.email=t@t commit -qm fixture || return 1
+  echo '# touched' >> "$tmp/a/checks/10-a.sh"
+  git -C "$tmp/a" add checks/10-a.sh
+  lock_start "$tmp/a" "$tmp/A" --staged
+  within 10 "$LOCK_PID" && lock_expect "--staged run" "exit" 0 "$RC" || return 1
+  # TERM to a holder: kill_tree's pgrep.
+  lock_repo "$tmp/b" B hold
+  lock_start "$tmp/b" "$tmp/B"
+  a=$LOCK_PID
+  lock_await "B start" || return 1
+  kill -TERM "$a"
+  within 5 "$a"
+  lock_release
+  held=$(sort -u "$tmp/held" | tr '\n' ';')
+  lock_expect "the commands that held descriptor 9" "none" "" "$held"
+}
+check "no command the runner starts holds the lock" lock_children_do_not_hold_it
+
 # US2 AS2, FR-004: A's section leaves a sleep running and A ends; the sleep
 # is not the run.
 lock_leftover_is_not_the_run() {

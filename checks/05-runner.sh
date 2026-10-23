@@ -723,7 +723,7 @@ signal_before_scratch_spares_inherited_run() {
   sections_repo "$tmp/r" '10-a:check "a ran" true'
   mkdir "$tmp/inherited"
   # shellcheck disable=SC2016  # expanded by the runner, not here
-  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(mktemp -d)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
+  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(mktemp -d 9>&-)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
   RC=0
   (cd "$tmp/r" && RUN="$tmp/inherited" BASH_ENV="$tmp/env.sh" ./check.sh > /dev/null 2>&1) || RC=$?
   [ "$RC" -eq 143 ] || {
