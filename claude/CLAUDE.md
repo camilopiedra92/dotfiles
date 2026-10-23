@@ -103,12 +103,12 @@ taught. A mid-build finding that changes route or wait stops work and is said.
   refactor keeping public interfaces) whose alternative dies with the commit.
 - Short path, any size: new or changed behaviour other than a bug fix (a
   feature, command, script, new skill, or check logic the project writes), a
-  changed interface or a choice later work builds on: `/speckit-specify`,
-  `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`, then
-  `/speckit-converge` until a pass finds nothing above LOW; implement its tasks
-  last. `/speckit-tasks` treats tests as requested for stories with logic of
-  their own, test tasks first; each story closes with the whole suite, the
-  project's mutation check (if any) on its changed code, and a fresh review.
+  changed interface or a choice later work builds on: `/speckit-specify` to
+  `/speckit-implement`, tests first for stories with logic; each story closes
+  with the suite, the mutation check (if any) on its code and a fresh review.
+  The feature closes with one fresh-context pass, never the implementer's:
+  `/speckit-converge` plus a review of the whole diff, repeated after the
+  fixes until nothing is above LOW; the implementer builds what it appends.
 - Domain or money logic, a contract something external consumes, or work across
   more than three or four modules adds `/speckit-clarify` before the plan,
   `/speckit-checklist` after it and `/speckit-analyze` before implementing. A

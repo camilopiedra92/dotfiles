@@ -14,6 +14,10 @@
 # so it never reads this repository's sections.
 printf '\n%sRunner%s\n' "$DIM" "$OFF"
 
+# What the system's temporary directory holds of check.sh's scratch before
+# the cases, compared after them at the end of this file.
+RUNNER_TEMP_BEFORE=$(system_temp_runs)
+
 # Three fake sections: 10-a covers a/* and checks/fixture/*, 20-b covers b/*,
 # b.txt and checks/[0-9][0-9]-*.sh (as a section that reads every section's
 # text does), 30-c declares nothing. Plus the runner's other inputs, so a
@@ -324,19 +328,7 @@ staged_failure_fails() {
 }
 check "--staged fails when a selected section fails, and only then" staged_failure_fails
 
-# A repository of fake sections for how a run executes them. Each argument is
-# "<name>:<body>", written to checks/<name>.sh; every run starts from its own.
-sections_repo() {
-  local dir=$1 spec
-  shift
-  git init -q "$dir"
-  cp -p check.sh "$dir/"
-  mkdir -p "$dir/checks/lib"
-  echo 'helper() { :; }' > "$dir/checks/lib/helpers.sh"
-  for spec in "$@"; do
-    printf '%s\n' "${spec#*:}" > "$dir/checks/${spec%%:*}.sh"
-  done
-}
+# sections_repo, the repository of fake sections below, is in checks/lib/runner.sh.
 
 # Sections finishing in the reverse of file order: each prints a header and
 # two lines with a pause between, so output written as it happens would
@@ -551,7 +543,9 @@ signals_stop_sections() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true' '20-b:sleep 31.7; check "b ran" true'
-  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  # A TERM that lands before the runner has set its EXIT trap leaves its scratch.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  (cd "$tmp/r" && PATH="$tmp/bin:$PATH" exec ./check.sh > /dev/null 2>&1) &
   pid=$!
   sleep 0.6
   kill -TERM "$pid"
@@ -560,6 +554,10 @@ signals_stop_sections() {
   left=$(pgrep -f "sleep 31.7" | wc -l | tr -d ' ')
   [ "$left" -eq 0 ] || {
     echo "after TERM to the runner, $left sleeps from its sections are still running"
+    return 1
+  }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM to the runner left its scratch directory behind"
     return 1
   }
 }
@@ -591,11 +589,13 @@ check "a staged rename that strands a declared pattern fails the hook's tier" de
 # terminal as stdin, so one that reads it stopped on SIGTTIN, and gave each
 # foreground child of the runner the terminal's SIGINT, so ^C missed the
 # runner. Both need a terminal: `script` and a pty from python provide one.
+# Neither is looked for first: macOS ships /usr/bin/script and
+# /usr/bin/python3, and a missing one fails its case rather than passing it
+# unrun.
 section_stdin_is_not_the_terminal() {
   local tmp out
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' RETURN
-  command -v script > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:check "stdin is not a terminal" test ! -t 0'
   out=$(cd "$tmp/r" && script -q /dev/null ./check.sh < /dev/null 2>&1 | tr -d '\r')
   case "$out" in *"ok"*"stdin is not a terminal"*) ;; *)
@@ -617,10 +617,11 @@ ctrl_c_stops_sections() {
   local tmp out
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
-  command -v python3 > /dev/null || return 0
   sections_repo "$tmp/r" '10-a:sleep 31.7; check "a ran" true'
+  # Its runner is killed outright when ^C does not stop it.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
   out=$(
-    python3 -I - "$tmp/r" << 'PY'
+    PATH="$tmp/bin:$PATH" python3 -I - "$tmp/r" << 'PY'
 import os, pty, select, signal, subprocess, sys, time
 pid, fd = pty.fork()
 if pid == 0:
@@ -661,6 +662,10 @@ PY
     echo "^C from a terminal: $out"
     return 1
   }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "^C from a terminal left the runner's scratch directory behind"
+    return 1
+  }
 }
 check "^C from a terminal stops the sections" ctrl_c_stops_sections
 
@@ -672,7 +677,9 @@ signal_statuses() {
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"; pkill -f "sleep 31.7" 2>/dev/null' RETURN
   sections_repo "$tmp/r" '10-a:sleep 31.7'
-  (cd "$tmp/r" && exec ./check.sh > /dev/null 2>&1) &
+  # As in signals_stop_sections.
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  (cd "$tmp/r" && PATH="$tmp/bin:$PATH" exec ./check.sh > /dev/null 2>&1) &
   pid=$!
   sleep 0.6
   kill -TERM "$pid"
@@ -682,5 +689,82 @@ signal_statuses() {
     echo "TERM to the runner: exit $RC, not 143"
     return 1
   }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM to the runner left its scratch directory behind"
+    return 1
+  }
 }
 check "TERM ends the runner with 143" signal_statuses
+
+# A signal right after the runner's scratch directory exists, before anything
+# else runs, still takes the directory with it. Landed there by a DEBUG trap
+# from BASH_ENV, which bash runs before each command of the runner's own shell
+# (its subshells do not inherit it): the first command once RUN is set sends
+# TERM to the runner itself. From outside, a signal lands either inside
+# mktemp, where bash dies before the assignment and no order of the trap
+# helps, or there by timing alone (both probed 2026-10-22). Red with the EXIT
+# trap set after mktemp, as 004 had it.
+signal_after_scratch_removes_it() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:check "a ran" true'
+  fixture_mktemp "$tmp/bin" "$tmp/scratch"
+  # shellcheck disable=SC2016  # expanded by the runner, not here
+  printf '%s\n' 'trap '\''[ -z "${RUN:-}" ] || [ -n "${fired:-}" ] || { fired=1; kill -TERM $$; }'\'' DEBUG' > "$tmp/env.sh"
+  RC=0
+  (cd "$tmp/r" && BASH_ENV="$tmp/env.sh" PATH="$tmp/bin:$PATH" ./check.sh > /dev/null 2>&1) || RC=$?
+  [ "$RC" -eq 143 ] || {
+    echo "TERM right after the scratch directory: exit $RC, not 143"
+    return 1
+  }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM right after the scratch directory was made left it behind"
+    return 1
+  }
+}
+check "TERM right after the scratch directory is made removes it" signal_after_scratch_removes_it
+
+# The trap is in before RUN is the runner's own, so a RUN from the
+# environment must never be what it removes: TERM just before mktemp, landed
+# the same way, with RUN naming a directory the run did not make.
+signal_before_scratch_spares_inherited_run() {
+  local tmp
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' RETURN
+  sections_repo "$tmp/r" '10-a:check "a ran" true'
+  mkdir "$tmp/inherited"
+  # shellcheck disable=SC2016  # expanded by the runner, not here
+  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(exec 9>&- && mktemp -d)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
+  RC=0
+  (cd "$tmp/r" && RUN="$tmp/inherited" BASH_ENV="$tmp/env.sh" ./check.sh > /dev/null 2>&1) || RC=$?
+  [ "$RC" -eq 143 ] || {
+    echo "TERM just before the scratch directory: exit $RC, not 143"
+    return 1
+  }
+  [ -d "$tmp/inherited" ] || {
+    echo "TERM just before the scratch directory removed the RUN it inherited"
+    return 1
+  }
+}
+check "TERM before the scratch directory spares a RUN from the environment" signal_before_scratch_spares_inherited_run
+
+# Last: no case left a runner's scratch directory in the system's temporary
+# directory. A runner killed outright runs no EXIT trap, and its scratch
+# outlives it. On 2026-10-22 ~180 of this section's were there, nearly all
+# from revisions before 004 merged, which left every fixture's (a clean run
+# of this revision leaves none); four, by their shape, from the ^C case
+# killing a runner that did not stop. The cases that can end a runner
+# without its EXIT trap make its scratch with fixture_mktemp. Compared by
+# name with the list taken before the cases; an unlocked suite of another
+# branch running at the same moment could show here, which the lock (006)
+# rules out once every branch has it.
+runner_temp_untouched() {
+  local new
+  new=$(comm -13 <(printf '%s\n' "$RUNNER_TEMP_BEFORE" | sort) <(system_temp_runs | sort))
+  [ -z "$new" ] || {
+    printf 'left in the system temporary directory:\n%s\n' "$new"
+    return 1
+  }
+}
+check "no case left a run's scratch in the system temporary directory" runner_temp_untouched

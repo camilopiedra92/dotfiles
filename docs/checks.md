@@ -83,6 +83,39 @@ runner stops the running sections and what they started. The run takes about as 
 rather than the sum, so one slow section sets the floor: measure it before
 splitting anything else (`specs/004-fast-checks/research.md` has the numbers).
 
+One run at a time per user on this machine, across every worktree and clone
+of this repository and whatever its flags: a run that finds another in
+progress prints, once on stderr, `check.sh: waiting for the run of pid <pid>
+in <path> to finish`, waits with no timeout, and then runs as it would have
+alone, its stdout and verdict unchanged. Several suites at once each spread
+over every CPU, and on 2026-10-22 four of them ran this laptop hot for hours
+and failed a section by contention alone. The turn is a kernel lock
+(`flock(2)` through macOS's `lockf`) on
+`$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock`, held by the runner's own
+shell (every command it starts, and every `$(...)` fork, closes the
+descriptor at once; a background section's fork does the same as its first
+instruction, so the windows are microseconds): it frees the moment the
+runner ends, by any means, `kill -9` included, and nothing a section or the
+runner started keeps it. The file's existence
+means nothing; the `<pid> <path>` line in it only words the waiting line,
+and names the run holding the turn or nobody: a run empties it as it ends,
+and a waiter that finds the pid gone (a run killed outright) names nobody
+(`specs/006-check-lock/research.md` R4 has the one gap left).
+INT or TERM to a run still waiting ends it with 130 or 143, having run
+nothing and without taking the turn. INT means a terminal's ^C, or `kill
+-INT` to a run started from an interactive shell: a run started with `&` by
+a non-interactive one (a script, an agent's tool) ignores INT from its first
+instruction, and bash cannot trap a signal ignored on entry, so there only
+TERM ends it (06-lock starts its INT case through python to undo that;
+without it the run did not end, observed 2026-10-22). A usage error never
+waits, and a lock that cannot be opened or taken is reported, naming the
+file, and fails the run. A `check.sh` started from within a run (`checks/05-runner.sh`'s copies,
+anything a section starts) is part of it: the runner exports `CHECK_SH_RUN`,
+and a run that starts with it set skips the lock — so exporting it by hand
+bypasses the lock. CI runs one suite per runner, so the turn is always free
+there. `checks/06-lock.sh` drives all of this against scratch copies;
+`specs/006-check-lock/research.md` has why each piece is the way it is.
+
 A check either runs (`ok` / `FAIL`) or is skipped because its tool is missing.
 A skip is a hole in coverage, not a neutral third outcome, so both gates —
 CI and the pre-commit hook — turn it into a failure; `./check.sh --strict`
