@@ -1289,3 +1289,4 @@ Qualifies R27 and the spec's Context (2026-10-23, from an outside analysis check
 
 **Check 91** (`sdd_pass`): "reader tests" (a review stand-in runs `python3 -I` import and tries `.pytest_cache`; red before the change with `.pytest_cache/README.md` and `src/__pycache__/app.cpython-39.pyc: outside this step's writes`), "reader write" (judge refuses with the mount not enforced; red with the judge's `writes` test broken by hand), "reader mount" and "writer mount" (the `-v` argument).
 
+**Limit, stated 2026-10-23:** the read-only mount is language-agnostic by construction, but its effect on a reader that runs tests was observed on Python only (the owner's repositories: Python 15, Node 6 of which TypeScript 5, Swift 1, nothing else). Whether a TypeScript reviewer can still run `vitest`/`jest`/`tsc`/`eslint` against a read-only `/work`, and which tools need a redirect, is T050c; Swift cannot be built in the Linux worker at all.
