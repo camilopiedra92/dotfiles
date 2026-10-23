@@ -41,21 +41,24 @@ security add-generic-password -U -a "$USER" -s deepseek-api -w   # only for Deep
 
 ## Once per repository
 
-Spec Kit with the routed workflow (until `sdd-init` installs it, T050):
+`sdd-init`, run from the root of a new repository, installs Spec Kit with both
+presets, Spec Kit's pi integration (`.pi/`) and the routed workflow, in one
+commit. In a repository that already has `.specify/` it changes nothing and
+prints the commands that add or update each of them (checked against a stand-in
+`specify`; the real `specify workflow add` and `integration install pi` were
+run in a scratch repository on 2026-10-22: both succeeded, and a second
+`workflow add` over the installed workflow succeeded too).
 
 ```sh
-specify init --here --integration claude
-specify workflow add <dotfiles>/claude/speckit/sdd-routed.yml
+sdd-init
 git config --local sdd.check './check.sh'      # what verify runs, in the worker
-git add .specify .claude && git commit -m "spec kit"   # passes export HEAD, nothing untracked
 ```
 
-To implement on DeepSeek instead of Sonnet — DeepSeek's terms of service and
+Nothing is opted in to DeepSeek by that. To implement on DeepSeek instead of
+Sonnet, which `sdd-init` prints at its end — DeepSeek's terms of service and
 privacy policy then apply to the code it reads:
 
 ```sh
-specify integration install pi                 # Spec Kit's own pi integration
-git add .pi && git commit -m "spec kit: pi integration"
 git config --local sdd.implement deepseek
 ```
 
