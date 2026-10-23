@@ -92,9 +92,11 @@ over every CPU, and on 2026-10-22 four of them ran this laptop hot for hours
 and failed a section by contention alone. The turn is a kernel lock
 (`flock(2)` through macOS's `lockf`) on
 `$(getconf DARWIN_USER_TEMP_DIR)dotfiles-check.lock`, held by the runner's own
-shell only (every command it starts closes the descriptor): it frees the
-moment the runner ends, by any means, `kill -9` included, and nothing a
-section or the runner started keeps it. The file's existence
+shell (every command it starts, and every `$(...)` fork, closes the
+descriptor at once; a background section's fork does the same as its first
+instruction, so the windows are microseconds): it frees the moment the
+runner ends, by any means, `kill -9` included, and nothing a section or the
+runner started keeps it. The file's existence
 means nothing; the `<pid> <path>` line in it only words the waiting line,
 and names the run holding the turn or nobody: a run empties it as it ends,
 and a waiter that finds the pid gone (a run killed outright) names nobody

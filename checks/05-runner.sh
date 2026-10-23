@@ -556,6 +556,10 @@ signals_stop_sections() {
     echo "after TERM to the runner, $left sleeps from its sections are still running"
     return 1
   }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM to the runner left its scratch directory behind"
+    return 1
+  }
 }
 check "TERM to the runner stops its sections and what they started" signals_stop_sections
 
@@ -658,6 +662,10 @@ PY
     echo "^C from a terminal: $out"
     return 1
   }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "^C from a terminal left the runner's scratch directory behind"
+    return 1
+  }
 }
 check "^C from a terminal stops the sections" ctrl_c_stops_sections
 
@@ -679,6 +687,10 @@ signal_statuses() {
   wait "$pid" 2> /dev/null || RC=$?
   [ "$RC" -eq 143 ] || {
     echo "TERM to the runner: exit $RC, not 143"
+    return 1
+  }
+  [ -z "$(ls -A "$tmp/scratch")" ] || {
+    echo "TERM to the runner left its scratch directory behind"
     return 1
   }
 }
@@ -723,7 +735,7 @@ signal_before_scratch_spares_inherited_run() {
   sections_repo "$tmp/r" '10-a:check "a ran" true'
   mkdir "$tmp/inherited"
   # shellcheck disable=SC2016  # expanded by the runner, not here
-  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(mktemp -d 9>&-)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
+  printf '%s\n' 'trap '\''case $BASH_COMMAND in "RUN=\$(exec 9>&- && mktemp -d)") kill -TERM $$ ;; esac'\'' DEBUG' > "$tmp/env.sh"
   RC=0
   (cd "$tmp/r" && RUN="$tmp/inherited" BASH_ENV="$tmp/env.sh" ./check.sh > /dev/null 2>&1) || RC=$?
   [ "$RC" -eq 143 ] || {

@@ -548,6 +548,37 @@ lock_killed_run_with_a_child_alive() {
 }
 check "a run killed while a command it started is alive frees the turn" lock_killed_run_with_a_child_alive
 
+# The same, one level up: a `$(...)` or a pipeline forks the runner's own
+# shell, and that fork holds the lock until its command returns, whatever the
+# command's own redirections say (reviewer's repro, 2026-10-22: a `find` stub
+# that slept 3 s, lsof listing the substitution's `bash ./check.sh`). With the
+# real commands the window is a few ms. A `find` stub blocks the runner's
+# first substitution and tells the case, which asks lsof who holds the lock.
+lock_substitution_does_not_hold_it() {
+  local tmp a holders n=0
+  tmp=$(mktemp -d) || return 1
+  lock_env "$tmp"
+  trap 'lock_cleanup' RETURN
+  # shellcheck disable=SC2016  # expanded by the stub, not here
+  printf '#!/bin/sh\nif mkdir "%s/stuck" 2> /dev/null; then echo $$ > "%s/stuck/pid"; echo $$ >> "%s/pids"; exec /bin/sleep 20; fi\nexec /usr/bin/find "$@"\n' \
+    "$tmp" "$tmp" "$tmp" > "$tmp/bin/find"
+  chmod +x "$tmp/bin/find"
+  lock_repo "$tmp/a" A 5
+  lock_start "$tmp/a" "$tmp/A"
+  a=$LOCK_PID
+  until [ -s "$tmp/stuck/pid" ]; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ] || {
+      echo "A's loop never reached the stubbed find"
+      return 1
+    }
+    /bin/sleep 0.05
+  done
+  holders=$(lsof -t "$LOCK_FILE" 2> /dev/null | sort -u | tr '\n' ' ')
+  lock_expect "the processes holding the lock" "the runner alone" "$a " "$holders"
+}
+check "a command substitution of the runner does not hold the lock while its command runs" lock_substitution_does_not_hold_it
+
 # No command the runner starts holds the lock. Each name below is a stub that
 # records "<name> holds fd 9" when it finds descriptor 9 open, then execs the
 # real one; the case runs the runner through everything it starts after the
@@ -575,6 +606,15 @@ lock_children_do_not_hold_it() {
   git -C "$tmp/a" add checks/10-a.sh
   lock_start "$tmp/a" "$tmp/A" --staged
   within 10 "$LOCK_PID" && lock_expect "--staged run" "exit" 0 "$RC" || return 1
+  # select_staged's error path: the index cannot be read, `git diff` fails and
+  # the temporary list is removed by an `rm` that must not hold it either.
+  echo garbage > "$tmp/a/.git/index"
+  lock_start "$tmp/a" "$tmp/A2" --staged
+  within 10 "$LOCK_PID" && lock_expect "--staged run on a broken index" "exit" 0 "$RC" || return 1
+  grep -q 'the staged paths could not be read' "$tmp/A2.out" || {
+    echo "the broken-index run never reached select_staged's error path"
+    return 1
+  }
   # TERM to a holder: kill_tree's pgrep.
   lock_repo "$tmp/b" B hold
   lock_start "$tmp/b" "$tmp/B"

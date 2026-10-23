@@ -221,7 +221,7 @@ SECTIONS=(checks/*.sh)
 # NUL-separated, which a command substitution cannot hold.
 select_staged() {
   local list status path i p hit
-  list=$(mktemp 9>&-) || {
+  list=$(exec 9>&- && mktemp) || {
     echo "check.sh: cannot create a temporary file for the staged paths" >&2
     return 1
   }
@@ -248,7 +248,7 @@ select_staged() {
         # of a diff: `git diff | grep -q` dies of SIGPIPE under pipefail
         # once the diff outgrows a pipe buffer, and a coloured diff hides it.
         if [ "$status" = A ] || [ "$status" = D ] || [ -z "$hit" ] ||
-          [ "$(this_repo_git show "HEAD:$path" 9>&- | sed -n 's/^# covers://p' 9>&-)" != "$(this_repo_git show ":$path" 9>&- | sed -n 's/^# covers://p' 9>&-)" ]; then
+          [ "$(exec 9>&- && this_repo_git show "HEAD:$path" | sed -n 's/^# covers://p')" != "$(exec 9>&- && this_repo_git show ":$path" | sed -n 's/^# covers://p')" ]; then
           ALL="$path is staged"
           break
         fi
@@ -285,7 +285,7 @@ COVERS=()
 PICKED=()
 ALL=
 for i in "${!SECTIONS[@]}"; do
-  COVERS[i]=$(sed -n 's/^# covers://p' "${SECTIONS[i]}" 9>&-)
+  COVERS[i]=$(exec 9>&- && sed -n 's/^# covers://p' "${SECTIONS[i]}")
 done
 if [ "$STAGED" -eq 0 ]; then
   ALL=everything
@@ -342,11 +342,11 @@ done
 # leaves it, as a run killed outright does.
 RUN=''
 trap '[ -z "$RUN" ] || rm -rf "$RUN" 9>&-; [ -z "${lock_record:-}" ] || : > "$lock_record"' EXIT
-RUN=$(mktemp -d 9>&-) || {
+RUN=$(exec 9>&- && mktemp -d) || {
   echo "check.sh: cannot create a temporary directory for the sections' output" >&2
   exit 1
 }
-JOBS=$(sysctl -n hw.ncpu 9>&-) || JOBS=1
+JOBS=$(exec 9>&- && sysctl -n hw.ncpu) || JOBS=1
 
 # The done marker is written after the section's last line: without it, the
 # section stopped early -- an `exit`, a `return`, a syntax error, an unset
@@ -362,8 +362,10 @@ run_section() {
   # killed outright would otherwise leave it holding the turn as long as the
   # section ran (06-lock, "a run killed outright frees the turn", red that
   # way). A no-op in a nested run, which never opened it. The runner's own
-  # commands after the turn is taken each carry `9>&-` for the same reason
-  # (research R8).
+  # commands after the turn is taken each carry `9>&-` for the same reason,
+  # and each `$(...)` starts with `exec 9>&-`, which closes it in the fork the
+  # substitution is, not in the runner: the fork holds the lock until its
+  # command returns otherwise (research R8).
   exec 9>&-
   # The section runs from a copy of its own name with the marker appended, so
   # a `return` or a syntax error, which end a sourced file quietly with status
@@ -393,13 +395,13 @@ run_section() {
 # job's stdin is /dev/null); both seen 2026-10-22 in a pty.
 kill_tree() {
   local child
-  for child in $(pgrep -P "$1" 9>&-); do kill_tree "$child"; done
+  for child in $(exec 9>&- && pgrep -P "$1"); do kill_tree "$child"; done
   kill -TERM "$1" 2> /dev/null
 }
 stop_sections() {
   local job
   trap '' INT TERM
-  for job in $(jobs -p); do kill_tree "$job"; done
+  for job in $(exec 9>&- && jobs -p); do kill_tree "$job"; done
   exit "$1"
 }
 trap 'stop_sections 130' INT
@@ -412,7 +414,7 @@ done
 started=0
 shown=0
 while [ "$shown" -lt "${#ORDER[@]}" ]; do
-  finished=$(find "$RUN" -name '*.rc' 9>&- | wc -l 9>&-)
+  finished=$(exec 9>&- && find "$RUN" -name '*.rc' | wc -l)
   while [ "$started" -lt "${#ORDER[@]}" ] && [ $((started - finished)) -lt "$JOBS" ]; do
     run_section "${ORDER[started]}" &
     started=$((started + 1))
@@ -423,7 +425,7 @@ while [ "$shown" -lt "${#ORDER[@]}" ]; do
     continue
   fi
   cat "$RUN/$i.out" 9>&-
-  status=$(cat "$RUN/$i.rc" 9>&-)
+  status=$(exec 9>&- && cat "$RUN/$i.rc")
   if [ ! -e "$RUN/$i.done" ]; then
     name=${SECTIONS[i]#checks/}
     printf '  %sFAIL%s %s stopped before its last line (exit %s)\n' "$RED" "$OFF" "${name%.sh}" "$status"

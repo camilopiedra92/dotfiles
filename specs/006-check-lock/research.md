@@ -313,6 +313,16 @@ to a defect and not a design.
 **Decision**: every external command the runner starts after taking the turn
 carries `9>&-` (audited with `grep` over `check.sh` after the lock block).
 
+A `$(...)` or a pipeline is not a command the runner starts but a fork of its
+own shell, and a fork holds descriptor 9 until its command returns, whatever
+that command's redirections say. Found by review (2026-10-22): with a `find`
+stub that slept 3 s, lsof listed the substitution's `bash ./check.sh` beside
+the runner for the 3 s; with the real commands the window is a few ms. Closed
+rather than stated as a limit: each `$(...)` of the runner begins with `exec
+9>&-` (ten sites), which closes it in the fork only, and the redirections it
+made redundant went. What stays open is the instant between a fork and that
+first `exec` (the same for a background section's), microseconds.
+
 **Alternatives**:
 - Tolerating the window in the test (retry, or accept the waiting line when a
   child was alive). Lost: SC-002 is a promise to users, and the line is
@@ -327,5 +337,9 @@ the turn" stubs `sleep` to block the runner's first poll, checks with `lsof`
 that the runner alone holds the lock, kills it and starts B (red before the
 fix: lsof listed the sleep too); "no command the runner starts holds the
 lock" stubs `sleep find wc cat sed rm git sysctl pgrep mkdir mktemp` to record
-an open descriptor 9, over a `--staged` run and a TERM. Reached by neither:
-the `rm -f "$list"` after a failed `git diff` in `select_staged`.
+an open descriptor 9, over a `--staged` run and a TERM. The `rm -f "$list"` after a failed `git diff` in `select_staged` is reached
+by the second `--staged` run of the same case, over an index overwritten with
+garbage (red with that `9>&-` removed: `rm holds fd 9`). "a command
+substitution of the runner does not hold the lock while its command runs"
+stubs `find`, blocks the first substitution that runs it and asks lsof (red
+with one `$(...)` back to `find ... 9>&-`: the runner and a second pid).
