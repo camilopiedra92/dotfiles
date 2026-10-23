@@ -18,8 +18,8 @@ red.
 iterate with `./check.sh checks/NN-name.sh` (once US4 exists; before it, stage
 the section and run `./check.sh --staged`) or `--staged`; run the whole suite
 once per story close and once at the end, never to prove stability. The one
-exception, and the only repetition in the feature, is T040 (SC-002), after 003
-merges. Every commit keeps `./check.sh --strict` green at its story's close.
+exception, and the only repetition in the feature, is T040 (SC-002), on a
+throwaway merge of 003's branch. Every commit keeps `./check.sh --strict` green at its story's close.
 
 **Fixtures**: all cases drive byte-identical scratch copies of `check.sh`
 (`sections_repo`, `checks/lib/runner.sh`) with `CHECK_SH_RUN` removed and the
@@ -53,7 +53,7 @@ task iterate on one section without a scratch runner — then US1, US2, US3.
 - [ ] T005 [US4] In check.sh: move `SECTIONS=(checks/*.sh)` above the argument loop; in the loop accept a non-flag argument equal to a `SECTIONS` entry (after dropping a leading `./`) into `NAMED`, else `check.sh: not a section: <arg>` and exit 2; after the loop `--staged` with `NAMED` is the usage error; in Selection, `NAMED` fills `PICKED` and prints no "Staged changes" line; usage line as the contract. Comment beside it: why repository-relative only (R10)
 - [ ] T006 [US4] Run `./check.sh checks/11-named-sections.sh checks/05-runner.sh` (US4 using itself): green
 - [ ] T007 [US4] Hand-breaks, each seen red then restored, named in the commit message: accept any existing file (lib path case red); parse names after the lock (wait case red); allow `--staged` with names (usage case red); run in argument order (order case red)
-- [ ] T008 [US4] Story close: update docs/checks.md "Tiers" one line (the command for one section) in the same commit; ONE full `./check.sh --strict`, green; commit with the red runs named
+- [ ] T008 [US4] Story close: update docs/checks.md "Tiers" one line (the command for one section) in the same commit; ONE full `./check.sh --strict`, green; commit with the red runs named Then a fresh-context review of this story's diff (the global rule: each story closes with one; findings fixed test-first) before the next story starts
 
 ## Phase 3: User Story 1 - A section that runs too long is stopped (P1) MVP
 
@@ -79,13 +79,13 @@ task iterate on one section without a scratch runner — then US1, US2, US3.
 
 ### Implementation for User Story 1
 
-- [ ] T022 [US1] In check.sh add the constants `DEFAULT_BUDGET` (provisional 240, marked so, R7), `GRACE=5`, `SIGNAL_GRACE=2` with their why and the date beside them (R5); parse `# budget:` for each selected section next to `COVERS` (valid: exactly one, `[1-9][0-9]{0,5}`), an invalid section gets `.out`/`.rc`/`.over`-less failure written in its place without being forked
+- [ ] T022 [US1] In check.sh add the constants `DEFAULT_BUDGET` (a scratch placeholder, 240, replaced by T040 before the PR opens, R7), `GRACE=5`, `SIGNAL_GRACE=2` with their why and the date beside them (R5); parse `# budget:` for each selected section next to `COVERS` (valid: exactly one, `[1-9][0-9]{0,5}`), an invalid section gets `.out`/`.rc`/`.over`-less failure written in its place without being forked
 - [ ] T023 [US1] In check.sh `run_section`/the launcher: `set -m; run_section "$i" < /dev/null & PIDS[i]=$!; START_S[i]=$SECONDS; set +m`; the copied section's tail writes `N.failed` then `N.done`; rewrite the comment above `kill_tree` (the `set -m` history, the window, the dates, R1-R3). In the loop: for every started section without `.rc`, `SECONDS - START_S[i] -gt budget` calls `stop_group`
 - [ ] T024 [US1] `stop_group <i>`: `kill -TERM -- -pid`, `{ wait pid; } 2> /dev/null`, poll `kill -0 -- -pid` every 50 ms up to `GRACE`, then `kill -KILL -- -pid`; then if `N.done` exists write `.rc` from `N.failed`, else write `N.over`, `N.end`, `.rc` 124. Replace `kill_tree`/`stop_sections` by the same group stop with `SIGNAL_GRACE` over every running section; the printing loop prints the over-budget line and not the "stopped before its last line" one for `.over`, and sets FAILED
 - [ ] T025 [US1] Run checks/08-budget.sh and checks/05-runner.sh checks/06-lock.sh through `./check.sh <paths>`: green; confirm the pty ^C and signal cases of 05/06 pass unchanged
 - [ ] T026 [US1] Hand-breaks, each seen red then restored, named in the commit message: no `set -m` window (T010, T009 grandchild red); `-ge` for `-gt`, or `SECONDS` read at the wrong place (T012 flaky-red or T009 time bound red); skip the `KILL` stage (T009 TERM-ignorer red); skip `.done` re-check (T016 red); drop `</dev/null` (T018 red under the pty); `SIGNAL_GRACE` above `GRACE` (T020 red); drop the `wait ... 2> /dev/null` (T017 red); count the over-budget section as a skip under non-strict (T013 plain mode red)
 - [ ] T027 [US1] Docs in the same commit: docs/checks.md "How a run executes": the budget rule (declaration, default and its provisional status, grace, that it fails in every mode, what a stop reaches and does not), replacing "INT or TERM ... stops the running sections and what they started" with the group wording
-- [ ] T028 [US1] Story close: ONE full `./check.sh --strict`, green; commit
+- [ ] T028 [US1] Story close: ONE full `./check.sh --strict`, green; commit Then a fresh-context review of this story's diff (the global rule: each story closes with one; findings fixed test-first) before the next story starts
 
 ## Phase 4: User Story 2 - Every run shows what each section cost (P2)
 
@@ -108,7 +108,7 @@ task iterate on one section without a scratch runner — then US1, US2, US3.
 
 - [ ] T037 [US2] In check.sh: `run_section` stamps `N.start` before and `N.end` after the section with `perl -MTime::HiRes=time` (R6), the stopped path stamps its own `.end`; the printer prints `  <name> took <t>` after each ran section's output (millisecond difference, one truncated decimal), collects `<ms> <name>`, prints the `Slowest sections` block before the verdict via `sort -rn | head -3`; keep `strip_report` and T035 green
 - [ ] T038 [US2] Hand-breaks named in the commit: print times in finish order (T031 red); `sort` without `-r` (T030 red); take the start after the section (T029 red); list unselected sections (T033 red); stamp in the runner's loop instead of the subshell is not a break but is measured in T044
-- [ ] T039 [US2] Docs in the same commit: docs/checks.md "How a run executes": the durations report and the slowest list. Story close: ONE full `./check.sh --strict` green, commit
+- [ ] T039 [US2] Docs in the same commit: docs/checks.md "How a run executes": the durations report and the slowest list. Story close: ONE full `./check.sh --strict` green, commit Then a fresh-context review of this story's diff (the global rule: each story closes with one; findings fixed test-first) before the next story starts
 
 ## Phase 5: User Story 3 - Everyone verifies the same way (P2)
 
@@ -120,7 +120,7 @@ task iterate on one section without a scratch runner — then US1, US2, US3.
 
 ## Phase 6: Measurements that need other branches
 
-- [ ] T040 Measure the default budget (SC-002, FR-002), after 003 merges into main and this branch is rebased: FIVE consecutive `./check.sh --strict` runs on this machine, the one place repetition is the point; record each section's duration per run, the maximum per section, and the arithmetic of R7 in research.md "Measurements"; replace the provisional `DEFAULT_BUDGET` and its comment, update docs/checks.md "How a run executes" with the value and where it was measured; confirm no budget tripped in the five. If 003 is not merged when this feature is ready, the PR says the default is provisional, and this task is its own follow-up commit
+- [ ] T040 Measure the default budget (SC-002, FR-002) BEFORE the feature's PR opens, on a THROWAWAY merge of branch 003-sdd-model-routing into this branch (a scratch worktree, never pushed; 003 need not have merged, it only has to be present so check 96 runs): FIVE consecutive `./check.sh --strict` runs on this machine, the one place repetition is the point; record each section's duration per run, the maximum per section, and the arithmetic of R7 in research.md "Measurements"; set `DEFAULT_BUDGET` to that value with the measurement's date beside it, and update docs/checks.md "How a run executes"; confirm no budget tripped in the five. No provisional value ships: T022's 240 is a scratch placeholder until this task, and the PR does not open before it
 - [ ] T041 Read the CI runner's section durations from the CI log of this feature's pull request (the durations report) and record them in research.md; the default must keep the headroom of R7 over them, else raise it in a reviewed commit (FR-013)
 - [ ] T042 Confirm `GRACE`/`SIGNAL_GRACE` against the worst clean-up seen: the time from `TERM` to an empty group in T009/T020's runs, recorded in research.md; revise R5 if within 10x of the constant
 - [ ] T043 Check 96 (branch 003) and any section that legitimately exceeds the default after T040 declare their own `# budget:` in their own reviewed commit on that branch, if T040 shows any
@@ -135,4 +135,4 @@ task iterate on one section without a scratch runner — then US1, US2, US3.
 
 ## Dependencies
 
-T001 first. US4 (T002-T008) before the rest. US1 before US2 (T037 builds on the `N.end` of the stop). US3 any time after US4 (the command it names). T040/T041 need 003 merged and US1-US2 done. T047 last but T048.
+T001 first. US4 (T002-T008) before the rest. US1 before US2 (T037 builds on the `N.end` of the stop). US3 any time after US4 (the command it names). T040 needs US1-US2 done and a throwaway merge of 003's branch (never pushed); T041 needs the PR's CI log. T047 last but T048.

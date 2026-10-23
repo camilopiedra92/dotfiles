@@ -148,8 +148,10 @@ any default-budget section shows in five consecutive full runs, rounded up to
 a multiple of 30 s. The value is **not yet measured**: it needs this feature's
 durations report (US2) and check 96, which exists only on branch
 `003-sdd-model-routing`; 96 alone takes ~70 s (spec US2, observed 2026-10-22),
-so the default must clear it: 3 x 77 s rounds to 240 s, written provisionally
-and marked so in `check.sh` until task T040 replaces it.
+so the default must clear it: 3 x 77 s rounds to 240 s, used as a scratch
+placeholder while the sections are built. Task T040 measures it on a throwaway
+merge of 003's branch (check 96 only has to be present, not merged) and
+replaces it before the PR opens; no provisional value ships.
 
 **Known numbers** (not this feature's): `specs/004-fast-checks/research.md`,
 sections alone: `05-runner` 11.0 s, `10-lint` 4.7 s, `80-git-guard` 3.0 s,

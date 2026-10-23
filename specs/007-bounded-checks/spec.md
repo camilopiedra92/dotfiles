@@ -172,8 +172,13 @@ and the CLAUDE.md lines point to "Tiers" for the full statement.
   the moment the section starts, MUST be stopped: first given a short grace
   period, the same for every section and fixed by the plan, to run its own
   clean-up, then forcibly. Stopping MUST reach every process the section
-  started, including processes whose parent has exited, so none outlives the
-  run. Settled with the owner (2026-10-22): this stays a requirement, not a
+  started that stays in the section's process group, including processes whose
+  parent has exited, so none of those outlives the run. A process that makes
+  its own session or group (`setsid`, a pty child, `set -m` inside a section)
+  is outside any group signal; the sections that start such processes
+  (`05-runner`, `06-lock`) stop their own children, and the contract names the
+  limit (settled with the owner, 2026-10-22: the limit is POSIX's, not a gap
+  to engineer around). Settled with the owner (2026-10-22): this stays a requirement, not a
   goal. 004's parent-pid walk cannot reach a reparented process, and 004
   rejected `set -m` because a section in its own group lost ^C and stopped on
   reading stdin (SIGTTIN). The plan researches a process group per section
