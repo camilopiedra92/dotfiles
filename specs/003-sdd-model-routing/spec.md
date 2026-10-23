@@ -18,9 +18,15 @@ smaller Claude subscription (Max 5x → Pro) without losing quality." Spiked on
 `claude` that records its arguments: a workflow step with `model: opus`
 dispatched `claude -p "/speckit-specify …" --model opus`; a run without a
 terminal paused at the first gate; a `shell` step saw no terminal and an empty
-stdin. A preset cannot carry a model: the same spike showed `model:` and
-`effort:` dropped from a preset command's generated skill, and upstream
-declined per-command model selection (github/spec-kit#1287).
+stdin. A preset cannot set the model of the phase it is dispatched with: the same
+spike showed `model:` and `effort:` dropped from a preset command's generated
+skill, and upstream declined per-command model selection
+(github/spec-kit#1287). It can set the model of the subagents its own text
+launches: story-workers' fragment names `model: "sonnet"` and
+`effort: "medium"` in its Agent call (its `speckit.implement.md:17`, observed
+2026-10-23), and is installed in `ha`, `software-factory` and `supertrader`.
+So who implements has two authorities: an interactive session follows the
+preset; a routed pass follows `routing.yml` (research R27, T050b).
 
 ## Clarifications
 
