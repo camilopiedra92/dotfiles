@@ -46,10 +46,10 @@ jobs:
       # Bare, no leading v: actionlint's tag carries one but its filenames
       # do not, and both spellings appear below.
       ACTIONLINT_VERSION: 1.7.12
-      GHOSTTY_VERSION: 1.3.1
+      GHOSTTY_VERSION: 1.4.0
       TAPLO_VERSION: 0.10.0
       # Bare, as actionlint's: the tag carries a v, the filenames do not.
-      ZIZMOR_VERSION: 1.30.1
+      ZIZMOR_VERSION: 1.31.1
       GITLEAKS_VERSION: 8.30.1
     steps:
       # Pinned to a commit SHA rather than a tag: a tag can be moved to point at
